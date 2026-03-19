@@ -36,7 +36,7 @@ export function DashboardCharts({ series }: DashboardChartsProps) {
       <div className="mb-5">
         <h2 className="text-lg font-semibold text-slate-900">Trend view</h2>
         <p className="mt-1 text-sm text-slate-500">
-          Revenue and EBITDA across reporting periods.
+          Revenue and reported EBITDA across reporting periods.
         </p>
       </div>
 
@@ -48,7 +48,7 @@ export function DashboardCharts({ series }: DashboardChartsProps) {
           </div>
           <div className="flex items-center gap-2">
             <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-600" />
-            <span>EBITDA</span>
+            <span>Reported EBITDA</span>
           </div>
         </div>
 
@@ -95,8 +95,8 @@ export function DashboardCharts({ series }: DashboardChartsProps) {
               />
               <Line
                 type="monotone"
-                dataKey="ebitda"
-                name="EBITDA"
+                dataKey="reportedEbitda"
+                name="Reported EBITDA"
                 stroke="#d97706"
                 strokeWidth={3}
                 dot={{ r: 3 }}

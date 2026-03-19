@@ -4,6 +4,7 @@ import type { KpiTraceabilityBadge } from "@/lib/types";
 type KpiCardProps = {
   label: string;
   value: number;
+  valueDisplay?: string | null;
   helpText: string;
   format?: "currency" | "percent";
   delta?: number | null;
@@ -16,6 +17,7 @@ type KpiCardProps = {
 export function KpiCard({
   label,
   value,
+  valueDisplay = null,
   helpText,
   format = "currency",
   delta = null,
@@ -62,7 +64,8 @@ export function KpiCard({
         </div>
 
         <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-900">
-          {format === "percent" ? formatPercent(value) : formatCurrency(value)}
+          {valueDisplay ??
+            (format === "percent" ? formatPercent(value) : formatCurrency(value))}
         </p>
         <div className="mt-2 min-h-[2.75rem]">
           {hasDelta ? (

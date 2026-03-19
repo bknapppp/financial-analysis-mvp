@@ -49,9 +49,122 @@ export type AccountMapping = {
   updated_at: string;
 };
 
+export type AddBackType =
+  | "owner_related"
+  | "non_recurring"
+  | "discretionary"
+  | "non_operating"
+  | "accounting_normalization"
+  | "run_rate_adjustment";
+
+export type AddBackStatus = "suggested" | "accepted" | "rejected";
+
+export type AddBackSource = "system" | "user";
+
+export type AddBackClassificationConfidence = "high" | "medium" | "low";
+
+export type AddBack = {
+  id: string;
+  company_id: string;
+  period_id: string;
+  linked_entry_id: string | null;
+  type: AddBackType;
+  description: string;
+  amount: number;
+  classification_confidence: AddBackClassificationConfidence;
+  source: AddBackSource;
+  status: AddBackStatus;
+  justification: string;
+  supporting_reference: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type StatementRow = {
   label: string;
   value: number;
+};
+
+export type NormalizedMappingProvenance =
+  | "saved_mapping"
+  | "keyword_mapping"
+  | "inferred_mapping"
+  | "manual_mapping"
+  | "source_provided";
+
+export type NormalizedMappedLine = {
+  entryId: string;
+  periodId: string;
+  accountName: string;
+  normalizedCategory: NormalizedCategory;
+  statementType: StatementType;
+  mappingProvenance: NormalizedMappingProvenance;
+  confidence: AuditConfidence;
+  mappingExplanation: string;
+  amount: number;
+  addbackFlag: boolean;
+};
+
+export type NormalizedStatementRowKind = "line_item" | "subtotal" | "metric";
+
+export type NormalizedStatementRow = {
+  key: string;
+  label: string;
+  value: number;
+  kind: NormalizedStatementRowKind;
+  rollupKey?: string;
+};
+
+export type NormalizedStatement =
+  | {
+      statementKey: "income_statement";
+      title: "Income Statement";
+      rows: NormalizedStatementRow[];
+      footerLabel: "Adjusted EBITDA";
+      footerValue: number;
+    }
+  | {
+      statementKey: "balance_sheet";
+      title: "Balance Sheet";
+      rows: NormalizedStatementRow[];
+      footerLabel: "Working Capital";
+      footerValue: number;
+    };
+
+export type ReconciliationIssueSeverity = "critical" | "warning" | "info";
+
+export type ReconciliationIssue = {
+  key:
+    | "ebitda_formula"
+    | "adjusted_ebitda_formula"
+    | "gross_profit_formula"
+    | "working_capital_formula"
+    | "statement_rollup"
+    | "mapping_conflict"
+    | "missing_component"
+    | "low_confidence_component"
+    | "legacy_adjustment_source";
+  severity: ReconciliationIssueSeverity;
+  section:
+    | "income_statement"
+    | "balance_sheet"
+    | "ebitda_bridge"
+    | "mapping"
+    | "export_alignment";
+  metric: string;
+  message: string;
+  difference?: number;
+  tolerance?: number;
+};
+
+export type ReconciliationStatus = "reconciled" | "warning" | "failed";
+
+export type ReconciliationReport = {
+  status: ReconciliationStatus;
+  label: "Reconciles" | "Reconciles with warnings" | "Does not reconcile";
+  summaryMessage: string;
+  withinTolerance: boolean;
+  issues: ReconciliationIssue[];
 };
 
 export type PeriodSnapshot = {
@@ -66,11 +179,13 @@ export type PeriodSnapshot = {
   adjustedEbitda: number;
   grossMarginPercent: number;
   ebitdaMarginPercent: number;
+  adjustedEbitdaMarginPercent: number;
   currentAssets: number;
   currentLiabilities: number;
   workingCapital: number;
   revenueGrowthPercent: number | null;
   ebitdaGrowthPercent: number | null;
+  adjustedEbitdaGrowthPercent: number | null;
   grossMarginChange: number | null;
   ebitdaMarginChange: number | null;
 };
@@ -78,7 +193,8 @@ export type PeriodSnapshot = {
 export type DashboardSeriesPoint = {
   label: string;
   revenue: number;
-  ebitda: number;
+  reportedEbitda: number;
+  adjustedEbitda: number;
 };
 
 export type KpiDelta = {
@@ -202,12 +318,101 @@ export type DataQualityReport = {
   }>;
 };
 
+export type DataReadinessStatus = "ready" | "caution" | "blocked";
+
+export type DataReadiness = {
+  status: DataReadinessStatus;
+  label: "Ready" | "Use with caution" | "Not reliable";
+  blockingReasons: string[];
+  cautionReasons: string[];
+  summaryMessage: string;
+};
+
+export type AddBackSuggestion = {
+  companyId: string;
+  periodId: string;
+  linkedEntryId: string | null;
+  type: AddBackType;
+  description: string;
+  amount: number;
+  classificationConfidence: AddBackClassificationConfidence;
+  source: AddBackSource;
+  status: AddBackStatus;
+  justification: string;
+  supportingReference: string | null;
+};
+
+export type AddBackReviewItem = {
+  id: string | null;
+  companyId: string;
+  periodId: string;
+  periodLabel: string;
+  linkedEntryId: string | null;
+  entryAccountName: string | null;
+  entryCategory: NormalizedCategory | null;
+  entryStatementType: StatementType | null;
+  addbackFlag: boolean;
+  matchedBy: AuditMatchedBy | null;
+  confidence: AuditConfidence | null;
+  mappingExplanation: string | null;
+  type: AddBackType;
+  description: string;
+  amount: number;
+  classificationConfidence: AddBackClassificationConfidence;
+  source: AddBackSource;
+  status: AddBackStatus;
+  justification: string;
+  supportingReference: string | null;
+  isPersisted: boolean;
+  dependsOnLowConfidenceMapping: boolean;
+};
+
+export type EbitdaBridgeCategoryGroup = {
+  type: AddBackType;
+  label: string;
+  total: number;
+  items: AddBackReviewItem[];
+};
+
+export type EbitdaBridge = {
+  periodId: string;
+  periodLabel: string;
+  reportedEbitda: number;
+  addBackTotal: number;
+  adjustedEbitda: number | null;
+  canComputeAdjustedEbitda: boolean;
+  invalidReasons: string[];
+  warnings: string[];
+  groups: EbitdaBridgeCategoryGroup[];
+};
+
+export type NormalizedPeriodOutput = {
+  periodId: string;
+  label: string;
+  periodDate: string;
+  mappedLines: NormalizedMappedLine[];
+  incomeStatement: Extract<NormalizedStatement, { statementKey: "income_statement" }>;
+  balanceSheet: Extract<NormalizedStatement, { statementKey: "balance_sheet" }>;
+  reportedEbitda: number;
+  acceptedAddBacks: number;
+  adjustedEbitda: number;
+  grossMarginPercent: number;
+  reportedEbitdaMarginPercent: number;
+  adjustedEbitdaMarginPercent: number;
+  reportedEbitdaGrowthPercent: number | null;
+  adjustedEbitdaGrowthPercent: number | null;
+  reconciliation: ReconciliationReport;
+  bridge: EbitdaBridge | null;
+};
+
 export type DashboardData = {
   companies: Company[];
   company: Company | null;
   periods: ReportingPeriod[];
   entries: FinancialEntry[];
   accountMappings: AccountMapping[];
+  addBacks: AddBack[];
+  addBackReviewItems: AddBackReviewItem[];
   snapshots: PeriodSnapshot[];
   snapshot: PeriodSnapshot;
   series: DashboardSeriesPoint[];
@@ -218,4 +423,9 @@ export type DashboardData = {
   recommendedActions: ActionRecommendation[];
   executiveSummary: string | null;
   dataQuality: DataQualityReport;
+  readiness: DataReadiness;
+  ebitdaBridge: EbitdaBridge | null;
+  reconciliation: ReconciliationReport;
+  normalizedPeriods: NormalizedPeriodOutput[];
+  normalizedOutput: NormalizedPeriodOutput | null;
 };

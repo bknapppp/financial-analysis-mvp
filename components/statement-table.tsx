@@ -1,29 +1,25 @@
 "use client";
 
 import { formatCurrency } from "@/lib/formatters";
-import type { StatementRow } from "@/lib/types";
+import type { NormalizedStatement } from "@/lib/types";
 
 type StatementTableProps = {
-  title: string;
-  rows: StatementRow[];
-  footerLabel: string;
-  footerValue: number;
+  statement: NormalizedStatement;
+  footerValueDisplay?: string | null;
   clickableLabels?: string[];
   onRowClick?: (label: string) => void;
 };
 
 export function StatementTable({
-  title,
-  rows,
-  footerLabel,
-  footerValue,
+  statement,
+  footerValueDisplay = null,
   clickableLabels = [],
   onRowClick
 }: StatementTableProps) {
   return (
     <section className="rounded-[1.75rem] bg-white p-5 shadow-panel">
       <div className="mb-4">
-        <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
+        <h2 className="text-lg font-semibold text-slate-900">{statement.title}</h2>
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-slate-200">
@@ -39,13 +35,21 @@ export function StatementTable({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 bg-white">
-            {rows.length > 0 ? (
-              rows.map((row) => {
+            {statement.rows.length > 0 ? (
+              statement.rows.map((row) => {
                 const isClickable = clickableLabels.includes(row.label) && Boolean(onRowClick);
 
                 return (
                   <tr key={row.label}>
-                    <td className="px-4 py-3 text-slate-700">
+                    <td
+                      className={`px-4 py-3 ${
+                        row.kind === "subtotal"
+                          ? "font-semibold text-slate-900"
+                          : row.kind === "metric"
+                            ? "font-medium text-slate-800"
+                            : "text-slate-700"
+                      }`}
+                    >
                       {isClickable ? (
                         <button
                           type="button"
@@ -58,7 +62,13 @@ export function StatementTable({
                         row.label
                       )}
                     </td>
-                    <td className="px-4 py-3 text-right font-medium text-slate-900">
+                    <td
+                      className={`px-4 py-3 text-right ${
+                        row.kind === "subtotal"
+                          ? "font-semibold text-slate-900"
+                          : "font-medium text-slate-900"
+                      }`}
+                    >
                       {formatCurrency(row.value)}
                     </td>
                   </tr>
@@ -78,10 +88,10 @@ export function StatementTable({
           <tfoot className="bg-slate-50">
             <tr>
               <td className="px-4 py-3 font-semibold text-slate-700">
-                {footerLabel}
+                {statement.footerLabel}
               </td>
               <td className="px-4 py-3 text-right font-semibold text-slate-900">
-                {formatCurrency(footerValue)}
+                {footerValueDisplay ?? formatCurrency(statement.footerValue)}
               </td>
             </tr>
           </tfoot>

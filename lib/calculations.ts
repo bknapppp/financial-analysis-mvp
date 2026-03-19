@@ -1,9 +1,11 @@
 import type {
+  AddBack,
   FinancialEntry,
   PeriodSnapshot,
   ReportingPeriod,
   StatementRow
 } from "@/lib/types";
+import { calculateAdjustedEbitdaForPeriod } from "@/lib/add-backs";
 
 function sumAmounts(entries: FinancialEntry[]) {
   return entries.reduce((total, entry) => total + Number(entry.amount), 0);
@@ -15,25 +17,33 @@ function byCategory(entries: FinancialEntry[], category: FinancialEntry["categor
 
 function calculateSnapshotForPeriod(
   period: ReportingPeriod,
-  entries: FinancialEntry[]
+  entries: FinancialEntry[],
+  addBacks: AddBack[]
 ): PeriodSnapshot {
   const periodEntries = entries.filter((entry) => entry.period_id === period.id);
+  const periodAddBacks = addBacks.filter((item) => item.period_id === period.id);
 
   const revenue = sumAmounts(byCategory(periodEntries, "Revenue"));
   const cogs = sumAmounts(byCategory(periodEntries, "COGS"));
   const operatingExpenses = sumAmounts(
     byCategory(periodEntries, "Operating Expenses")
   );
-  const addBacks = sumAmounts(periodEntries.filter((entry) => entry.addback_flag));
   const currentAssets = sumAmounts(byCategory(periodEntries, "Assets"));
   const currentLiabilities = sumAmounts(byCategory(periodEntries, "Liabilities"));
 
   const grossProfit = revenue - cogs;
   const ebitda = grossProfit - operatingExpenses;
-  const adjustedEbitda = ebitda + addBacks;
+  const adjustedEbitda = calculateAdjustedEbitdaForPeriod({
+    periodId: period.id,
+    reportedEbitda: ebitda,
+    addBacks: periodAddBacks,
+    entries: periodEntries
+  }).adjustedEbitda;
   const workingCapital = currentAssets - currentLiabilities;
   const grossMarginPercent = revenue === 0 ? 0 : (grossProfit / revenue) * 100;
   const ebitdaMarginPercent = revenue === 0 ? 0 : (ebitda / revenue) * 100;
+  const adjustedEbitdaMarginPercent =
+    revenue === 0 ? 0 : (adjustedEbitda / revenue) * 100;
 
   return {
     periodId: period.id,
@@ -47,11 +57,13 @@ function calculateSnapshotForPeriod(
     adjustedEbitda,
     grossMarginPercent,
     ebitdaMarginPercent,
+    adjustedEbitdaMarginPercent,
     currentAssets,
     currentLiabilities,
     workingCapital,
     revenueGrowthPercent: null,
     ebitdaGrowthPercent: null,
+    adjustedEbitdaGrowthPercent: null,
     grossMarginChange: null,
     ebitdaMarginChange: null
   };
@@ -67,10 +79,11 @@ function percentChange(current: number, previous: number) {
 
 export function buildSnapshots(
   periods: ReportingPeriod[],
-  entries: FinancialEntry[]
+  entries: FinancialEntry[],
+  addBacks: AddBack[] = []
 ): PeriodSnapshot[] {
   const baseSnapshots = periods.map((period) =>
-    calculateSnapshotForPeriod(period, entries)
+    calculateSnapshotForPeriod(period, entries, addBacks)
   );
 
   return baseSnapshots.map((snapshot, index) => {
@@ -84,6 +97,10 @@ export function buildSnapshots(
       ...snapshot,
       revenueGrowthPercent: percentChange(snapshot.revenue, previous.revenue),
       ebitdaGrowthPercent: percentChange(snapshot.ebitda, previous.ebitda),
+      adjustedEbitdaGrowthPercent: percentChange(
+        snapshot.adjustedEbitda,
+        previous.adjustedEbitda
+      ),
       grossMarginChange:
         snapshot.grossMarginPercent - previous.grossMarginPercent,
       ebitdaMarginChange:
@@ -98,11 +115,12 @@ export function buildIncomeStatement(snapshot: PeriodSnapshot): StatementRow[] {
     { label: "COGS", value: snapshot.cogs },
     { label: "Gross Profit", value: snapshot.grossProfit },
     { label: "Operating Expenses", value: snapshot.operatingExpenses },
-    { label: "EBITDA", value: snapshot.ebitda },
+    { label: "Reported EBITDA", value: snapshot.ebitda },
     {
-      label: "Add-Backs",
+      label: "Accepted Add-Backs",
       value: snapshot.adjustedEbitda - snapshot.ebitda
-    }
+    },
+    { label: "Adjusted EBITDA", value: snapshot.adjustedEbitda }
   ];
 }
 

@@ -2,12 +2,16 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { AddBackReviewPanel } from "@/components/add-back-review-panel";
 import { AuditDrilldownPanel } from "@/components/audit-drilldown-panel";
 import { CompanySetupForm } from "@/components/company-setup-form";
 import { CopySummaryButton } from "@/components/copy-summary-button";
 import { CsvImportSection } from "@/components/csv-import-section";
 import { DataQualityPanel } from "@/components/data-quality-panel";
 import { DashboardCharts } from "@/components/dashboard-charts";
+import { DownloadExcelButton } from "@/components/download-excel-button";
+import { DownloadReportButton } from "@/components/download-report-button";
+import { EbitdaBridge } from "@/components/ebitda-bridge";
 import { EntryForm } from "@/components/entry-form";
 import { ExecutiveSummary } from "@/components/executive-summary";
 import { InsightFeed } from "@/components/insight-feed";
@@ -16,10 +20,12 @@ import { MappingConsistencyPanel } from "@/components/mapping-consistency-panel"
 import { MultiPeriodSummaryTable } from "@/components/multi-period-summary-table";
 import { PerformanceDrivers } from "@/components/performance-drivers";
 import { PeriodForm } from "@/components/period-form";
+import { ReadinessPanel } from "@/components/readiness-panel";
 import { RecommendedActions } from "@/components/recommended-actions";
+import { ReconciliationPanel } from "@/components/reconciliation-panel";
 import { StatementTable } from "@/components/statement-table";
-import { buildAuditMetrics, buildMappingConsistencyIssues } from "@/lib/mapping-intelligence";
 import { formatCurrency, formatPercent } from "@/lib/formatters";
+import { buildAuditMetrics, buildMappingConsistencyIssues } from "@/lib/mapping-intelligence";
 import type {
   AuditMetricKey,
   DashboardData,
@@ -49,14 +55,9 @@ function formatCurrencyDelta(current: number, prior: number) {
   }).format(delta)} absolute`;
 }
 
-function formatPointsDelta(current: number, prior: number) {
-  const delta = current - prior;
-  const prefix = delta > 0 ? "+" : "";
-  return `${prefix}${delta.toFixed(1)} pts absolute`;
-}
-
 function formatSummaryDelta(current: number, prior: number, suffix = "") {
   const percentDelta = calculatePercentDelta(current, prior);
+
   if (percentDelta === null) {
     return "—";
   }
@@ -104,20 +105,56 @@ export function DashboardShell({ data }: DashboardShellProps) {
 
     return null;
   }, [auditMetrics.cogs.badge, auditMetrics.revenue.badge]);
+  const acceptedAddBackTotal =
+    data.ebitdaBridge?.addBackTotal ??
+    Math.max(0, data.snapshot.adjustedEbitda - data.snapshot.ebitda);
+  const priorAcceptedAddBackTotal = priorSnapshot
+    ? Math.max(0, priorSnapshot.adjustedEbitda - priorSnapshot.ebitda)
+    : null;
+  const reviewStatusBadge: KpiTraceabilityBadge | null =
+    data.dataQuality.confidenceLabel === "Low"
+      ? { label: "Low confidence", tone: "rose" }
+      : data.dataQuality.confidenceLabel === "Medium"
+        ? { label: "Partial mapping", tone: "amber" }
+        : null;
+  const reviewStatusHelpText =
+    data.dataQuality.confidenceLabel === "High"
+      ? "Data package is reliable for adjusted EBITDA review"
+      : data.dataQuality.confidenceLabel === "Medium"
+        ? "Some diligence issues may affect accepted adjustments"
+        : "Resolve mapping and completeness issues before relying on adjusted results";
+  const adjustedEbitdaDisplay =
+    data.readiness.status === "blocked" ? "Not reliable" : null;
   const summaryText = data.company
     ? [
         `Company: ${data.company.name}`,
         `Period: ${data.snapshot.label || "Latest period"}`,
         "",
-        "Performance:",
+        "Deal Review Summary:",
+        `Readiness: ${data.readiness.label}`,
+        ...(data.readiness.status !== "ready"
+          ? [
+              data.readiness.status === "blocked"
+                ? `WARNING: ${data.readiness.summaryMessage}`
+                : `CAUTION: ${data.readiness.summaryMessage}`
+            ]
+          : []),
         `Revenue: ${formatCurrency(data.snapshot.revenue)}${
           priorSnapshot
             ? ` (${formatSummaryDelta(data.snapshot.revenue, priorSnapshot.revenue)})`
             : ""
         }`,
-        `EBITDA: ${formatCurrency(data.snapshot.ebitda)}${
+        `Reported EBITDA: ${formatCurrency(data.snapshot.ebitda)}${
           priorSnapshot
             ? ` (${formatSummaryDelta(data.snapshot.ebitda, priorSnapshot.ebitda)})`
+            : ""
+        }`,
+        `Accepted Add-Backs: ${formatCurrency(acceptedAddBackTotal)}${
+          priorAcceptedAddBackTotal !== null
+            ? ` (${formatSummaryDelta(
+                acceptedAddBackTotal,
+                priorAcceptedAddBackTotal
+              )})`
             : ""
         }`,
         `Adjusted EBITDA: ${formatCurrency(data.snapshot.adjustedEbitda)}${
@@ -133,14 +170,6 @@ export function DashboardShell({ data }: DashboardShellProps) {
             ? ` (${formatSummaryDelta(
                 data.snapshot.grossMarginPercent,
                 priorSnapshot.grossMarginPercent
-              )})`
-            : ""
-        }`,
-        `EBITDA Margin: ${formatPercent(data.snapshot.ebitdaMarginPercent)}${
-          priorSnapshot
-            ? ` (${formatSummaryDelta(
-                data.snapshot.ebitdaMarginPercent,
-                priorSnapshot.ebitdaMarginPercent
               )})`
             : ""
         }`,
@@ -173,113 +202,75 @@ export function DashboardShell({ data }: DashboardShellProps) {
         <div className="mx-auto flex max-w-7xl flex-col gap-8">
           <section className="rounded-[2rem] bg-ink px-6 py-6 text-white shadow-panel md:px-8">
             <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
-              <div className="max-w-xl">
+              <div className="max-w-2xl">
                 <p className="text-xs uppercase tracking-[0.24em] text-teal-200">
-                  Finance Dashboard
+                  Deal Review Workspace
                 </p>
                 <h1 className="mt-2 text-3xl font-semibold tracking-tight md:text-4xl">
-                  Business performance
+                  Adjusted EBITDA review
                 </h1>
                 <p className="mt-2 text-sm text-slate-300 md:text-base">
-                  Trends, drivers, and data quality in one view.
+                  Underwrite reported earnings, accepted adjustments, and diligence confidence in one view.
                 </p>
               </div>
 
-              <div className="flex items-center">
+              <div className="flex flex-col items-start gap-3 md:items-end">
                 <div className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm">
                   <p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-300">
-                    Active company
+                    Active deal file
                   </p>
                   <p className="mt-1 font-medium text-white">
                     {data.company
                       ? data.company.name
-                      : "Create a company to begin analysis"}
+                      : "Create a company to begin review"}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-300">
+                    {data.snapshot.label || "No reporting period loaded"}
                   </p>
                 </div>
-              </div>
-            </div>
-          </section>
-
-          <section className="grid gap-6 lg:grid-cols-[1.05fr_1.7fr]">
-            <div className="space-y-6">
-              <section className="rounded-[1.75rem] bg-white p-5 shadow-panel">
-                <div className="mb-4">
-                  <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
-                    Setup
-                  </p>
-                  <h2 className="mt-2 text-xl font-semibold text-slate-900">
-                    Data Input
-                  </h2>
-                  <p className="mt-1 text-sm text-slate-500">
-                    Set up the company, add periods, and load financial data.
-                  </p>
-                </div>
-
-                <div className="space-y-5">
-                  <CompanySetupForm />
-                  <PeriodForm companyId={data.company?.id ?? null} />
-                  <EntryForm
-                    companyId={data.company?.id ?? null}
-                    periods={data.periods}
+                <div className="flex flex-wrap gap-3">
+                  <DownloadExcelButton
+                    data={data}
+                    disabled={!data.company || !data.snapshot.periodId}
                   />
-                  <CsvImportSection
-                    companies={data.companies}
-                    initialCompanyId={data.company?.id ?? null}
-                    initialPeriods={data.periods}
+                  <DownloadReportButton
+                    data={data}
+                    disabled={!data.company || !data.snapshot.periodId}
                   />
-                </div>
-              </section>
-            </div>
-
-            <div className="space-y-8">
-              <section className="space-y-6">
-                <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-                  <div>
-                    <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
-                      Performance
-                    </p>
-                    <h2 className="mt-2 text-xl font-semibold text-slate-900">
-                      Performance
-                    </h2>
-                    <p className="mt-1 text-sm text-slate-500">
-                      The core analysis layer for trends, drivers, and multi-period performance.
-                    </p>
-                  </div>
                   <CopySummaryButton
                     summaryText={summaryText}
                     disabled={!data.company}
                   />
                 </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="grid gap-6 lg:grid-cols-[1.75fr_0.95fr]">
+            <div className="space-y-8">
+              <section className="space-y-6">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
+                    Core Review
+                  </p>
+                  <h2 className="mt-2 text-xl font-semibold text-slate-900">
+                    Adjusted EBITDA workflow
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Review reported earnings, accepted adjustments, and trust signals before using the deal case.
+                  </p>
+                </div>
+
+                <div className="grid gap-4 xl:grid-cols-2">
+                  <ReadinessPanel readiness={data.readiness} />
+                  <ReconciliationPanel report={data.reconciliation} />
+                </div>
 
                 <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                   <KpiCard
-                    label="Revenue"
-                    value={data.snapshot.revenue}
-                    helpText="Latest reporting period"
-                    delta={
-                      priorSnapshot
-                        ? calculatePercentDelta(
-                            data.snapshot.revenue,
-                            priorSnapshot.revenue
-                          )
-                        : null
-                    }
-                    deltaAbsoluteText={
-                      priorSnapshot
-                        ? formatCurrencyDelta(
-                            data.snapshot.revenue,
-                            priorSnapshot.revenue
-                          )
-                        : null
-                    }
-                    deltaLabel="vs prior period"
-                    traceabilityBadge={grossMarginBadge}
-                    onClick={() => setSelectedAuditKey("revenue")}
-                  />
-                  <KpiCard
-                    label="EBITDA"
+                    label="Reported EBITDA"
                     value={data.snapshot.ebitda}
-                    helpText="Before add-backs"
+                    helpText="Pre-adjustment operating earnings"
                     delta={
                       priorSnapshot
                         ? calculatePercentDelta(
@@ -299,13 +290,42 @@ export function DashboardShell({ data }: DashboardShellProps) {
                     deltaLabel="vs prior period"
                     traceabilityBadge={auditMetrics.ebitda.badge}
                     onClick={() => setSelectedAuditKey("ebitda")}
+                  />
+                  <KpiCard
+                    label="Accepted Add-Backs"
+                    value={acceptedAddBackTotal}
+                    helpText="Reviewed adjustments accepted for this period"
+                    delta={
+                      priorAcceptedAddBackTotal !== null
+                        ? calculatePercentDelta(
+                            acceptedAddBackTotal,
+                            priorAcceptedAddBackTotal
+                          )
+                        : null
+                    }
+                    deltaAbsoluteText={
+                      priorAcceptedAddBackTotal !== null
+                        ? formatCurrencyDelta(
+                            acceptedAddBackTotal,
+                            priorAcceptedAddBackTotal
+                          )
+                        : null
+                    }
+                    deltaLabel="vs prior period"
                   />
                   <KpiCard
                     label="Adjusted EBITDA"
                     value={data.snapshot.adjustedEbitda}
-                    helpText="Including flagged add-backs"
+                    valueDisplay={adjustedEbitdaDisplay}
+                    helpText={
+                      data.readiness.status === "blocked"
+                        ? "Adjusted EBITDA is not reliable until blocking issues are resolved"
+                        : data.readiness.status === "caution"
+                          ? "Reported EBITDA plus accepted adjustments, with caution"
+                          : "Reported EBITDA plus accepted adjustments"
+                    }
                     delta={
-                      priorSnapshot
+                      priorSnapshot && data.readiness.status !== "blocked"
                         ? calculatePercentDelta(
                             data.snapshot.adjustedEbitda,
                             priorSnapshot.adjustedEbitda
@@ -313,7 +333,7 @@ export function DashboardShell({ data }: DashboardShellProps) {
                         : null
                     }
                     deltaAbsoluteText={
-                      priorSnapshot
+                      priorSnapshot && data.readiness.status !== "blocked"
                         ? formatCurrencyDelta(
                             data.snapshot.adjustedEbitda,
                             priorSnapshot.adjustedEbitda
@@ -325,38 +345,22 @@ export function DashboardShell({ data }: DashboardShellProps) {
                     onClick={() => setSelectedAuditKey("ebitda")}
                   />
                   <KpiCard
-                    label="Gross Margin %"
-                    value={data.snapshot.grossMarginPercent}
+                    label="Review Confidence"
+                    value={data.dataQuality.confidenceScore}
                     format="percent"
-                    helpText="Gross profit / revenue"
-                    delta={
-                      priorSnapshot
-                        ? calculatePercentDelta(
-                            data.snapshot.grossMarginPercent,
-                            priorSnapshot.grossMarginPercent
-                          )
-                        : null
-                    }
-                    deltaAbsoluteText={
-                      priorSnapshot
-                        ? formatPointsDelta(
-                            data.snapshot.grossMarginPercent,
-                            priorSnapshot.grossMarginPercent
-                          )
-                        : null
-                    }
-                    deltaLabel="vs prior period"
-                    traceabilityBadge={auditMetrics.revenue.badge}
-                    onClick={() => setSelectedAuditKey("revenue")}
+                    helpText={reviewStatusHelpText}
+                    delta={null}
+                    deltaLabel="diligence status"
+                    traceabilityBadge={reviewStatusBadge}
                   />
                 </section>
 
-                <ExecutiveSummary summary={data.executiveSummary} />
-                <PerformanceDrivers analyses={data.driverAnalyses} />
-                <InsightFeed insights={data.insights} />
-                <RecommendedActions recommendations={data.recommendedActions} />
-                <DashboardCharts series={data.series} />
-                <MultiPeriodSummaryTable snapshots={data.snapshots} />
+                <EbitdaBridge bridge={data.ebitdaBridge} />
+                <AddBackReviewPanel
+                  companyId={data.company?.id ?? null}
+                  periods={data.periods}
+                  items={data.addBackReviewItems}
+                />
               </section>
 
               <section className="space-y-4">
@@ -365,10 +369,10 @@ export function DashboardShell({ data }: DashboardShellProps) {
                     Validation
                   </p>
                   <h2 className="mt-2 text-xl font-semibold text-slate-900">
-                    Data Quality & Validation
+                    Confidence & validation
                   </h2>
                   <p className="mt-1 text-sm text-slate-500">
-                    Validate mapping coverage, consistency, and trust before relying on insights.
+                    Confirm mapping quality, consistency, and support before relying on adjusted outputs.
                   </p>
                 </div>
 
@@ -379,7 +383,127 @@ export function DashboardShell({ data }: DashboardShellProps) {
                   onMappingSaved={refreshMappings}
                 />
               </section>
+
+              <section className="space-y-6">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
+                    Investment Summary
+                  </p>
+                  <h2 className="mt-2 text-xl font-semibold text-slate-900">
+                    Underwriting summary
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Frame the deal case with performance context, risks, and recommended next actions.
+                  </p>
+                </div>
+
+                <ExecutiveSummary summary={data.executiveSummary} />
+
+                <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
+                  <PerformanceDrivers analyses={data.driverAnalyses} />
+                  <div className="space-y-6">
+                    <InsightFeed insights={data.insights} />
+                    <RecommendedActions recommendations={data.recommendedActions} />
+                  </div>
+                </div>
+              </section>
+
+              <section className="space-y-6">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
+                    Trend & Period Analysis
+                  </p>
+                  <h2 className="mt-2 text-xl font-semibold text-slate-900">
+                    Multi-period operating context
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Compare operating performance over time to support the current adjustment case.
+                  </p>
+                </div>
+
+                <DashboardCharts series={data.series} />
+                <MultiPeriodSummaryTable snapshots={data.snapshots} />
+              </section>
             </div>
+
+            <aside className="space-y-6">
+              <section className="rounded-[1.75rem] border border-slate-200 bg-white/80 p-5 shadow-panel backdrop-blur">
+                <div className="mb-4">
+                  <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
+                    Setup
+                  </p>
+                  <h2 className="mt-2 text-lg font-semibold text-slate-900">
+                    Data intake
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Maintain company setup, periods, and source data without interrupting the review workflow.
+                  </p>
+                </div>
+
+                <div className="space-y-5">
+                  <CompanySetupForm />
+                  <CsvImportSection
+                    companies={data.companies}
+                    initialCompanyId={data.company?.id ?? null}
+                    initialPeriods={data.periods}
+                  />
+                  <details className="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-4">
+                    <summary className="cursor-pointer list-none text-sm font-medium text-slate-900">
+                      Manual period and entry tools
+                    </summary>
+                    <p className="mt-2 text-sm text-slate-500">
+                      Use these only when the uploaded source is missing period structure or needs a targeted manual adjustment.
+                    </p>
+                    <div className="mt-4 space-y-4">
+                      <PeriodForm companyId={data.company?.id ?? null} />
+                    </div>
+                  </details>
+                  <details className="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-4">
+                    <summary className="cursor-pointer list-none text-sm font-medium text-slate-900">
+                      Manual entry fallback
+                    </summary>
+                    <p className="mt-2 text-sm text-slate-500">
+                      Use manual line-by-line entry only when the uploaded source needs a targeted adjustment or a small missing row.
+                    </p>
+                    <div className="mt-4">
+                      <EntryForm
+                        companyId={data.company?.id ?? null}
+                        periods={data.periods}
+                      />
+                    </div>
+                  </details>
+                </div>
+              </section>
+
+              <section className="rounded-[1.75rem] border border-slate-200 bg-slate-50 p-5 shadow-panel">
+                <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
+                  Review Focus
+                </p>
+                <h3 className="mt-2 text-lg font-semibold text-slate-900">
+                  Current diligence posture
+                </h3>
+                <div className="mt-4 space-y-3 text-sm text-slate-600">
+                  <div className="flex items-center justify-between gap-3">
+                    <span>Current period</span>
+                    <span className="font-medium text-slate-900">
+                      {data.snapshot.label || "Not loaded"}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span>Accepted adjustments</span>
+                    <span className="font-medium text-slate-900">
+                      {formatCurrency(acceptedAddBackTotal)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span>Confidence label</span>
+                    <span className="font-medium text-slate-900">
+                      {data.dataQuality.confidenceLabel}
+                    </span>
+                  </div>
+                </div>
+              </section>
+            </aside>
           </section>
 
           <section className="space-y-4">
@@ -388,7 +512,7 @@ export function DashboardShell({ data }: DashboardShellProps) {
                 Reference
               </p>
               <h2 className="mt-2 text-xl font-semibold text-slate-900">
-                Financial Statements
+                Financial statements
               </h2>
               <p className="mt-1 text-sm text-slate-500">
                 Supporting statement detail for the latest reporting period.
@@ -397,25 +521,41 @@ export function DashboardShell({ data }: DashboardShellProps) {
 
             <div className="grid gap-6 xl:grid-cols-2">
               <StatementTable
-                title="Income Statement"
-                rows={data.incomeStatement}
-                footerLabel="Adjusted EBITDA"
-                footerValue={data.snapshot.adjustedEbitda}
-                clickableLabels={["Revenue", "COGS", "Operating Expenses", "EBITDA"]}
+                statement={
+                  data.normalizedOutput?.incomeStatement ?? {
+                    statementKey: "income_statement",
+                    title: "Income Statement",
+                    rows: [],
+                    footerLabel: "Adjusted EBITDA",
+                    footerValue: data.snapshot.adjustedEbitda
+                  }
+                }
+                footerValueDisplay={adjustedEbitdaDisplay}
+                clickableLabels={[
+                  "Revenue",
+                  "COGS",
+                  "Operating Expenses",
+                  "Reported EBITDA"
+                ]}
                 onRowClick={(label) => {
                   if (label === "Revenue") setSelectedAuditKey("revenue");
                   if (label === "COGS") setSelectedAuditKey("cogs");
                   if (label === "Operating Expenses") {
                     setSelectedAuditKey("operatingExpenses");
                   }
-                  if (label === "EBITDA") setSelectedAuditKey("ebitda");
+                  if (label === "Reported EBITDA") setSelectedAuditKey("ebitda");
                 }}
               />
               <StatementTable
-                title="Balance Sheet"
-                rows={data.balanceSheet}
-                footerLabel="Working Capital"
-                footerValue={data.snapshot.workingCapital}
+                statement={
+                  data.normalizedOutput?.balanceSheet ?? {
+                    statementKey: "balance_sheet",
+                    title: "Balance Sheet",
+                    rows: [],
+                    footerLabel: "Working Capital",
+                    footerValue: data.snapshot.workingCapital
+                  }
+                }
               />
             </div>
           </section>
