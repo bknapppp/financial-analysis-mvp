@@ -3,7 +3,34 @@ export type StatementType = "income" | "balance_sheet";
 export type NormalizedCategory =
   | "Revenue"
   | "COGS"
+  | "Gross Profit"
   | "Operating Expenses"
+  | "Depreciation / Amortization"
+  | "EBITDA"
+  | "Operating Income"
+  | "Pre-tax"
+  | "Net Income"
+  | "Tax Expense"
+  | "Non-operating"
+  | "current_assets"
+  | "current_assets.cash"
+  | "current_assets.accounts_receivable"
+  | "current_assets.inventory"
+  | "current_assets.other"
+  | "non_current_assets"
+  | "non_current_assets.ppe"
+  | "non_current_assets.other"
+  | "current_liabilities"
+  | "current_liabilities.accounts_payable"
+  | "current_liabilities.short_term_debt"
+  | "current_liabilities.other"
+  | "non_current_liabilities"
+  | "non_current_liabilities.long_term_debt"
+  | "non_current_liabilities.other"
+  | "equity"
+  | "equity.common_stock"
+  | "equity.retained_earnings"
+  | "equity.other"
   | "Assets"
   | "Liabilities"
   | "Equity";
@@ -40,7 +67,7 @@ export type FinancialEntry = {
 
 export type AccountMapping = {
   id: string;
-  company_id: string;
+  company_id: string | null;
   account_name: string;
   account_name_key: string;
   category: NormalizedCategory;
@@ -120,7 +147,7 @@ export type NormalizedStatement =
       statementKey: "income_statement";
       title: "Income Statement";
       rows: NormalizedStatementRow[];
-      footerLabel: "Adjusted EBITDA";
+      footerLabel: "Reported EBITDA" | "Adjusted EBITDA";
       footerValue: number;
     }
   | {
@@ -245,6 +272,7 @@ export type AuditMetricKey =
   | "ebitda";
 
 export type AuditMatchedBy =
+  | "memory"
   | "saved_mapping"
   | "keyword"
   | "keyword_rule"

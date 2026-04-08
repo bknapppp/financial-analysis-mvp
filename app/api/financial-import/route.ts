@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   inferStatementTypeFromCategory,
+  isBalanceSheetLeafCategory,
+  isBalanceSheetParentCategory,
   normalizeAccountName,
   parseBooleanFlag,
   parseCategory,
   parseStatementType,
-  suggestAccountMapping
+  resolveAccountMapping
 } from "@/lib/auto-mapping";
 import { isAccountMappingsSchemaError } from "@/lib/account-mapping-schema";
 import { isFinancialEntryTraceabilitySchemaError } from "@/lib/financial-entry-schema";
@@ -45,6 +47,28 @@ type ResolvedRowAssignment = {
   rowNumber: number;
   periodId: string | null;
 };
+
+function resolvePersistedCategory(params: {
+  providedCategory: NormalizedCategory | null;
+  suggestedCategory: NormalizedCategory | null;
+  statementType: StatementType | null;
+}) {
+  const { providedCategory, suggestedCategory, statementType } = params;
+
+  if (statementType !== "balance_sheet") {
+    return providedCategory ?? suggestedCategory ?? null;
+  }
+
+  if (isBalanceSheetLeafCategory(providedCategory)) {
+    return providedCategory;
+  }
+
+  if (isBalanceSheetLeafCategory(suggestedCategory)) {
+    return suggestedCategory;
+  }
+
+  return null;
+}
 
 function buildEntryKey(
   accountName: string,
@@ -343,11 +367,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { data: mappingsResult, error: mappingsError } = await supabase
-      .from("account_mappings")
-      .select("*")
-      .eq("company_id", companyId)
-      .returns<AccountMapping[]>();
+    const [{ data: companyMappingsResult, error: companyMappingsError }, { data: globalMappingsResult, error: globalMappingsError }] = await Promise.all([
+      supabase
+        .from("account_mappings")
+        .select("*")
+        .eq("company_id", companyId)
+        .returns<AccountMapping[]>(),
+      supabase
+        .from("account_mappings")
+        .select("*")
+        .is("company_id", null)
+        .returns<AccountMapping[]>()
+    ]);
+    const mappingsError = companyMappingsError ?? globalMappingsError;
 
     if (mappingsError && !isAccountMappingsSchemaError(mappingsError)) {
       console.error("Failed to load account mappings during import", {
@@ -358,7 +390,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: mappingsError.message }, { status: 500 });
     }
 
-    const savedMappings = Array.isArray(mappingsResult) ? mappingsResult : [];
+    const savedMappings = [
+      ...(Array.isArray(companyMappingsResult) ? companyMappingsResult : []),
+      ...(Array.isArray(globalMappingsResult) ? globalMappingsResult : [])
+    ];
     const periodIds = Array.from(
       new Set(
         resolvedAssignments
@@ -417,16 +452,7 @@ export async function POST(request: NextRequest) {
       confidence: string;
       mapping_explanation: string;
     }> = [];
-    const mappingsToUpsert: Array<{
-      company_id: string;
-      account_name: string;
-      account_name_key: string;
-      category: NormalizedCategory;
-      statement_type: StatementType;
-      updated_at: string;
-    }> = [];
-
-    resolvedAssignments.forEach(({ row, rowNumber, periodId }) => {
+    for (const { row, rowNumber, periodId } of resolvedAssignments) {
       const accountName =
         typeof row.accountName === "string"
           ? row.accountName.trim()
@@ -436,16 +462,47 @@ export async function POST(request: NextRequest) {
       const amount = Number(row.amount);
       const providedCategory = parseCategory(row.category);
       const providedStatementType = parseStatementType(row.statementType);
-      const suggestedMapping = suggestAccountMapping(accountName, savedMappings);
-      const category = providedCategory ?? suggestedMapping.category;
+      const suggestedMapping = await resolveAccountMapping({
+        supabase,
+        accountName,
+        savedMappings,
+        preferredStatementType: providedStatementType,
+        companyId
+      });
       const statementType =
         providedStatementType ??
         suggestedMapping.statementType ??
-        inferStatementTypeFromCategory(category);
+        inferStatementTypeFromCategory(
+          resolvePersistedCategory({
+            providedCategory,
+            suggestedCategory: suggestedMapping.category,
+            statementType: providedStatementType ?? suggestedMapping.statementType ?? null
+          })
+        );
+      const category = resolvePersistedCategory({
+        providedCategory,
+        suggestedCategory: suggestedMapping.category,
+        statementType
+      });
       const addbackFlag = parseBooleanFlag(row.addbackFlag);
       const providedMatchedBy = row.matchedBy?.trim();
       const providedConfidence = row.confidence?.trim();
       const providedExplanation = row.mappingExplanation?.trim();
+
+      if (statementType === "balance_sheet") {
+        console.log("BALANCE SHEET CATEGORY VALIDATION", {
+          account_name: accountName,
+          incomingCategory: row.category ?? null,
+          parsedCategory: providedCategory,
+          statementType,
+          isLeaf: isBalanceSheetLeafCategory(category),
+          isParent: isBalanceSheetParentCategory(category),
+          finalCategory: category,
+          providedCategory,
+          suggestedCategory: suggestedMapping.category,
+          providedWasParent: isBalanceSheetParentCategory(providedCategory)
+        });
+      }
 
       if (!accountName) {
         rejectedRows.push({
@@ -453,7 +510,7 @@ export async function POST(request: NextRequest) {
           accountName: "",
           reason: "Missing account_name"
         });
-        return;
+        continue;
       }
 
       if (!Number.isFinite(amount)) {
@@ -462,7 +519,7 @@ export async function POST(request: NextRequest) {
           accountName,
           reason: "Invalid amount"
         });
-        return;
+        continue;
       }
 
       if (!category) {
@@ -471,7 +528,7 @@ export async function POST(request: NextRequest) {
           accountName,
           reason: "Category could not be mapped"
         });
-        return;
+        continue;
       }
 
       if (!statementType) {
@@ -480,7 +537,7 @@ export async function POST(request: NextRequest) {
           accountName,
           reason: "Statement type could not be inferred"
         });
-        return;
+        continue;
       }
 
       if (!periodId) {
@@ -489,7 +546,7 @@ export async function POST(request: NextRequest) {
           accountName,
           reason: "Reporting period could not be resolved"
         });
-        return;
+        continue;
       }
 
       const entryKey = `${periodId}::${buildEntryKey(
@@ -506,7 +563,7 @@ export async function POST(request: NextRequest) {
           accountName,
           reason: "Duplicate row for this period"
         });
-        return;
+        continue;
       }
 
       existingEntryKeys.add(entryKey);
@@ -522,11 +579,11 @@ export async function POST(request: NextRequest) {
           providedMatchedBy ||
           (providedCategory || providedStatementType
             ? "csv_value"
+            : suggestedMapping.matchedBy === "memory"
+              ? "memory"
             : suggestedMapping.matchedBy === "keyword_rule"
               ? "keyword"
-              : suggestedMapping.matchedBy === "saved_mapping"
-                ? "saved_mapping"
-                : "manual"),
+              : "manual"),
         confidence:
           providedConfidence ||
           (providedCategory || providedStatementType
@@ -538,16 +595,7 @@ export async function POST(request: NextRequest) {
             ? "Using category or statement type provided in the source file."
             : suggestedMapping.explanation)
       });
-
-      mappingsToUpsert.push({
-        company_id: companyId,
-        account_name: accountName,
-        account_name_key: normalizeAccountName(accountName),
-        category,
-        statement_type: statementType,
-        updated_at: new Date().toISOString()
-      });
-    });
+    }
 
     if (rowsToInsert.length === 0) {
       return NextResponse.json(
@@ -594,21 +642,6 @@ export async function POST(request: NextRequest) {
       });
 
       return NextResponse.json({ error: insertError.message }, { status: 500 });
-    }
-
-    if (mappingsToUpsert.length > 0) {
-      const { error: mappingUpsertError } = await supabase
-        .from("account_mappings")
-        .upsert(mappingsToUpsert, {
-          onConflict: "company_id,account_name_key"
-        });
-
-      if (mappingUpsertError) {
-        console.warn("Skipping account mapping persistence after successful import.", {
-          companyId,
-          error: mappingUpsertError
-        });
-      }
     }
 
     return NextResponse.json({

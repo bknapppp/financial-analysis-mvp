@@ -21,13 +21,13 @@ export function EbitdaBridge({ bridge }: EbitdaBridgeProps) {
       <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
         <div>
           <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
-            Add-Back Bridge
+            Adjustment Bridge
           </p>
           <h3 className="mt-2 text-lg font-semibold text-slate-900">
             Adjusted EBITDA bridge
           </h3>
           <p className="mt-1 text-sm text-slate-500">
-            Reported EBITDA reconciled to accepted add-backs for {bridge.periodLabel}.
+            Reported EBITDA reconciled to accepted addbacks for {bridge.periodLabel}.
           </p>
         </div>
 
@@ -101,7 +101,7 @@ export function EbitdaBridge({ bridge }: EbitdaBridgeProps) {
           );
         })}
         <BridgeRow
-          label="Accepted add-backs"
+          label="Accepted addbacks"
           value={bridge.addBackTotal}
           accent="teal"
         />

@@ -14,7 +14,7 @@ import type {
 } from "@/lib/types";
 
 type MappingMeta = {
-  matchedBy: "saved_mapping" | "keyword" | "manual" | "csv_value";
+  matchedBy: "memory" | "saved_mapping" | "keyword" | "manual" | "csv_value";
   confidence: AuditConfidence;
   explanation: string;
 };
@@ -32,6 +32,7 @@ function toAuditMatchedBy(
   value: string | null | undefined
 ): MappingMeta["matchedBy"] | null {
   if (value === "saved_mapping") return "saved_mapping";
+  if (value === "memory") return "memory";
   if (value === "keyword" || value === "keyword_rule") return "keyword";
   if (value === "manual") return "manual";
   if (value === "csv_value" || value === "csv") return "csv_value";
@@ -69,7 +70,9 @@ export function getEntryMappingMeta(
       confidence: storedConfidence,
       explanation:
         entry.mapping_explanation?.trim() ||
-        (storedMatchedBy === "saved_mapping"
+        (storedMatchedBy === "memory"
+          ? "Previously confirmed mapping."
+          : storedMatchedBy === "saved_mapping"
           ? "Using saved mapping for this company."
           : storedMatchedBy === "keyword"
             ? "Matched via keyword rule."
@@ -82,12 +85,12 @@ export function getEntryMappingMeta(
   const savedSuggestion = suggestAccountMapping(entry.account_name, savedMappings);
 
   if (
-    savedSuggestion.matchedBy === "saved_mapping" &&
+    savedSuggestion.matchedBy === "memory" &&
     savedSuggestion.category === entry.category &&
     savedSuggestion.statementType === entry.statement_type
   ) {
     return {
-      matchedBy: "saved_mapping",
+      matchedBy: "memory",
       confidence: "high",
       explanation: savedSuggestion.explanation
     };
@@ -147,6 +150,18 @@ export function getPreviewMappingMeta({
   }
 
   const suggestion = suggestAccountMapping(accountName, savedMappings);
+
+  if (
+    suggestion.matchedBy === "memory" &&
+    suggestion.category === category &&
+    suggestion.statementType === statementType
+  ) {
+    return {
+      matchedBy: "memory",
+      confidence: "high",
+      explanation: suggestion.explanation
+    };
+  }
 
   if (
     suggestion.matchedBy === "saved_mapping" &&

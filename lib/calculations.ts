@@ -11,6 +11,22 @@ function sumAmounts(entries: FinancialEntry[]) {
   return entries.reduce((total, entry) => total + Number(entry.amount), 0);
 }
 
+function isCurrentAssetCategory(category: FinancialEntry["category"]) {
+  return (
+    category === "Assets" ||
+    category === "current_assets" ||
+    category.startsWith("current_assets.")
+  );
+}
+
+function isCurrentLiabilityCategory(category: FinancialEntry["category"]) {
+  return (
+    category === "Liabilities" ||
+    category === "current_liabilities" ||
+    category.startsWith("current_liabilities.")
+  );
+}
+
 function byCategory(entries: FinancialEntry[], category: FinancialEntry["category"]) {
   return entries.filter((entry) => entry.category === category);
 }
@@ -28,8 +44,12 @@ function calculateSnapshotForPeriod(
   const operatingExpenses = sumAmounts(
     byCategory(periodEntries, "Operating Expenses")
   );
-  const currentAssets = sumAmounts(byCategory(periodEntries, "Assets"));
-  const currentLiabilities = sumAmounts(byCategory(periodEntries, "Liabilities"));
+  const currentAssets = sumAmounts(
+    periodEntries.filter((entry) => isCurrentAssetCategory(entry.category))
+  );
+  const currentLiabilities = sumAmounts(
+    periodEntries.filter((entry) => isCurrentLiabilityCategory(entry.category))
+  );
 
   const grossProfit = revenue - cogs;
   const ebitda = grossProfit - operatingExpenses;

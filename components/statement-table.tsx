@@ -43,7 +43,9 @@ export function StatementTable({
                   <tr key={row.label}>
                     <td
                       className={`px-4 py-3 ${
-                        row.kind === "subtotal"
+                        row.rollupKey === "section_header"
+                          ? "text-xs font-semibold uppercase tracking-[0.14em] text-slate-500"
+                          : row.kind === "subtotal"
                           ? "font-semibold text-slate-900"
                           : row.kind === "metric"
                             ? "font-medium text-slate-800"
@@ -64,12 +66,14 @@ export function StatementTable({
                     </td>
                     <td
                       className={`px-4 py-3 text-right ${
-                        row.kind === "subtotal"
+                        row.rollupKey === "section_header"
+                          ? "text-slate-400"
+                          : row.kind === "subtotal"
                           ? "font-semibold text-slate-900"
                           : "font-medium text-slate-900"
                       }`}
                     >
-                      {formatCurrency(row.value)}
+                      {row.rollupKey === "section_header" ? "" : formatCurrency(row.value)}
                     </td>
                   </tr>
                 );

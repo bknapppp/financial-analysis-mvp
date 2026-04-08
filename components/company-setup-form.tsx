@@ -50,9 +50,9 @@ export function CompanySetupForm() {
       className="rounded-[1.5rem] bg-white p-5 shadow-panel"
     >
       <div className="mb-4">
-        <h2 className="text-lg font-semibold text-slate-900">Create company</h2>
+        <h2 className="text-lg font-semibold text-slate-900">Company Setup</h2>
         <p className="mt-1 text-sm text-slate-500">
-          Start with a legal entity and base currency for reporting.
+          Set the legal entity, industry, and base currency for this review file.
         </p>
       </div>
 
@@ -112,7 +112,7 @@ export function CompanySetupForm() {
         disabled={isPending}
         className="mt-4 w-full rounded-xl bg-ink px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
       >
-        {isPending ? "Saving..." : "Create company"}
+        {isPending ? "Saving..." : "Save company"}
       </button>
     </form>
   );

@@ -49,7 +49,7 @@ export function DownloadReportButton({
         ? "Preparing..."
         : status === "downloaded"
           ? "Downloaded"
-          : "Download Report"}
+          : "Export Analysis"}
     </button>
   );
 }

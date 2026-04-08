@@ -1,7 +1,8 @@
 import Papa from "papaparse";
 import {
-  isWideStatementFormat,
-  parseWideStatementMatrix
+  parseWideStatementMatrixWithDiagnostics,
+  type StatementMatrixRow,
+  type WideStatementParserDebug
 } from "@/lib/statement-parser";
 
 export type ImportFileKind = "csv" | "xlsx";
@@ -23,6 +24,9 @@ export type ParsedImportSheet = {
   name: string;
   headers: string[];
   rows: RawImportRow[];
+  debug?: {
+    wideStatement?: WideStatementParserDebug;
+  };
 };
 
 export type ParsedImportFile = {
@@ -93,13 +97,37 @@ function coerceExcelCellValue(value: unknown): string {
   return String(value).trim();
 }
 
-function buildRowsFromMatrix(matrix: string[][]) {
+function buildRowsFromMatrix(matrix: StatementMatrixRow[]) {
   if (matrix.length === 0) {
-    return { headers: [], rows: [] as RawImportRow[] };
+    return { headers: [], rows: [] as RawImportRow[], debug: undefined as ParsedImportSheet["debug"] };
   }
 
-  if (isWideStatementFormat(matrix)) {
-    const normalizedRows = parseWideStatementMatrix(matrix);
+  const { rows: normalizedRows, debug } = parseWideStatementMatrixWithDiagnostics(matrix);
+  const wideFormatDetected = debug.wideFormatDetected && normalizedRows.length > 0;
+
+  if (wideFormatDetected) {
+    const transformedRows = normalizedRows.map((row) => ({
+      "Account Name": row.account_name,
+      Amount: row.amount,
+      "Period Label": row.period_label,
+      "Period Date": row.period_date,
+      "Statement Type": row.statement_type
+    }));
+
+    console.log("IMPORT FORMAT DETECTED", {
+      format: "wide",
+      reason:
+        "Wide-format table detected and transformed into the internal long-format row shape before preview rendering.",
+      headerRowIndex: debug.headerRowIndex,
+      accountColumnIndex: debug.accountColumnIndex,
+      periodColumns: debug.detectedPeriodColumns.map((column) => ({
+        columnIndex: column.columnIndex,
+        label: column.resolvedPeriodLabel,
+        periodDate: column.resolvedPeriodDate
+      })),
+      transformedRowsGenerated: transformedRows.length,
+      sampleTransformedRow: transformedRows[0] ?? null
+    });
     const headers = [
       "Account Name",
       "Amount",
@@ -110,23 +138,35 @@ function buildRowsFromMatrix(matrix: string[][]) {
 
     return {
       headers,
-      rows: normalizedRows.map((row) => ({
-        "Account Name": row.account_name,
-        Amount: row.amount,
-        "Period Label": row.period_label,
-        "Period Date": row.period_date,
-        "Statement Type": row.statement_type
-      }))
+      rows: transformedRows,
+      debug: {
+        wideStatement: debug
+      }
     };
   }
 
+  console.log("IMPORT FORMAT DETECTED", {
+    format: "existing-long-format",
+    reason:
+      "Wide-format transformation was not applied, so the existing long-format parser remains the default path.",
+    headerRowIndex: debug.headerRowIndex,
+    accountColumnIndex: debug.accountColumnIndex,
+    periodColumns: debug.detectedPeriodColumns.map((column) => ({
+      columnIndex: column.columnIndex,
+      label: column.resolvedPeriodLabel,
+      periodDate: column.resolvedPeriodDate
+    })),
+    transformedRowsGenerated: 0
+  });
+
   const headers = dedupeHeaders(
-    matrix[0].map((header, index) => sanitizeHeader(header, index))
+    matrix[0].cells.map((header, index) => sanitizeHeader(header, index))
   );
   const rows = matrix
     .slice(1)
-    .map((cells) => {
+    .map((matrixRow) => {
       const row: RawImportRow = {};
+      const cells = matrixRow.cells;
 
       headers.forEach((header, index) => {
         row[header] = (cells[index] ?? "").trim();
@@ -136,7 +176,7 @@ function buildRowsFromMatrix(matrix: string[][]) {
     })
     .filter((row) => hasNonEmptyValue(Object.values(row)));
 
-  return { headers, rows };
+  return { headers, rows, debug: undefined };
 }
 
 export function getCellValue(row: RawImportRow, key: string) {
@@ -230,24 +270,30 @@ async function parseExcelImportFile(file: File): Promise<ParsedImportFile> {
   const sheets: ParsedImportSheet[] = [];
 
   workbook.worksheets.forEach((worksheet) => {
-    const matrix: string[][] = [];
+    const matrix: StatementMatrixRow[] = [];
+    const columnCount = Math.max(worksheet.columnCount, worksheet.actualColumnCount);
 
     worksheet.eachRow({ includeEmpty: false }, (row) => {
-      const rawValues = Array.isArray(row.values) ? row.values.slice(1) : [];
-      const values = rawValues.map((value) => coerceExcelCellValue(value));
+      const values = Array.from({ length: Math.max(columnCount, row.cellCount) }, (_, index) =>
+        coerceExcelCellValue(row.getCell(index + 1).value)
+      );
 
       if (hasNonEmptyValue(values)) {
-        matrix.push(values);
+        matrix.push({
+          sheetRowIndex: row.number,
+          cells: values
+        });
       }
     });
 
-    const { headers, rows } = buildRowsFromMatrix(matrix);
+    const { headers, rows, debug } = buildRowsFromMatrix(matrix);
 
     if (headers.length > 0) {
       sheets.push({
         name: worksheet.name,
         headers,
-        rows
+        rows,
+        debug
       });
     }
   });

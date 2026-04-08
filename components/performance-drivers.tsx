@@ -1,3 +1,5 @@
+"use client";
+
 import { formatCurrency, formatPercent } from "@/lib/formatters";
 import type { PeriodDriverAnalysis } from "@/lib/types";
 
@@ -5,10 +7,12 @@ type PerformanceDriversProps = {
   analyses: PeriodDriverAnalysis[];
 };
 
-function formatDeltaCurrency(value: number) {
-  const prefix = value > 0 ? "+" : "";
-  return `${prefix}${formatCurrency(value)}`;
-}
+type SummaryMetric = {
+  label: string;
+  percent: number | null;
+  absolute?: number;
+  tone?: "neutral" | "positive" | "negative";
+};
 
 function formatDeltaPercent(value: number | null) {
   if (value === null || !Number.isFinite(value)) {
@@ -19,151 +23,203 @@ function formatDeltaPercent(value: number | null) {
   return `${prefix}${formatPercent(value)}`;
 }
 
-function directionArrow(value: number | null) {
-  if (value === null || !Number.isFinite(value) || value === 0) {
-    return "→";
-  }
-
-  return value > 0 ? "↑" : "↓";
+function formatDeltaCurrency(value: number) {
+  const prefix = value > 0 ? "+" : "";
+  return `${prefix}${formatCurrency(value)}`;
 }
 
-function deltaTone(value: number | null) {
-  if (value === null || !Number.isFinite(value) || value === 0) {
-    return "text-slate-500";
-  }
-
-  return value > 0 ? "text-teal-700" : "text-rose-700";
+function metricToneClass(tone: SummaryMetric["tone"]) {
+  if (tone === "positive") return "text-teal-700";
+  if (tone === "negative") return "text-rose-700";
+  return "text-slate-900";
 }
 
-function signalLabel(label: string, percent: number | null, impact: number) {
-  if (label === "COGS" && impact < 0) return "pressure";
-  if (label === "OpEx" && impact < 0) return "pressure";
-  if (label === "Revenue" && impact > 0) return "improvement";
-  if (label === "EBITDA" && percent !== null && percent > 0) return "improvement";
-  if (label === "EBITDA" && percent !== null && percent < 0) return "pressure";
-  return null;
-}
-
-function buildDriverRows(analysis: PeriodDriverAnalysis) {
-  const rows = [
+function buildSummaryMetrics(analysis: PeriodDriverAnalysis): SummaryMetric[] {
+  return [
     {
-      label: "Revenue",
-      percent: analysis.revenueVariance.percent,
-      absolute: analysis.revenueVariance.absolute,
-      impact: analysis.revenueImpactOnEbitda
+      label: "Revenue change",
+      percent: analysis.revenueVariance.percent
     },
     {
-      label: "COGS",
-      percent: analysis.cogsVariance.percent,
-      absolute: analysis.cogsVariance.absolute,
-      impact: analysis.cogsImpactOnEbitda
+      label: "COGS change",
+      percent: analysis.cogsVariance.percent
     },
     {
-      label: "OpEx",
-      percent: analysis.operatingExpensesVariance.percent,
-      absolute: analysis.operatingExpensesVariance.absolute,
-      impact: analysis.operatingExpenseImpactOnEbitda
+      label: "Operating Expenses change",
+      percent: analysis.operatingExpensesVariance.percent
     },
     {
-      label: "EBITDA",
-      percent: analysis.ebitdaVariance.percent,
+      label: "EBITDA impact",
+      percent: null,
       absolute: analysis.ebitdaVariance.absolute,
-      impact: analysis.ebitdaVariance.absolute
+      tone:
+        analysis.ebitdaVariance.absolute > 0
+          ? "positive"
+          : analysis.ebitdaVariance.absolute < 0
+            ? "negative"
+            : "neutral"
+    }
+  ];
+}
+
+function buildDriverHighlights(analysis: PeriodDriverAnalysis) {
+  const highlights = [
+    {
+      weight: Math.abs(analysis.revenueImpactOnEbitda),
+      text:
+        analysis.revenueImpactOnEbitda >= 0
+          ? `Revenue supported EBITDA by ${formatDeltaCurrency(
+              analysis.revenueImpactOnEbitda
+            )} versus ${analysis.previousLabel}.`
+          : `Revenue reduced EBITDA by ${formatDeltaCurrency(
+              analysis.revenueImpactOnEbitda
+            )} versus ${analysis.previousLabel}.`
+    },
+    {
+      weight: Math.abs(analysis.cogsImpactOnEbitda),
+      text:
+        analysis.cogsImpactOnEbitda >= 0
+          ? `Direct cost performance improved EBITDA by ${formatDeltaCurrency(
+              analysis.cogsImpactOnEbitda
+            )}.`
+          : `Direct cost pressure reduced EBITDA by ${formatDeltaCurrency(
+              analysis.cogsImpactOnEbitda
+            )}.`
+    },
+    {
+      weight: Math.abs(analysis.operatingExpenseImpactOnEbitda),
+      text:
+        analysis.operatingExpenseImpactOnEbitda >= 0
+          ? `Operating expense discipline improved EBITDA by ${formatDeltaCurrency(
+              analysis.operatingExpenseImpactOnEbitda
+            )}.`
+          : `Operating expense growth reduced EBITDA by ${formatDeltaCurrency(
+              analysis.operatingExpenseImpactOnEbitda
+            )}.`
+    },
+    {
+      weight: Math.abs(analysis.ebitdaVariance.absolute),
+      text: `EBITDA changed ${formatDeltaCurrency(
+        analysis.ebitdaVariance.absolute
+      )} (${formatDeltaPercent(analysis.ebitdaVariance.percent)}) from ${
+        analysis.previousLabel
+      } to ${analysis.currentLabel}.`
     }
   ];
 
-  const contributorRows = rows
-    .filter((row) => row.label !== "EBITDA")
-    .sort((left, right) => Math.abs(right.impact) - Math.abs(left.impact));
-  const ebitdaRow = rows.find((row) => row.label === "EBITDA");
-
-  return ebitdaRow ? [...contributorRows, ebitdaRow] : contributorRows;
+  return highlights
+    .sort((left, right) => right.weight - left.weight)
+    .slice(0, 4)
+    .map((highlight) => highlight.text);
 }
 
 export function PerformanceDrivers({ analyses }: PerformanceDriversProps) {
+  const latestAnalysis = analyses[analyses.length - 1] ?? null;
+
   return (
     <section className="rounded-[1.75rem] bg-white p-5 shadow-panel">
       <div className="mb-4">
         <h2 className="text-lg font-semibold text-slate-900">
-          Performance Drivers
+          Key Performance Drivers
         </h2>
         <p className="mt-1 text-sm text-slate-500">
-          Driver-based explanation of what changed between reporting periods.
+          Concise view of the operating movements driving recent period performance.
         </p>
       </div>
 
-      {analyses.length > 0 ? (
-        <div className="space-y-4">
-          {analyses.map((analysis) => (
-            <article
-              key={`${analysis.previousLabel}-${analysis.currentLabel}`}
-              className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
-            >
-              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                <h3 className="text-sm font-semibold text-slate-900">
-                  {analysis.previousLabel} to {analysis.currentLabel}
-                </h3>
-                <p className="text-sm text-slate-500">
-                  EBITDA change: {formatDeltaCurrency(analysis.ebitdaVariance.absolute)} (
-                  {formatDeltaPercent(analysis.ebitdaVariance.percent)})
+      {latestAnalysis ? (
+        <div className="space-y-5">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <p className="text-sm font-medium text-slate-900">
+              {latestAnalysis.previousLabel} to {latestAnalysis.currentLabel}
+            </p>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {buildSummaryMetrics(latestAnalysis).map((metric) => (
+              <article
+                key={metric.label}
+                className="rounded-2xl border border-slate-200 bg-white px-4 py-4"
+              >
+                <p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">
+                  {metric.label}
                 </p>
-              </div>
+                <p
+                  className={`mt-3 text-2xl font-semibold ${metricToneClass(metric.tone)}`}
+                >
+                  {metric.absolute !== undefined
+                    ? formatDeltaCurrency(metric.absolute)
+                    : formatDeltaPercent(metric.percent)}
+                </p>
+              </article>
+            ))}
+          </div>
 
-              <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white">
-                <div className="grid grid-cols-[1.1fr_0.8fr_0.55fr_0.9fr] gap-3 border-b border-slate-200 px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">
-                  <span>Driver</span>
-                  <span className="text-right">Change</span>
-                  <span className="text-right">Dir</span>
-                  <span className="text-right">Signal</span>
-                </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+            <h3 className="text-sm font-semibold text-slate-900">Driver highlights</h3>
+            <ul className="mt-3 space-y-2 text-sm text-slate-600">
+              {buildDriverHighlights(latestAnalysis).map((highlight) => (
+                <li key={highlight} className="flex gap-2">
+                  <span className="text-slate-400">•</span>
+                  <span>{highlight}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
 
-                <div className="divide-y divide-slate-100">
-                  {buildDriverRows(analysis).map((row) => {
-                    const signal = signalLabel(row.label, row.percent, row.impact);
+          {analyses.length > 0 ? (
+            <details className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <summary className="cursor-pointer list-none text-sm font-medium text-slate-900">
+                View Detailed Trends
+              </summary>
+              <div className="mt-4 space-y-4">
+                {analyses.map((analysis) => (
+                  <div
+                    key={`${analysis.previousLabel}-${analysis.currentLabel}`}
+                    className="rounded-2xl border border-slate-200 bg-white p-4"
+                  >
+                    <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                      <h4 className="text-sm font-semibold text-slate-900">
+                        {analysis.previousLabel} to {analysis.currentLabel}
+                      </h4>
+                      <p className="text-sm text-slate-500">
+                        EBITDA impact:{" "}
+                        <span className="font-medium text-slate-900">
+                          {formatDeltaCurrency(analysis.ebitdaVariance.absolute)}
+                        </span>
+                      </p>
+                    </div>
 
-                    return (
-                      <div
-                        key={`${analysis.previousLabel}-${analysis.currentLabel}-${row.label}`}
-                        className="grid grid-cols-[1.1fr_0.8fr_0.55fr_0.9fr] items-center gap-3 px-4 py-3"
-                      >
-                        <div>
-                          <p className="text-sm font-medium text-slate-900">{row.label}</p>
-                          <p className="mt-1 text-xs text-slate-500">
-                            {formatDeltaCurrency(row.absolute)}
+                    <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                      {buildSummaryMetrics(analysis).map((metric) => (
+                        <div
+                          key={`${analysis.previousLabel}-${analysis.currentLabel}-${metric.label}`}
+                          className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3"
+                        >
+                          <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                            {metric.label}
+                          </p>
+                          <p
+                            className={`mt-2 text-lg font-semibold ${metricToneClass(
+                              metric.tone
+                            )}`}
+                          >
+                            {metric.absolute !== undefined
+                              ? formatDeltaCurrency(metric.absolute)
+                              : formatDeltaPercent(metric.percent)}
                           </p>
                         </div>
-                        <p className={`text-right text-sm font-semibold ${deltaTone(row.percent)}`}>
-                          {formatDeltaPercent(row.percent)}
-                        </p>
-                        <p className={`text-right text-sm font-semibold ${deltaTone(row.percent)}`}>
-                          {directionArrow(row.percent)}
-                        </p>
-                        <div className="flex justify-end">
-                          {signal ? (
-                            <span
-                              className={`rounded-full px-2 py-1 text-xs font-medium ${
-                                signal === "improvement"
-                                  ? "bg-teal-100 text-teal-800"
-                                  : "bg-amber-100 text-amber-800"
-                              }`}
-                            >
-                              {signal}
-                            </span>
-                          ) : (
-                            <span className="text-xs text-slate-400">-</span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
-            </article>
-          ))}
+            </details>
+          ) : null}
         </div>
       ) : (
         <div className="rounded-2xl border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500">
-          Add at least two reporting periods to see performance drivers.
+          Add at least two reporting periods to review performance drivers.
         </div>
       )}
     </section>

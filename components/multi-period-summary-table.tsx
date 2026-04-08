@@ -5,15 +5,44 @@ type MultiPeriodSummaryTableProps = {
   snapshots: PeriodSnapshot[];
 };
 
-function formatDelta(value: number | null, kind: "percent" | "points") {
-  if (value === null || !Number.isFinite(value)) {
-    return "-";
-  }
+type MetricRow = {
+  label: string;
+  value: (snapshot: PeriodSnapshot) => number;
+  format: "currency" | "percent";
+  highlightExtremes?: boolean;
+};
 
-  const prefix = value > 0 ? "+" : "";
-  return kind === "points"
-    ? `${prefix}${value.toFixed(1)} pts`
-    : `${prefix}${formatPercent(value)}`;
+const METRIC_ROWS: MetricRow[] = [
+  {
+    label: "Revenue",
+    value: (snapshot) => snapshot.revenue,
+    format: "currency"
+  },
+  {
+    label: "COGS",
+    value: (snapshot) => snapshot.cogs,
+    format: "currency"
+  },
+  {
+    label: "Gross Profit",
+    value: (snapshot) => snapshot.grossProfit,
+    format: "currency"
+  },
+  {
+    label: "EBITDA",
+    value: (snapshot) => snapshot.ebitda,
+    format: "currency"
+  },
+  {
+    label: "EBITDA Margin (%)",
+    value: (snapshot) => snapshot.ebitdaMarginPercent,
+    format: "percent",
+    highlightExtremes: true
+  }
+];
+
+function formatMetricValue(value: number, format: MetricRow["format"]) {
+  return format === "currency" ? formatCurrency(value) : formatPercent(value);
 }
 
 export function MultiPeriodSummaryTable({
@@ -26,7 +55,7 @@ export function MultiPeriodSummaryTable({
           Multi-period summary
         </h2>
         <p className="mt-1 text-sm text-slate-500">
-          Period-level profitability and change versus the prior month.
+          Horizontal period comparison for the core operating metrics most relevant to diligence review.
         </p>
       </div>
 
@@ -34,59 +63,69 @@ export function MultiPeriodSummaryTable({
         <table className="min-w-full divide-y divide-slate-200 text-sm">
           <thead className="bg-slate-50">
             <tr>
-              <th className="px-3 py-2 text-left font-medium text-slate-500">Period</th>
-              <th className="px-3 py-2 text-right font-medium text-slate-500">Revenue</th>
-              <th className="px-3 py-2 text-right font-medium text-slate-500">Gross Profit</th>
-              <th className="px-3 py-2 text-right font-medium text-slate-500">Gross Margin %</th>
-              <th className="px-3 py-2 text-right font-medium text-slate-500">OpEx</th>
-              <th className="px-3 py-2 text-right font-medium text-slate-500">EBITDA</th>
-              <th className="px-3 py-2 text-right font-medium text-slate-500">EBITDA Margin %</th>
-              <th className="px-3 py-2 text-right font-medium text-slate-500">Revenue Growth</th>
-              <th className="px-3 py-2 text-right font-medium text-slate-500">EBITDA Growth</th>
-              <th className="px-3 py-2 text-right font-medium text-slate-500">Gross Margin Change</th>
-              <th className="px-3 py-2 text-right font-medium text-slate-500">EBITDA Margin Change</th>
+              <th className="sticky left-0 bg-slate-50 px-4 py-3 text-left font-medium text-slate-500">
+                Metric
+              </th>
+              {snapshots.length > 0 ? (
+                snapshots.map((snapshot) => (
+                  <th
+                    key={snapshot.periodId}
+                    className="px-4 py-3 text-right font-medium text-slate-500"
+                  >
+                    {snapshot.label}
+                  </th>
+                ))
+              ) : (
+                <th className="px-4 py-3 text-center font-medium text-slate-500">
+                  No periods loaded
+                </th>
+              )}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 bg-white">
             {snapshots.length > 0 ? (
-              snapshots.map((snapshot) => (
-                <tr key={snapshot.periodId}>
-                  <td className="px-3 py-2 text-slate-900">{snapshot.label}</td>
-                  <td className="px-3 py-2 text-right text-slate-700">
-                    {formatCurrency(snapshot.revenue)}
-                  </td>
-                  <td className="px-3 py-2 text-right text-slate-700">
-                    {formatCurrency(snapshot.grossProfit)}
-                  </td>
-                  <td className="px-3 py-2 text-right text-slate-700">
-                    {formatPercent(snapshot.grossMarginPercent)}
-                  </td>
-                  <td className="px-3 py-2 text-right text-slate-700">
-                    {formatCurrency(snapshot.operatingExpenses)}
-                  </td>
-                  <td className="px-3 py-2 text-right text-slate-700">
-                    {formatCurrency(snapshot.ebitda)}
-                  </td>
-                  <td className="px-3 py-2 text-right text-slate-700">
-                    {formatPercent(snapshot.ebitdaMarginPercent)}
-                  </td>
-                  <td className="px-3 py-2 text-right text-slate-700">
-                    {formatDelta(snapshot.revenueGrowthPercent, "percent")}
-                  </td>
-                  <td className="px-3 py-2 text-right text-slate-700">
-                    {formatDelta(snapshot.ebitdaGrowthPercent, "percent")}
-                  </td>
-                  <td className="px-3 py-2 text-right text-slate-700">
-                    {formatDelta(snapshot.grossMarginChange, "points")}
-                  </td>
-                  <td className="px-3 py-2 text-right text-slate-700">
-                    {formatDelta(snapshot.ebitdaMarginChange, "points")}
-                  </td>
-                </tr>
-              ))
+              METRIC_ROWS.map((metric) => {
+                const values = snapshots.map((snapshot) => metric.value(snapshot));
+                const highestValue = metric.highlightExtremes
+                  ? Math.max(...values)
+                  : null;
+                const lowestValue = metric.highlightExtremes
+                  ? Math.min(...values)
+                  : null;
+
+                return (
+                  <tr key={metric.label}>
+                    <th className="sticky left-0 bg-white px-4 py-3 text-left font-medium text-slate-900">
+                      {metric.label}
+                    </th>
+                    {snapshots.map((snapshot) => {
+                      const value = metric.value(snapshot);
+                      const isHighest =
+                        metric.highlightExtremes && highestValue !== null && value === highestValue;
+                      const isLowest =
+                        metric.highlightExtremes && lowestValue !== null && value === lowestValue;
+
+                      return (
+                        <td
+                          key={`${metric.label}-${snapshot.periodId}`}
+                          className={`px-4 py-3 text-right ${
+                            isHighest
+                              ? "bg-teal-50 font-semibold text-teal-800"
+                              : isLowest
+                                ? "bg-rose-50 font-semibold text-rose-800"
+                                : "text-slate-700"
+                          }`}
+                        >
+                          {formatMetricValue(value, metric.format)}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })
             ) : (
               <tr>
-                <td colSpan={11} className="px-4 py-8 text-center text-slate-500">
+                <td colSpan={2} className="px-4 py-8 text-center text-slate-500">
                   Add multiple reporting periods to unlock trend analysis.
                 </td>
               </tr>

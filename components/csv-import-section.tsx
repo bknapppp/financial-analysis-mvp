@@ -1,11 +1,20 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import {
+  Fragment,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useState,
+  useTransition
+} from "react";
 import { useRouter } from "next/navigation";
 import { normalizeAccountName, parseBooleanFlag } from "@/lib/auto-mapping";
 import {
   buildImportAccountReviewRows,
-  buildImportPreviewRows
+  buildGroupedImportPreviewRows,
+  buildImportPreviewRows,
+  isNonBlockingDerivedLabel
 } from "@/lib/import-mapping";
 import {
   buildInitialColumnMapping,
@@ -17,7 +26,8 @@ import {
 } from "@/lib/import-preview";
 import {
   detectImportPeriods,
-  matchDetectedPeriodsToExisting
+  matchDetectedPeriodsToExisting,
+  normalizeImportedPeriod
 } from "@/lib/import-periods";
 import type {
   AccountMapping,
@@ -27,17 +37,45 @@ import type {
   StatementType
 } from "@/lib/types";
 import { SaveMappingButton } from "@/components/save-mapping-button";
+import { StepBasedImportFlow } from "@/components/step-based-import-flow";
 
 type CsvImportSectionProps = {
   companies: Company[];
   initialCompanyId: string | null;
   initialPeriods: ReportingPeriod[];
+  companySetupSlot?: ReactNode;
+  advancedToolsSlot?: ReactNode;
 };
+
+type PreviewFilter =
+  | "all"
+  | "review_required"
+  | "unmapped"
+  | "low_confidence"
+  | "saved_mapping"
+  | "rule_based";
 
 const CATEGORY_OPTIONS: NormalizedCategory[] = [
   "Revenue",
   "COGS",
+  "Gross Profit",
   "Operating Expenses",
+  "Depreciation / Amortization",
+  "EBITDA",
+  "Operating Income",
+  "Pre-tax",
+  "Net Income",
+  "Tax Expense",
+  "Non-operating",
+  "current_assets.cash",
+  "current_assets.accounts_receivable",
+  "current_assets.inventory",
+  "non_current_assets.ppe",
+  "current_liabilities.accounts_payable",
+  "current_liabilities.short_term_debt",
+  "non_current_liabilities.long_term_debt",
+  "equity.common_stock",
+  "equity.retained_earnings",
   "Assets",
   "Liabilities",
   "Equity"
@@ -60,10 +98,29 @@ const COLUMN_FIELDS: Array<{
 ];
 
 function matchedByClass(value: string) {
+  if (value === "memory") return "bg-emerald-100 text-emerald-800";
   if (value === "saved_mapping") return "bg-teal-100 text-teal-800";
   if (value === "keyword") return "bg-sky-100 text-sky-800";
   if (value === "csv_value") return "bg-violet-100 text-violet-800";
   return "bg-amber-100 text-amber-800";
+}
+
+function memoryScopeText(value: "company" | "global" | null | undefined) {
+  if (value === "company") return "From Saved Mapping (Company)";
+  if (value === "global") return "From Saved Mapping (Global)";
+  return "From Saved Mapping";
+}
+
+function memoryScopeDetail(value: "company" | "global" | null | undefined) {
+  if (value === "company") {
+    return "Previously confirmed mapping for this company";
+  }
+
+  if (value === "global") {
+    return "Previously confirmed mapping used across companies";
+  }
+
+  return "Previously confirmed saved mapping";
 }
 
 function confidenceClass(value: string) {
@@ -72,7 +129,11 @@ function confidenceClass(value: string) {
   return "bg-rose-100 text-rose-800";
 }
 
-function formatMatchedBy(value: string) {
+function formatMatchedBy(
+  value: string,
+  memoryScope?: "company" | "global" | null
+) {
+  if (value === "memory") return memoryScopeText(memoryScope);
   if (value === "saved_mapping") return "Saved mapping";
   if (value === "keyword") return "Keyword match";
   if (value === "csv_value") return "Source value";
@@ -85,13 +146,92 @@ function formatConfidence(value: string) {
   return "Low confidence";
 }
 
+function groupedPreviewStatus(row: {
+  needsReview: boolean;
+  category: string;
+  statementType: string;
+  confidence: string;
+  matchedBy: string;
+  isExcluded?: boolean;
+  isNonBlocking?: boolean;
+}) {
+  if (row.isExcluded) return "Excluded";
+  if ((!row.category || !row.statementType) && row.isNonBlocking) return "Non-blocking";
+  if (!row.category || !row.statementType) return "Unmapped";
+  if (row.confidence === "low") return "Low Confidence";
+  if (row.matchedBy === "memory" || row.matchedBy === "saved_mapping") {
+    return "Saved Mapping";
+  }
+  if (row.matchedBy === "keyword") return "Rule-Based";
+  if (row.needsReview) return "Review Required";
+  return "Confirmed";
+}
+
+function statusClass(status: string) {
+  if (status === "Confirmed") return "bg-teal-100 text-teal-800";
+  if (status === "Saved Mapping") return "bg-emerald-100 text-emerald-800";
+  if (status === "Rule-Based") return "bg-sky-100 text-sky-800";
+  if (status === "Low Confidence") return "bg-rose-100 text-rose-800";
+  if (status === "Unmapped") return "bg-rose-100 text-rose-800";
+  return "bg-amber-100 text-amber-800";
+}
+
+function isParentBalanceSheetCategory(value: string) {
+  return [
+    "Assets",
+    "Liabilities",
+    "Equity",
+    "current_assets",
+    "non_current_assets",
+    "current_liabilities",
+    "non_current_liabilities",
+    "equity"
+  ].includes(value);
+}
+
+function buildCanonicalPreviewPeriod(params: {
+  periodLabel: string;
+  periodDate: string;
+}) {
+  const normalized = normalizeImportedPeriod({
+    periodLabel: params.periodLabel,
+    periodDate: params.periodDate
+  });
+
+  if (normalized) {
+    return {
+      key: normalized.key,
+      label: normalized.label,
+      periodDate: normalized.periodDate
+    };
+  }
+
+  return {
+    key: `${params.periodDate || ""}::${params.periodLabel || ""}`,
+    label: params.periodLabel || "Unlabeled period",
+    periodDate: params.periodDate || ""
+  };
+}
+
 export function CsvImportSection({
   companies,
   initialCompanyId,
-  initialPeriods
+  initialPeriods,
+  companySetupSlot,
+  advancedToolsSlot
 }: CsvImportSectionProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [expandedPreviewAccountKey, setExpandedPreviewAccountKey] = useState<string | null>(
+    null
+  );
+  const [activeStep, setActiveStep] = useState<1 | 2 | 3 | 4>(1);
+  const [previewFilter, setPreviewFilter] = useState<PreviewFilter>("all");
+  const [reviewMode, setReviewMode] = useState(false);
+  const [excludedAccountKeys, setExcludedAccountKeys] = useState<string[]>([]);
+  const [nonBlockingOverrides, setNonBlockingOverrides] = useState<Record<string, boolean>>(
+    {}
+  );
   const [selectedCompanyId, setSelectedCompanyId] = useState(initialCompanyId ?? "");
   const [periods, setPeriods] = useState(initialPeriods);
   const [selectedPeriodId, setSelectedPeriodId] = useState(
@@ -181,6 +321,19 @@ export function CsvImportSection({
     void loadCompanyContext(selectedCompanyId);
   }, [selectedCompanyId]);
 
+  useEffect(() => {
+    if (!parsedFile) {
+      setActiveStep(1);
+      setExcludedAccountKeys([]);
+      setNonBlockingOverrides({});
+      return;
+    }
+
+    if (activeStep === 1) {
+      setActiveStep(2);
+    }
+  }, [activeStep, parsedFile]);
+
   const selectedSheet = useMemo(() => {
     if (!parsedFile) {
       return null;
@@ -196,6 +349,38 @@ export function CsvImportSection({
   const selectedPeriod = useMemo(
     () => periods.find((period) => period.id === selectedPeriodId) ?? null,
     [periods, selectedPeriodId]
+  );
+  const fallbackPreviewPeriod = useMemo(() => {
+    if (periodFallbackMode === "existing") {
+      return selectedPeriod
+        ? {
+            label: selectedPeriod.label,
+            periodDate: selectedPeriod.period_date
+          }
+        : null;
+    }
+
+    if (newPeriodLabel && newPeriodDate) {
+      return {
+        label: newPeriodLabel,
+        periodDate: newPeriodDate
+      };
+    }
+
+    return null;
+  }, [
+    newPeriodDate,
+    newPeriodLabel,
+    periodFallbackMode,
+    selectedPeriod
+  ]);
+  const structurePreviewRows = useMemo(
+    () => selectedSheet?.rows ?? [],
+    [selectedSheet]
+  );
+  const structurePreviewHeaders = useMemo(
+    () => selectedSheet?.headers ?? [],
+    [selectedSheet]
   );
   useEffect(() => {
     if (!parsedFile) {
@@ -227,14 +412,20 @@ export function CsvImportSection({
 
   const previewRows = useMemo(
     () =>
-      selectedSheet
-        ? buildImportPreviewRows({
-            rows: selectedSheet.rows,
-            columnMapping,
-            savedMappings
-          })
-        : [],
-    [columnMapping, savedMappings, selectedSheet]
+      buildImportPreviewRows({
+        companyId: selectedCompanyId || null,
+        rows: structurePreviewRows,
+        columnMapping,
+        savedMappings,
+        fallbackPeriod: fallbackPreviewPeriod
+      }),
+    [
+      columnMapping,
+      fallbackPreviewPeriod,
+      savedMappings,
+      selectedCompanyId,
+      structurePreviewRows
+    ]
   );
   const detectedPeriods = useMemo(() => {
     const detection = detectImportPeriods(previewRows);
@@ -245,19 +436,163 @@ export function CsvImportSection({
     };
   }, [periods, previewRows]);
 
+  const reviewedPreviewRows = useMemo(() => {
+    const excludedSet = new Set(excludedAccountKeys);
+
+    return previewRows.map((row) => {
+      const override = nonBlockingOverrides[row.accountKey];
+      const isExcluded = excludedSet.has(row.accountKey);
+      const isNonBlocking =
+        override ?? row.isNonBlocking ?? isNonBlockingDerivedLabel(row.normalizedLabel);
+      const isMapped = Boolean(row.category && row.statementType);
+      const needsReview =
+        isExcluded ? false : (!isMapped && !isNonBlocking) || row.confidence === "low";
+
+      return {
+        ...row,
+        isExcluded,
+        isNonBlocking,
+        needsReview
+      };
+    });
+  }, [excludedAccountKeys, nonBlockingOverrides, previewRows]);
+
   const accountReviewRows = useMemo(
-    () => buildImportAccountReviewRows(previewRows),
-    [previewRows]
+    () => buildImportAccountReviewRows(reviewedPreviewRows),
+    [reviewedPreviewRows]
   );
+  const groupedPreviewRows = useMemo(
+    () => buildGroupedImportPreviewRows(reviewedPreviewRows),
+    [reviewedPreviewRows]
+  );
+  const previewPeriodColumns = useMemo(() => {
+    const detected = detectedPeriods.periods.map((period) => ({
+      key: period.key,
+      label: period.label,
+      periodDate: period.periodDate
+    }));
+
+    const groupedFallback = groupedPreviewRows.flatMap((row) =>
+      row.periods.map((period) =>
+        buildCanonicalPreviewPeriod({
+          periodLabel: period.periodLabel || "",
+          periodDate: period.periodDate || ""
+        })
+      )
+    );
+
+    const unique = new Map<string, { key: string; label: string; periodDate: string }>();
+    const derivedGroupedPeriodListBeforeDedup = groupedFallback.map((period) => period.key);
+
+    [...detected, ...groupedFallback].forEach((period) => {
+      if (!unique.has(period.key)) {
+        unique.set(period.key, period);
+      }
+    });
+
+    const dedupedPeriods = Array.from(unique.values()).sort((left, right) =>
+      (left.periodDate || left.label).localeCompare(right.periodDate || right.label)
+    );
+    console.log("PREVIEW PERIOD CANONICALIZATION", {
+      derivedGroupedPeriodListBeforeDedup,
+      groupedPeriodListAfterDedup: dedupedPeriods.map((period) => period.key),
+      sampleGroupedRowValuesByCanonicalPeriod:
+        groupedPreviewRows[0]?.periods.map((period) => ({
+          accountName: groupedPreviewRows[0]?.accountName ?? "",
+          originalLabel: period.periodLabel,
+          originalDate: period.periodDate,
+          canonicalPeriodKey: buildCanonicalPreviewPeriod({
+            periodLabel: period.periodLabel || "",
+            periodDate: period.periodDate || ""
+          }).key,
+          amountText: period.amountText
+        })) ?? []
+    });
+
+    return dedupedPeriods;
+  }, [detectedPeriods.periods, groupedPreviewRows]);
+  const previewSummary = useMemo(() => {
+    const accountsDetected = groupedPreviewRows.length;
+    const mappedAccounts = groupedPreviewRows.filter(
+      (row) => row.category && row.statementType && !row.needsReview
+    ).length;
+    const accountsUnderReview = groupedPreviewRows.filter((row) => {
+      const isMapped = Boolean(row.category && row.statementType);
+      return !isMapped && !row.isExcluded && !row.isNonBlocking;
+    }).length;
+
+    return {
+      accountsDetected,
+      periodsDetected: previewPeriodColumns.length,
+      mappedAccounts,
+      accountsUnderReview
+    };
+  }, [groupedPreviewRows, previewPeriodColumns.length]);
+
+  useEffect(() => {
+    console.log("STRUCTURE PREVIEW UPDATED");
+    console.log("structurePreviewRows.length", structurePreviewRows.length);
+    console.log("firstStructurePreviewRow", structurePreviewRows[0] ?? null);
+  }, [selectedSheet, structurePreviewRows]);
+
+  useEffect(() => {
+    console.log("PREVIEW ROWS UPDATED");
+    console.log("previewRows.length", previewRows.length);
+    console.log("firstPreviewRow", previewRows[0] ?? null);
+
+    const validRows = previewRows.filter((row) => {
+      const hasAccount = !!row.accountName?.trim();
+      const hasAmount = row.amountValue !== null && row.amountValue !== undefined;
+      const hasPeriod = !!(row.sourcePeriodLabel || row.sourcePeriodDate);
+
+      return hasAccount && hasAmount && hasPeriod;
+    });
+
+    console.log("validRowsBeforeGrouping", validRows.length);
+    console.log("sampleValidRow", validRows[0] ?? null);
+    console.log(
+      "rowsMissingPeriod",
+      previewRows.filter((row) => !row.sourcePeriodLabel && !row.sourcePeriodDate)
+        .length
+    );
+  }, [selectedSheet, structurePreviewRows, previewRows]);
+
+  useEffect(() => {
+    console.log("GROUPED ROWS UPDATED");
+    console.log("groupedPreviewRows.length", groupedPreviewRows.length);
+    console.log("firstGroupedRow", groupedPreviewRows[0] ?? null);
+    console.log("groupingInputRows", previewRows.slice(0, 5));
+  }, [selectedSheet, previewRows, groupedPreviewRows]);
+  const filteredPreviewRows = useMemo(() => {
+    return groupedPreviewRows.filter((row) => {
+      const status = groupedPreviewStatus(row);
+      const requiresAttention =
+        ((!row.category || !row.statementType) && !row.isExcluded && !row.isNonBlocking) ||
+        status === "Low Confidence" ||
+        status === "Review Required";
+
+      if (reviewMode && !requiresAttention) {
+        return false;
+      }
+
+      if (previewFilter === "all") return true;
+      if (previewFilter === "review_required") return requiresAttention;
+      if (previewFilter === "unmapped") return status === "Unmapped";
+      if (previewFilter === "low_confidence") return status === "Low Confidence";
+      if (previewFilter === "saved_mapping") return status === "Saved Mapping";
+      if (previewFilter === "rule_based") return status === "Rule-Based";
+      return true;
+    });
+  }, [groupedPreviewRows, previewFilter, reviewMode]);
 
   const previewStats = useMemo(() => {
-    const total = previewRows.length;
-    const ready = previewRows.filter((row) => !row.needsReview).length;
+    const total = reviewedPreviewRows.length;
+    const ready = reviewedPreviewRows.filter((row) => !row.needsReview).length;
     const needsReview = total - ready;
-    const lowConfidence = previewRows.filter((row) => row.confidence === "low").length;
+    const lowConfidence = reviewedPreviewRows.filter((row) => row.confidence === "low").length;
 
     return { total, ready, needsReview, lowConfidence };
-  }, [previewRows]);
+  }, [reviewedPreviewRows]);
 
   const sourcePeriodNotice = useMemo(() => {
     if (detectedPeriods.periods.length > 0) {
@@ -270,6 +605,9 @@ export function CsvImportSection({
 
     return null;
   }, [detectedPeriods.periods.length, previewRows]);
+  const wideStatementDebug = selectedSheet?.debug?.wideStatement;
+  const showParserDebug =
+    process.env.NODE_ENV !== "production" && Boolean(wideStatementDebug);
 
   async function handleFileUpload(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -351,29 +689,105 @@ export function CsvImportSection({
     setSuccessMessage(null);
     setImportSummary(null);
 
-    const payload = {
-      companyId: selectedCompanyId,
-      periodId: periodFallbackMode === "existing" ? selectedPeriodId : "",
-      createPeriod:
-        periodFallbackMode === "new" && newPeriodLabel && newPeriodDate
+    const droppedRows: Array<{
+      accountName: string;
+      reason: string;
+      periodLabel?: string;
+      periodDate?: string;
+    }> = [];
+
+    const importRows = groupedPreviewRows
+      .filter((row) => {
+        if (row.isExcluded) {
+          droppedRows.push({
+            accountName: row.accountName,
+            reason: "excluded"
+          });
+          return false;
+        }
+
+        if (!row.category || !row.statementType) {
+          droppedRows.push({
+            accountName: row.accountName,
+            reason: "missing_mapping"
+          });
+          return false;
+        }
+
+        return true;
+      })
+      .flatMap((row) =>
+        row.periods.flatMap((period: {
+          rowNumber: number;
+          periodLabel: string;
+          periodDate: string;
+          amountText: string;
+          amountValue: number | null;
+        }) => {
+          if (period.amountValue === null || period.amountValue === undefined) {
+            droppedRows.push({
+              accountName: row.accountName,
+              reason: "invalid_amount",
+              periodLabel: period.periodLabel,
+              periodDate: period.periodDate
+            });
+            return [];
+          }
+
+          if (!period.periodLabel && !period.periodDate) {
+            droppedRows.push({
+              accountName: row.accountName,
+              reason: "missing_period",
+              periodLabel: period.periodLabel,
+              periodDate: period.periodDate
+            });
+            return [];
+          }
+
+          return [
+            {
+              accountName: row.accountName,
+              amount: period.amountValue,
+              periodLabel: period.periodLabel || null,
+              periodDate: period.periodDate || null,
+              statementType: row.statementType || null,
+              category: row.category || null,
+              addbackFlag: false,
+              matchedBy: row.matchedBy,
+              confidence: row.confidence,
+              mappingExplanation: row.mappingExplanation
+            }
+          ];
+        })
+      );
+
+    console.log("STEP 4 IMPORT TRANSFORM", {
+      groupedPreviewRowsCount: groupedPreviewRows.length,
+      rowsAfterFiltering: importRows.length,
+      finalNormalizedCategories: importRows.map((row) => ({
+        accountName: row.accountName,
+        normalizedCategory: row.category,
+        categoryLevel: isParentBalanceSheetCategory(String(row.category ?? ""))
+          ? "parent"
+          : "leaf"
+      })),
+      droppedRows
+    });
+
+      const payload = {
+        companyId: selectedCompanyId,
+        periodId: periodFallbackMode === "existing" ? selectedPeriodId : "",
+        createPeriod:
+          periodFallbackMode === "new" && newPeriodLabel && newPeriodDate
           ? {
               label: newPeriodLabel,
-              periodDate: newPeriodDate
-            }
-          : undefined,
-      rows: previewRows.map((row) => ({
-        accountName: row.accountName,
-        amount: row.amountText,
-        periodLabel: row.sourcePeriodLabel || null,
-        periodDate: row.sourcePeriodDate || null,
-        statementType: row.statementType || null,
-        category: row.category || null,
-        addbackFlag: parseBooleanFlag(row.addbackFlag),
-        matchedBy: row.matchedBy,
-        confidence: row.confidence,
-        mappingExplanation: row.mappingExplanation
-      }))
+                periodDate: newPeriodDate
+              }
+            : undefined,
+      rows: importRows
     };
+
+    console.log("STEP 4 IMPORT PAYLOAD", payload);
 
     const response = await fetch("/api/financial-import", {
       method: "POST",
@@ -419,14 +833,147 @@ export function CsvImportSection({
     await loadCompanyContext(selectedCompanyId);
   }
 
+  const stepStatus = {
+    uploadComplete: Boolean(selectedCompanyId && parsedFile),
+    structureComplete:
+      Boolean(selectedSheet) &&
+      Boolean(columnMapping.accountName) &&
+      Boolean(columnMapping.amount),
+    reviewComplete: reviewedPreviewRows.some((row) => !row.isExcluded)
+  };
+
+  const blockingGroupedRows = groupedPreviewRows.filter((row) => {
+    const isMapped = Boolean(row.category && row.statementType);
+
+    return !isMapped && !row.isExcluded && !row.isNonBlocking;
+  });
+
+  const importBlocked =
+    isPending ||
+    !selectedCompanyId ||
+    (detectedPeriods.periods.length === 0 &&
+      periodFallbackMode === "existing" &&
+      !selectedPeriodId) ||
+    ((detectedPeriods.periods.length === 0 ||
+      detectedPeriods.unresolvedRows.length > 0) &&
+      periodFallbackMode === "new" &&
+      (!newPeriodLabel || !newPeriodDate)) ||
+    !reviewedPreviewRows.some((row) => !row.isExcluded) ||
+    blockingGroupedRows.length > 0;
+
+  const importSummaryCards = [
+    ["Accounts detected", String(previewSummary.accountsDetected)],
+    ["Review required", String(previewSummary.accountsUnderReview)],
+    [
+      "Unmapped",
+      String(
+        groupedPreviewRows.filter(
+          (row) => (!row.category || !row.statementType) && !row.isExcluded && !row.isNonBlocking
+        ).length
+      )
+    ],
+    [
+      "Low confidence",
+      String(groupedPreviewRows.filter((row) => row.confidence === "low").length)
+    ],
+    [
+      "Saved mappings used",
+      String(
+        groupedPreviewRows.filter((row) => ["memory", "saved_mapping"].includes(row.matchedBy))
+          .length
+      )
+    ]
+  ] as const;
+
+  const stepItems: Array<{ id: 1 | 2 | 3 | 4; label: string; ready: boolean }> = [
+    { id: 1, label: "Upload", ready: true },
+    { id: 2, label: "Confirm Structure", ready: stepStatus.uploadComplete },
+    { id: 3, label: "Review Mappings", ready: stepStatus.structureComplete },
+    { id: 4, label: "Import", ready: stepStatus.reviewComplete }
+  ];
+
+  function toggleExcluded(accountKey: string) {
+    setExcludedAccountKeys((current) =>
+      current.includes(accountKey)
+        ? current.filter((key) => key !== accountKey)
+        : [...current, accountKey]
+    );
+  }
+
+  function toggleNonBlocking(accountKey: string) {
+    setNonBlockingOverrides((current) => ({
+      ...current,
+      [accountKey]: !(current[accountKey] ?? false)
+    }));
+  }
+
+  return (
+    <StepBasedImportFlow
+      activeStep={activeStep}
+      setActiveStep={setActiveStep}
+      stepItems={stepItems}
+      selectedCompanyId={selectedCompanyId}
+      setSelectedCompanyId={setSelectedCompanyId}
+      companies={companies}
+      parsedFile={parsedFile}
+      selectedSheet={selectedSheet}
+      structurePreviewRows={structurePreviewRows}
+      structurePreviewHeaders={structurePreviewHeaders}
+      selectedSheetName={selectedSheetName}
+      setSelectedSheetName={setSelectedSheetName}
+      companySetupSlot={companySetupSlot}
+      advancedToolsSlot={advancedToolsSlot}
+      setupMessage={setupMessage}
+      errorMessage={errorMessage}
+      successMessage={successMessage}
+      handleFileUpload={handleFileUpload}
+      showParserDebug={showParserDebug}
+      wideStatementDebug={wideStatementDebug}
+      columnMapping={columnMapping}
+      updateColumnMapping={updateColumnMapping}
+      sourcePeriodNotice={sourcePeriodNotice}
+      detectedPeriods={detectedPeriods}
+      periodFallbackMode={periodFallbackMode}
+      setPeriodFallbackMode={setPeriodFallbackMode}
+      selectedPeriodId={selectedPeriodId}
+      setSelectedPeriodId={setSelectedPeriodId}
+      periods={periods}
+      newPeriodLabel={newPeriodLabel}
+      setNewPeriodLabel={setNewPeriodLabel}
+      newPeriodDate={newPeriodDate}
+      setNewPeriodDate={setNewPeriodDate}
+      previewSummary={previewSummary}
+      groupedPreviewRows={groupedPreviewRows}
+      previewFilter={previewFilter}
+      setPreviewFilter={setPreviewFilter}
+      reviewMode={reviewMode}
+      setReviewMode={setReviewMode}
+      previewPeriodColumns={previewPeriodColumns}
+      filteredPreviewRows={filteredPreviewRows}
+      expandedPreviewAccountKey={expandedPreviewAccountKey}
+      setExpandedPreviewAccountKey={setExpandedPreviewAccountKey}
+      toggleExcluded={toggleExcluded}
+      toggleNonBlocking={toggleNonBlocking}
+      handleMappingSaved={handleMappingSaved}
+      updateRowsForAccount={updateRowsForAccount}
+      accountReviewRows={accountReviewRows}
+      importSummaryCards={importSummaryCards}
+      importBlocked={importBlocked}
+      handleImport={handleImport}
+      isPending={isPending}
+      importSummary={importSummary}
+      stepStatus={stepStatus}
+    />
+  );
+
   return (
     <section className="rounded-[1.75rem] bg-white p-5 shadow-panel">
       <div className="mb-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-slate-900">Upload financials</h2>
+            <h2 className="text-lg font-semibold text-slate-900">Financial Data Upload</h2>
             <p className="mt-1 text-sm text-slate-500">
-              Upload CSV or Excel, confirm structure, review account mappings, and import into the diligence workspace.
+              Upload CSV or Excel, confirm structure, review account mappings, and import into the review workflow.
             </p>
           </div>
           <span className="rounded-full bg-teal-50 px-3 py-1 text-xs font-medium text-teal-700">
@@ -471,7 +1018,7 @@ export function CsvImportSection({
             </p>
           </div>
 
-          {parsedFile && parsedFile.sheets.length > 1 ? (
+          {((parsedFile?.sheets?.length ?? 0) > 1) ? (
             <div className="w-full md:w-56">
               <label className="mb-1 block text-sm font-medium text-slate-700">
                 Worksheet
@@ -480,7 +1027,7 @@ export function CsvImportSection({
                 value={selectedSheetName}
                 onChange={(event) => setSelectedSheetName(event.target.value)}
               >
-                {parsedFile.sheets.map((sheet) => (
+                {(parsedFile?.sheets ?? []).map((sheet) => (
                   <option key={sheet.name} value={sheet.name}>
                     {sheet.name}
                   </option>
@@ -525,12 +1072,12 @@ export function CsvImportSection({
                 </p>
               </div>
               <div className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-600">
-                {parsedFile?.fileName} • {selectedSheet.rows.length} row(s)
+                {parsedFile?.fileName} • {selectedSheet!.rows.length} row(s)
               </div>
             </div>
 
             <div className="mt-4 flex flex-wrap gap-2">
-              {selectedSheet.headers.map((header) => (
+              {selectedSheet!.headers.map((header) => (
                 <span
                   key={header}
                   className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700"
@@ -544,7 +1091,7 @@ export function CsvImportSection({
               <table className="min-w-full divide-y divide-slate-200 text-sm">
                 <thead className="bg-slate-50">
                   <tr>
-                    {selectedSheet.headers.slice(0, 6).map((header) => (
+                    {selectedSheet!.headers.slice(0, 6).map((header) => (
                       <th
                         key={header}
                         className="px-3 py-2 text-left font-medium text-slate-500"
@@ -555,9 +1102,9 @@ export function CsvImportSection({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
-                  {selectedSheet.rows.slice(0, 8).map((row, index) => (
-                    <tr key={`${selectedSheet.name}-${index}`}>
-                      {selectedSheet.headers.slice(0, 6).map((header) => (
+                  {selectedSheet!.rows.slice(0, 8).map((row, index) => (
+                    <tr key={`${selectedSheet!.name}-${index}`}>
+                      {selectedSheet!.headers.slice(0, 6).map((header) => (
                         <td key={header} className="px-3 py-2 text-slate-700">
                           {row[header] || "—"}
                         </td>
@@ -568,10 +1115,169 @@ export function CsvImportSection({
               </table>
             </div>
 
-            {selectedSheet.rows.length > 8 ? (
+            {selectedSheet!.rows.length > 8 ? (
               <p className="mt-3 text-sm text-slate-500">
-                Showing the first 8 rows of {selectedSheet.rows.length}.
+                Showing the first 8 rows of {selectedSheet!.rows.length}.
               </p>
+            ) : null}
+
+            {showParserDebug && wideStatementDebug ? (
+              <div className="mt-4 rounded-2xl border border-sky-200 bg-sky-50/70 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-[0.18em] text-sky-700">
+                      Parser diagnostics
+                    </p>
+                    <p className="mt-1 text-sm text-sky-900">
+                      Temporary wide-format header parsing details for this sheet.
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-sky-700">
+                    {wideStatementDebug!.wideFormatDetected
+                      ? "Wide format detected"
+                      : "Wide format not detected"}
+                  </span>
+                </div>
+
+                <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  <div className="rounded-xl bg-white px-3 py-2">
+                    <p className="text-xs uppercase tracking-[0.14em] text-slate-500">
+                      Header row
+                    </p>
+                    <p className="mt-1 text-sm font-medium text-slate-900">
+                      {wideStatementDebug!.headerRowIndex >= 0
+                        ? `${wideStatementDebug!.headerRowIndex + 1} (sheet ${wideStatementDebug!.headerSheetRowIndex ?? "?"})`
+                        : "None"}
+                    </p>
+                  </div>
+                  <div className="rounded-xl bg-white px-3 py-2">
+                    <p className="text-xs uppercase tracking-[0.14em] text-slate-500">
+                      Stacked header row
+                    </p>
+                    <p className="mt-1 text-sm font-medium text-slate-900">
+                      {wideStatementDebug!.stackedHeaderRowIndex !== null
+                        ? `${wideStatementDebug!.stackedHeaderRowIndex! + 1} (sheet ${wideStatementDebug!.stackedHeaderSheetRowIndex ?? "?"})`
+                        : "None"}
+                    </p>
+                  </div>
+                  <div className="rounded-xl bg-white px-3 py-2">
+                    <p className="text-xs uppercase tracking-[0.14em] text-slate-500">
+                      Used second header
+                    </p>
+                    <p className="mt-1 text-sm font-medium text-slate-900">
+                      {wideStatementDebug!.usedSecondStackedHeaderRow ? "Yes" : "No"}
+                    </p>
+                  </div>
+                  <div className="rounded-xl bg-white px-3 py-2">
+                    <p className="text-xs uppercase tracking-[0.14em] text-slate-500">
+                      Statement type
+                    </p>
+                    <p className="mt-1 text-sm font-medium text-slate-900">
+                      {wideStatementDebug!.chosenStatementType}
+                    </p>
+                  </div>
+                  <div className="rounded-xl bg-white px-3 py-2 md:col-span-2 xl:col-span-4">
+                    <p className="text-xs uppercase tracking-[0.14em] text-slate-500">
+                      Account label column
+                    </p>
+                    <p className="mt-1 text-sm font-medium text-slate-900">
+                      {wideStatementDebug!.accountColumnIndex !== null
+                        ? `Column ${wideStatementDebug!.accountColumnIndex! + 1}`
+                        : "None"}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-600">
+                      {wideStatementDebug!.accountColumnReason || "No account label column reason available."}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-4 overflow-x-auto rounded-2xl border border-sky-200 bg-white">
+                  <table className="min-w-full divide-y divide-sky-100 text-sm">
+                    <thead className="bg-sky-50">
+                      <tr>
+                        <th className="px-3 py-2 text-left font-medium text-slate-500">
+                          Column
+                        </th>
+                        <th className="px-3 py-2 text-left font-medium text-slate-500">
+                          Header row 1
+                        </th>
+                        <th className="px-3 py-2 text-left font-medium text-slate-500">
+                          Header row 2
+                        </th>
+                        <th className="px-3 py-2 text-left font-medium text-slate-500">
+                          Chosen interpretation
+                        </th>
+                        <th className="px-3 py-2 text-left font-medium text-slate-500">
+                          Resolved label
+                        </th>
+                        <th className="px-3 py-2 text-left font-medium text-slate-500">
+                          Resolved date
+                        </th>
+                        <th className="px-3 py-2 text-left font-medium text-slate-500">
+                          Notes
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-sky-100">
+                      {wideStatementDebug!.detectedPeriodColumns.map((column) => (
+                        <tr key={`${column.columnIndex}-${column.resolvedPeriodLabel}`}>
+                          <td className="px-3 py-2 text-slate-700">
+                            {column.columnIndex + 1}
+                          </td>
+                          <td className="px-3 py-2 text-slate-700">
+                            {column.rawHeaderValueRow1 || "—"}
+                          </td>
+                          <td className="px-3 py-2 text-slate-700">
+                            {column.rawHeaderValueRow2 || "—"}
+                          </td>
+                          <td className="px-3 py-2 text-slate-700">
+                            {column.chosenInterpretation || "—"}
+                          </td>
+                          <td className="px-3 py-2 text-slate-900">
+                            {column.resolvedPeriodLabel}
+                          </td>
+                          <td className="px-3 py-2 text-slate-700">
+                            {column.resolvedPeriodDate}
+                          </td>
+                          <td className="px-3 py-2 text-slate-600">
+                            {column.notes}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
+                  <span className="rounded-full bg-white px-3 py-1">
+                    Header rows: {wideStatementDebug!.classifiedRowCounts.header_row}
+                  </span>
+                  <span className="rounded-full bg-white px-3 py-1">
+                    Sections: {wideStatementDebug!.classifiedRowCounts.section}
+                  </span>
+                  <span className="rounded-full bg-white px-3 py-1">
+                    Line items: {wideStatementDebug!.classifiedRowCounts.line_item}
+                  </span>
+                  <span className="rounded-full bg-white px-3 py-1">
+                    Subtotals: {wideStatementDebug!.classifiedRowCounts.subtotal}
+                  </span>
+                  <span className="rounded-full bg-white px-3 py-1">
+                    Totals: {wideStatementDebug!.classifiedRowCounts.total}
+                  </span>
+                  <span className="rounded-full bg-white px-3 py-1">
+                    Ratios: {wideStatementDebug!.classifiedRowCounts.ratio}
+                  </span>
+                  <span className="rounded-full bg-white px-3 py-1">
+                    Per share: {wideStatementDebug!.classifiedRowCounts.per_share}
+                  </span>
+                  <span className="rounded-full bg-white px-3 py-1">
+                    Notes: {wideStatementDebug!.classifiedRowCounts.note}
+                  </span>
+                  <span className="rounded-full bg-white px-3 py-1">
+                    Empty: {wideStatementDebug!.classifiedRowCounts.empty}
+                  </span>
+                </div>
+              </div>
             ) : null}
           </section>
 
@@ -594,7 +1300,7 @@ export function CsvImportSection({
                   key={field.key}
                   label={field.label}
                   value={columnMapping[field.key]}
-                  options={selectedSheet.headers}
+                  options={selectedSheet!.headers}
                   required={field.required}
                   onChange={(value) => updateColumnMapping(field.key, value)}
                 />
@@ -795,8 +1501,13 @@ export function CsvImportSection({
                           className={`rounded-full px-2.5 py-1 text-xs font-medium ${matchedByClass(
                             row.matchedBy
                           )}`}
+                          title={
+                            row.matchedBy === "memory"
+                              ? memoryScopeDetail(row.memoryScope)
+                              : undefined
+                          }
                         >
-                          {formatMatchedBy(row.matchedBy)}
+                          {formatMatchedBy(row.matchedBy, row.memoryScope)}
                         </span>
                         <span
                           className={`rounded-full px-2.5 py-1 text-xs font-medium ${confidenceClass(
@@ -814,6 +1525,11 @@ export function CsvImportSection({
                       <p className="mt-2 text-sm text-slate-600">
                         {row.mappingExplanation}
                       </p>
+                      {row.matchedBy === "memory" ? (
+                        <p className="mt-1 text-xs text-slate-500">
+                          {memoryScopeDetail(row.memoryScope)}
+                        </p>
+                      ) : null}
                       <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-500">
                         <span>{row.rowCount} row(s) in this upload</span>
                         {row.sourcePeriodLabels.length > 0 ? (
@@ -883,8 +1599,10 @@ export function CsvImportSection({
                         <SaveMappingButton
                           companyId={selectedCompanyId || null}
                           accountName={row.accountName}
+                          concept={row.category}
                           category={row.category}
                           statementType={row.statementType}
+                          matchedBy={row.matchedBy}
                           onSaved={handleMappingSaved}
                         />
                       </div>
@@ -902,13 +1620,313 @@ export function CsvImportSection({
                   Step 5
                 </p>
                 <h3 className="mt-1 text-base font-semibold text-slate-900">
-                  Import preview
+                  Financial Preview
                 </h3>
                 <p className="mt-1 text-sm text-slate-500">
-                  Review the normalized rows that will feed the existing diligence workflow, then import.
+                  Review grouped accounts across periods, confirm mappings, and then import.
                 </p>
               </div>
 
+              <div className="flex flex-wrap gap-2 text-xs">
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-700">
+                  {previewSummary.accountsDetected} Total Accounts
+                </span>
+                <span className="rounded-full bg-amber-100 px-3 py-1 text-amber-700">
+                  {previewSummary.accountsUnderReview} Review Required
+                </span>
+                <span className="rounded-full bg-rose-100 px-3 py-1 text-rose-700">
+                  {
+                    groupedPreviewRows.filter(
+                      (row) => !row.category || !row.statementType
+                    ).length
+                  }{" "}
+                  Unmapped
+                </span>
+                <span className="rounded-full bg-rose-100 px-3 py-1 text-rose-700">
+                  {
+                    groupedPreviewRows.filter((row) => row.confidence === "low").length
+                  }{" "}
+                  Low Confidence
+                </span>
+                <span className="rounded-full bg-emerald-100 px-3 py-1 text-emerald-700">
+                  {
+                    groupedPreviewRows.filter((row) =>
+                      ["memory", "saved_mapping"].includes(row.matchedBy)
+                    ).length
+                  }{" "}
+                  Saved Mapping
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 md:flex-row md:items-center md:justify-between">
+              <div className="flex flex-wrap gap-2">
+                {[
+                  ["all", "All Accounts"],
+                  ["review_required", "Review Required"],
+                  ["unmapped", "Unmapped"],
+                  ["low_confidence", "Low Confidence"],
+                  ["saved_mapping", "Saved Mapping"],
+                  ["rule_based", "Rule-Based"]
+                ].map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setPreviewFilter(value as PreviewFilter)}
+                    className={`rounded-full px-3 py-1.5 text-xs font-medium ${
+                      previewFilter === value
+                        ? "bg-slate-900 text-white"
+                        : "bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              <label className="flex items-center gap-3 text-sm font-medium text-slate-700">
+                <span>Review Mode</span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={reviewMode}
+                  onClick={() => setReviewMode((current) => !current)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
+                    reviewMode ? "bg-slate-900" : "bg-slate-300"
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-5 w-5 transform rounded-full bg-white transition ${
+                      reviewMode ? "translate-x-5" : "translate-x-1"
+                    }`}
+                  />
+                </button>
+              </label>
+            </div>
+
+            <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200">
+              <table className="min-w-full divide-y divide-slate-200 text-sm">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium text-slate-500">
+                      Account
+                    </th>
+                    {previewPeriodColumns.map((period, index) => (
+                      <th
+                        key={period.key}
+                        className={`px-3 py-2 text-right font-medium text-slate-500 ${
+                          index === previewPeriodColumns.length - 1 ? "text-slate-700" : ""
+                        }`}
+                      >
+                        {period.label}
+                      </th>
+                    ))}
+                    <th className="px-3 py-2 text-left font-medium text-slate-500">
+                      Mapping
+                    </th>
+                    <th className="px-3 py-2 text-left font-medium text-slate-500">
+                      Status
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white">
+                  {filteredPreviewRows.slice(0, 20).map((row) => {
+                    const isExpanded = expandedPreviewAccountKey === row.accountKey;
+                    const status = groupedPreviewStatus(row);
+
+                    return (
+                      <Fragment key={row.accountKey || row.accountName}>
+                        <tr
+                          className={row.needsReview ? "bg-amber-50/40" : ""}
+                        >
+                          <td className="px-3 py-3 align-top">
+                            <div className="min-w-[14rem]">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setExpandedPreviewAccountKey((current) =>
+                                    current === row.accountKey ? null : row.accountKey
+                                  )
+                                }
+                                className="flex items-center gap-2 text-left"
+                              >
+                                <span className="text-xs text-slate-400">
+                                  {isExpanded ? "▾" : "▸"}
+                                </span>
+                                <span className="font-medium text-slate-900">
+                                  {row.accountName || "Blank account"}
+                                </span>
+                              </button>
+                            </div>
+                          </td>
+                          {previewPeriodColumns.map((period, index) => {
+                            const periodMatch =
+                              row.periods.find(
+                                (item) =>
+                                  (item.periodDate && item.periodDate === period.periodDate) ||
+                                  (item.periodLabel && item.periodLabel === period.label)
+                              ) ?? null;
+
+                            return (
+                              <td
+                                key={`${row.accountKey}-${period.key}`}
+                                className={`px-3 py-3 text-right align-top ${
+                                  index === previewPeriodColumns.length - 1
+                                    ? "font-semibold text-slate-900"
+                                    : "text-slate-700"
+                                }`}
+                              >
+                                {periodMatch?.amountText || ""}
+                              </td>
+                            );
+                          })}
+                          <td className="px-3 py-3 align-top">
+                            <span
+                              className={`rounded-full px-2.5 py-1 text-xs font-medium ${matchedByClass(
+                                row.matchedBy
+                              )}`}
+                              title={
+                                row.matchedBy === "memory"
+                                  ? memoryScopeDetail(row.memoryScope)
+                                  : undefined
+                              }
+                            >
+                              {formatMatchedBy(row.matchedBy, row.memoryScope)}
+                            </span>
+                          </td>
+                          <td className="px-3 py-3 align-top">
+                            <div className="flex min-w-[12rem] flex-col gap-2">
+                              <div className="flex flex-wrap gap-2">
+                                <span
+                                  className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusClass(
+                                    status
+                                  )}`}
+                                >
+                                  {status}
+                                </span>
+                              </div>
+                              <SaveMappingButton
+                                companyId={selectedCompanyId || null}
+                                accountName={row.accountName}
+                                concept={row.category}
+                                category={row.category}
+                                statementType={row.statementType}
+                                matchedBy={row.matchedBy}
+                                onSaved={handleMappingSaved}
+                              />
+                            </div>
+                          </td>
+                        </tr>
+                        {isExpanded ? (
+                          <tr className="bg-slate-50">
+                            <td
+                              colSpan={previewPeriodColumns.length + 3}
+                              className="px-4 py-3"
+                            >
+                              <div className="grid gap-3 md:grid-cols-4">
+                                <div>
+                                  <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                                    Mapping
+                                  </p>
+                                  <p className="mt-2 text-sm text-slate-700">
+                                    {row.mappingExplanation}
+                                  </p>
+                                  {row.matchedBy === "memory" ? (
+                                    <p className="mt-1 text-xs text-slate-500">
+                                      {memoryScopeDetail(row.memoryScope)}
+                                    </p>
+                                  ) : null}
+                                </div>
+                                <div>
+                                  <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                                    Category
+                                  </p>
+                                  <div className="mt-2">
+                                    <select
+                                      value={row.category}
+                                      onChange={(event) =>
+                                        updateRowsForAccount(row.accountKey, {
+                                          __manual_category: event.target.value
+                                        })
+                                      }
+                                      className={`min-w-[10rem] ${
+                                        row.needsReview && !row.category
+                                          ? "border-amber-300 bg-amber-50"
+                                          : ""
+                                      }`}
+                                    >
+                                      <option value="">Review</option>
+                                      {CATEGORY_OPTIONS.map((option) => (
+                                        <option key={option} value={option}>
+                                          {option}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                </div>
+                                <div>
+                                  <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                                    Statement Type
+                                  </p>
+                                  <div className="mt-2">
+                                    <select
+                                      value={row.statementType}
+                                      onChange={(event) =>
+                                        updateRowsForAccount(row.accountKey, {
+                                          __manual_statement_type: event.target.value
+                                        })
+                                      }
+                                      className={`min-w-[9rem] ${
+                                        row.needsReview && !row.statementType
+                                          ? "border-amber-300 bg-amber-50"
+                                          : ""
+                                      }`}
+                                    >
+                                      <option value="">Review</option>
+                                      {STATEMENT_TYPE_OPTIONS.map((option) => (
+                                        <option key={option} value={option}>
+                                          {option}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                </div>
+                                <div>
+                                  <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                                    Source rows
+                                  </p>
+                                  <p className="mt-2 text-sm text-slate-700">
+                                    {row.rowNumbers.join(", ")}
+                                  </p>
+                                  <ul className="mt-2 space-y-1 text-sm text-slate-700">
+                                    {row.periods.map((period) => (
+                                      <li
+                                        key={`${row.accountKey}-${period.rowNumber}-detail`}
+                                      >
+                                        {period.periodLabel || "Unlabeled period"}:{" "}
+                                        {period.amountText || "—"}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        ) : null}
+                      </Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {filteredPreviewRows.length > 20 ? (
+              <p className="mt-3 text-sm text-slate-500">
+                Showing the first 20 accounts of {filteredPreviewRows.length}.
+              </p>
+            ) : null}
+
+            <div className="mt-4 flex justify-end">
               <button
                 type="button"
                 onClick={handleImport}
@@ -930,103 +1948,17 @@ export function CsvImportSection({
               </button>
             </div>
 
-            <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200">
-              <table className="min-w-full divide-y divide-slate-200 text-sm">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className="px-3 py-2 text-left font-medium text-slate-500">
-                      Row
-                    </th>
-                    <th className="px-3 py-2 text-left font-medium text-slate-500">
-                      Account
-                    </th>
-                    <th className="px-3 py-2 text-right font-medium text-slate-500">
-                      Amount
-                    </th>
-                    <th className="px-3 py-2 text-left font-medium text-slate-500">
-                      Category
-                    </th>
-                    <th className="px-3 py-2 text-left font-medium text-slate-500">
-                      Statement
-                    </th>
-                    <th className="px-3 py-2 text-left font-medium text-slate-500">
-                      Status
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 bg-white">
-                  {previewRows.slice(0, 12).map((row) => (
-                    <tr
-                      key={row.rowNumber}
-                      className={
-                        row.needsReview
-                          ? "bg-amber-50"
-                          : row.matchedBy === "saved_mapping"
-                            ? "bg-teal-50/50"
-                            : ""
-                      }
-                    >
-                      <td className="px-3 py-2 text-slate-600">{row.rowNumber}</td>
-                      <td className="px-3 py-2">
-                        <div>
-                          <p className="font-medium text-slate-900">
-                            {row.accountName || "—"}
-                          </p>
-                          <p className="mt-1 text-xs text-slate-500">
-                            {row.mappingExplanation}
-                          </p>
-                        </div>
-                      </td>
-                      <td className="px-3 py-2 text-right text-slate-700">
-                        {row.amountText || "—"}
-                      </td>
-                      <td className="px-3 py-2 text-slate-700">
-                        {row.category || "Review"}
-                      </td>
-                      <td className="px-3 py-2 text-slate-700">
-                        {row.statementType || "Review"}
-                      </td>
-                      <td className="px-3 py-2">
-                        <div className="flex flex-wrap gap-2">
-                          <span
-                            className={`rounded-full px-2.5 py-1 text-xs font-medium ${matchedByClass(
-                              row.matchedBy
-                            )}`}
-                          >
-                            {formatMatchedBy(row.matchedBy)}
-                          </span>
-                          <span
-                            className={`rounded-full px-2.5 py-1 text-xs font-medium ${confidenceClass(
-                              row.confidence
-                            )}`}
-                          >
-                            {formatConfidence(row.confidence)}
-                          </span>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {previewRows.length > 12 ? (
-              <p className="mt-3 text-sm text-slate-500">
-                Showing the first 12 rows of {previewRows.length}.
-              </p>
-            ) : null}
-
             {importSummary ? (
               <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
                 <p className="font-medium">
-                  Inserted rows: {importSummary.insertedCount}
+                  Inserted rows: {importSummary!.insertedCount}
                 </p>
                 <p className="mt-1 font-medium">
-                  Rejected rows: {importSummary.rejectedRows.length}
+                  Rejected rows: {importSummary!.rejectedRows.length}
                 </p>
-                {importSummary.rejectedRows.length > 0 ? (
+                {importSummary!.rejectedRows.length > 0 ? (
                   <ul className="mt-2 space-y-1 text-slate-600">
-                    {importSummary.rejectedRows.map((row) => (
+                    {importSummary!.rejectedRows.map((row) => (
                       <li key={`${row.rowNumber}-${row.accountName}-${row.reason}`}>
                         Row {row.rowNumber}: {row.accountName || "Untitled row"} (
                         {row.reason})

@@ -1,71 +1,573 @@
-import type { AccountMapping, NormalizedCategory, StatementType } from "@/lib/types";
+import type { AccountMapping, NormalizedCategory, StatementType } from "./types";
+import {
+  findSavedMapping,
+  getSavedMapping,
+  normalizeMappingLabel
+} from "./mapping-memory.ts";
+
+export type IncomeStatementConcept =
+  | "Revenue"
+  | "COGS"
+  | "Gross Profit"
+  | "Operating Expenses"
+  | "Depreciation / Amortization"
+  | "EBITDA"
+  | "Operating Income"
+  | "Pre-tax / EBT"
+  | "Net Income"
+  | "Non-operating"
+  | "Tax Expense";
+
+export type BalanceSheetConcept =
+  | "Cash"
+  | "Accounts Receivable"
+  | "Inventory"
+  | "PPE"
+  | "Accounts Payable"
+  | "Short Term Debt"
+  | "Long Term Debt"
+  | "Common Stock"
+  | "Retained Earnings";
+
+export type MappingConcept = IncomeStatementConcept | BalanceSheetConcept;
 
 export type AutoMappingResult = {
+  concept: MappingConcept | null;
   category: NormalizedCategory | null;
   statementType: StatementType | null;
-  matchedBy: "saved_mapping" | "keyword_rule" | "unmapped";
+  normalizedLabel?: string;
+  matchedBy: "memory" | "saved_mapping" | "keyword_rule" | "unmapped";
   confidence: "high" | "medium" | "low";
   explanation: string;
+  memoryScope?: "company" | "global" | null;
+  mappingId?: string;
 };
 
-const KEYWORD_RULES: Array<{
-  category: NormalizedCategory;
-  keywords: string[];
-}> = [
+type KeywordRule = {
+  concept: MappingConcept;
+  category: NormalizedCategory | null;
+  statementType: StatementType;
+  mode: "exact" | "contains";
+  patterns: string[];
+  confidence: "high" | "medium";
+};
+
+const CONCEPT_CATEGORY_MAP: Record<IncomeStatementConcept, NormalizedCategory> = {
+  Revenue: "Revenue",
+  COGS: "COGS",
+  "Gross Profit": "Gross Profit",
+  "Operating Expenses": "Operating Expenses",
+  "Depreciation / Amortization": "Depreciation / Amortization",
+  EBITDA: "EBITDA",
+  "Operating Income": "Operating Income",
+  "Pre-tax / EBT": "Pre-tax",
+  "Net Income": "Net Income",
+  "Tax Expense": "Tax Expense",
+  "Non-operating": "Non-operating"
+};
+
+function deriveConceptFromCategory(
+  category: NormalizedCategory,
+  statementType: StatementType
+): MappingConcept | null {
+  if (statementType === "income") {
+    const match = Object.entries(CONCEPT_CATEGORY_MAP).find(
+      ([, mappedCategory]) => mappedCategory === category
+    )?.[0];
+
+    return (match as IncomeStatementConcept | undefined) ?? null;
+  }
+
+  if (category === "current_assets.cash") return "Cash";
+  if (category === "current_assets.accounts_receivable") return "Accounts Receivable";
+  if (category === "current_assets.inventory") return "Inventory";
+  if (category === "non_current_assets.ppe") return "PPE";
+  if (category === "current_liabilities.accounts_payable") return "Accounts Payable";
+  if (category === "current_liabilities.short_term_debt") return "Short Term Debt";
+  if (category === "non_current_liabilities.long_term_debt") return "Long Term Debt";
+  if (category === "equity.common_stock") return "Common Stock";
+  if (category === "equity.retained_earnings") return "Retained Earnings";
+
+  return null;
+}
+
+const INCOME_STATEMENT_RULES: KeywordRule[] = [
   {
+    concept: "Revenue",
     category: "Revenue",
-    keywords: ["revenue", "sales", "service income", "subscription", "income"]
+    statementType: "income",
+    mode: "exact",
+    confidence: "high",
+    patterns: [
+      "revenue",
+      "sales",
+      "net sales",
+      "total revenue",
+      "total sales",
+      "turnover",
+      "subscription revenue",
+      "service revenue"
+    ]
   },
   {
+    concept: "COGS",
     category: "COGS",
-    keywords: [
-      "cogs",
-      "cost of goods",
+    statementType: "income",
+    mode: "exact",
+    confidence: "high",
+    patterns: [
+      "cost of revenue",
       "cost of sales",
-      "materials",
-      "inventory",
-      "freight"
+      "cogs",
+      "direct costs",
+      "cost of goods sold"
     ]
   },
   {
+    concept: "Gross Profit",
+    category: "Gross Profit",
+    statementType: "income",
+    mode: "exact",
+    confidence: "high",
+    patterns: ["gross profit", "gross income"]
+  },
+  {
+    concept: "Operating Expenses",
     category: "Operating Expenses",
-    keywords: [
-      "rent",
-      "payroll",
-      "salary",
-      "wages",
-      "marketing",
-      "insurance",
-      "legal",
-      "professional fees",
-      "utilities",
-      "software",
-      "expense"
+    statementType: "income",
+    mode: "exact",
+    confidence: "high",
+    patterns: [
+      "operating expenses",
+      "sga",
+      "sg&a",
+      "sg&a expense",
+      "sga expense",
+      "selling general and administrative",
+      "selling and marketing",
+      "selling and marketing expense",
+      "selling marketing",
+      "sales and marketing",
+      "sales and marketing expense",
+      "marketing expense",
+      "general and administrative",
+      "g&a",
+      "general and admin expense",
+      "general and administrative expense",
+      "general and admin expense",
+      "research and development",
+      "research and development expense",
+      "r&d",
+      "r&d expense",
+      "other operating expenses",
+      "other expense",
+      "other expenses"
     ]
   },
   {
-    category: "Assets",
-    keywords: [
-      "cash",
-      "receivable",
-      "inventory asset",
-      "prepaid",
-      "equipment",
-      "asset"
+    concept: "Depreciation / Amortization",
+    category: "Depreciation / Amortization",
+    statementType: "income",
+    mode: "exact",
+    confidence: "high",
+    patterns: [
+      "depreciation",
+      "amortization",
+      "depreciation and amortization",
+      "dep and amort",
+      "dep amort",
+      "d&a"
     ]
   },
   {
-    category: "Liabilities",
-    keywords: ["payable", "debt", "loan", "accrued", "liability", "credit card"]
+    concept: "EBITDA",
+    category: "EBITDA",
+    statementType: "income",
+    mode: "exact",
+    confidence: "high",
+    patterns: ["ebitda", "adjusted ebitda", "ebitda non gaap", "ebitda non-gaap"]
   },
   {
-    category: "Equity",
-    keywords: ["equity", "retained earnings", "owner", "capital", "draw"]
+    concept: "Operating Income",
+    category: "Operating Income",
+    statementType: "income",
+    mode: "exact",
+    confidence: "high",
+    patterns: ["ebit", "operating income", "operating income ebit"]
+  },
+  {
+    concept: "Pre-tax / EBT",
+    category: "Pre-tax",
+    statementType: "income",
+    mode: "exact",
+    confidence: "high",
+    patterns: [
+      "pretax income",
+      "pre tax income",
+      "pre-tax income",
+      "income before tax",
+      "ebt",
+      "earnings before tax"
+    ]
+  },
+  {
+    concept: "Net Income",
+    category: "Net Income",
+    statementType: "income",
+    mode: "exact",
+    confidence: "high",
+    patterns: [
+      "net income",
+      "net earnings",
+      "earnings",
+      "profit after tax",
+      "income after tax"
+    ]
+  },
+  {
+    concept: "Non-operating",
+    category: "Non-operating",
+    statementType: "income",
+    mode: "exact",
+    confidence: "high",
+    patterns: [
+      "interest expense",
+      "interest income",
+      "other income",
+      "gain",
+      "loss",
+      "non recurring",
+      "non-recurring"
+    ]
+  },
+  {
+    concept: "Tax Expense",
+    category: "Tax Expense",
+    statementType: "income",
+    mode: "exact",
+    confidence: "high",
+    patterns: ["tax expense", "income tax expense", "provision for income taxes"]
+  },
+  {
+    concept: "Revenue",
+    category: "Revenue",
+    statementType: "income",
+    mode: "contains",
+    confidence: "medium",
+    patterns: ["subscription revenue", "service revenue", "total revenue", "total sales"]
+  },
+  {
+    concept: "COGS",
+    category: "COGS",
+    statementType: "income",
+    mode: "contains",
+    confidence: "medium",
+    patterns: ["cost of revenue", "cost of sales", "cost of goods sold", "direct cost"]
+  },
+  {
+    concept: "Operating Expenses",
+    category: "Operating Expenses",
+    statementType: "income",
+    mode: "contains",
+    confidence: "medium",
+    patterns: [
+      "marketing expense",
+      "general and administrative",
+      "selling and marketing",
+      "research and development",
+      "operating expense",
+      "other expense",
+      "other expenses"
+    ]
+  },
+  {
+    concept: "Depreciation / Amortization",
+    category: "Depreciation / Amortization",
+    statementType: "income",
+    mode: "contains",
+    confidence: "medium",
+    patterns: ["depreciation", "amortization", "dep amort", "d&a"]
+  },
+  {
+    concept: "EBITDA",
+    category: "EBITDA",
+    statementType: "income",
+    mode: "contains",
+    confidence: "medium",
+    patterns: ["ebitda"]
+  },
+  {
+    concept: "Operating Income",
+    category: "Operating Income",
+    statementType: "income",
+    mode: "contains",
+    confidence: "medium",
+    patterns: ["operating income", "ebit"]
+  },
+  {
+    concept: "Pre-tax / EBT",
+    category: "Pre-tax",
+    statementType: "income",
+    mode: "contains",
+    confidence: "medium",
+    patterns: ["before tax", "pretax", "pre tax", "ebt"]
+  },
+  {
+    concept: "Net Income",
+    category: "Net Income",
+    statementType: "income",
+    mode: "contains",
+    confidence: "medium",
+    patterns: ["net income", "net earnings", "after tax"]
+  },
+  {
+    concept: "Non-operating",
+    category: "Non-operating",
+    statementType: "income",
+    mode: "contains",
+    confidence: "medium",
+    patterns: [
+      "interest",
+      "other income",
+      "gain",
+      "loss",
+      "non recurring",
+      "non-recurring"
+    ]
+  },
+  {
+    concept: "Tax Expense",
+    category: "Tax Expense",
+    statementType: "income",
+    mode: "contains",
+    confidence: "medium",
+    patterns: ["tax expense", "income tax"]
   }
 ];
 
+const BALANCE_SHEET_RULES: Array<{
+  concept: BalanceSheetConcept;
+  category: NormalizedCategory;
+  mode: "exact" | "contains";
+  confidence: "high" | "medium";
+  patterns: string[];
+}> = [
+  {
+    concept: "Cash",
+    category: "current_assets.cash",
+    mode: "exact",
+    confidence: "high",
+    patterns: ["cash", "cash and cash equivalents"]
+  },
+  {
+    concept: "Accounts Receivable",
+    category: "current_assets.accounts_receivable",
+    mode: "exact",
+    confidence: "high",
+    patterns: ["accounts receivable", "trade receivables", "receivables"]
+  },
+  {
+    concept: "Inventory",
+    category: "current_assets.inventory",
+    mode: "exact",
+    confidence: "high",
+    patterns: ["inventory", "inventories"]
+  },
+  {
+    concept: "PPE",
+    category: "non_current_assets.ppe",
+    mode: "exact",
+    confidence: "high",
+    patterns: [
+      "property plant and equipment",
+      "pp&e",
+      "ppe",
+      "fixed assets"
+    ]
+  },
+  {
+    concept: "Accounts Payable",
+    category: "current_liabilities.accounts_payable",
+    mode: "exact",
+    confidence: "high",
+    patterns: ["accounts payable", "trade payables", "payables"]
+  },
+  {
+    concept: "Short Term Debt",
+    category: "current_liabilities.short_term_debt",
+    mode: "exact",
+    confidence: "high",
+    patterns: ["short term debt", "short-term debt", "current portion of debt"]
+  },
+  {
+    concept: "Long Term Debt",
+    category: "non_current_liabilities.long_term_debt",
+    mode: "exact",
+    confidence: "high",
+    patterns: ["long term debt", "long-term debt", "notes payable", "term loan"]
+  },
+  {
+    concept: "Common Stock",
+    category: "equity.common_stock",
+    mode: "exact",
+    confidence: "high",
+    patterns: ["common stock", "share capital", "capital stock"]
+  },
+  {
+    concept: "Retained Earnings",
+    category: "equity.retained_earnings",
+    mode: "exact",
+    confidence: "high",
+    patterns: ["retained earnings", "accumulated deficit"]
+  },
+  {
+    concept: "Cash",
+    category: "current_assets.cash",
+    mode: "contains",
+    confidence: "medium",
+    patterns: ["cash"]
+  },
+  {
+    concept: "Accounts Receivable",
+    category: "current_assets.accounts_receivable",
+    mode: "contains",
+    confidence: "medium",
+    patterns: ["receivable"]
+  },
+  {
+    concept: "Inventory",
+    category: "current_assets.inventory",
+    mode: "contains",
+    confidence: "medium",
+    patterns: ["inventory"]
+  },
+  {
+    concept: "PPE",
+    category: "non_current_assets.ppe",
+    mode: "contains",
+    confidence: "medium",
+    patterns: ["equipment", "fixed asset", "property plant"]
+  },
+  {
+    concept: "Accounts Payable",
+    category: "current_liabilities.accounts_payable",
+    mode: "contains",
+    confidence: "medium",
+    patterns: ["payable"]
+  },
+  {
+    concept: "Short Term Debt",
+    category: "current_liabilities.short_term_debt",
+    mode: "contains",
+    confidence: "medium",
+    patterns: ["short term debt", "current debt"]
+  },
+  {
+    concept: "Long Term Debt",
+    category: "non_current_liabilities.long_term_debt",
+    mode: "contains",
+    confidence: "medium",
+    patterns: ["long term debt", "term loan", "notes payable"]
+  },
+  {
+    concept: "Common Stock",
+    category: "equity.common_stock",
+    mode: "contains",
+    confidence: "medium",
+    patterns: ["common stock", "capital stock"]
+  },
+  {
+    concept: "Retained Earnings",
+    category: "equity.retained_earnings",
+    mode: "contains",
+    confidence: "medium",
+    patterns: ["retained earnings", "accumulated deficit"]
+  }
+];
+
+function stripOuterWhitespace(value: string) {
+  return value.trim();
+}
+
+const BALANCE_SHEET_PARENT_CATEGORIES = new Set<NormalizedCategory>([
+  "Assets",
+  "Liabilities",
+  "Equity",
+  "current_assets",
+  "non_current_assets",
+  "current_liabilities",
+  "non_current_liabilities",
+  "equity"
+]);
+
+export function isBalanceSheetParentCategory(
+  category: NormalizedCategory | null | undefined
+) {
+  return category ? BALANCE_SHEET_PARENT_CATEGORIES.has(category) : false;
+}
+
+export function isBalanceSheetLeafCategory(
+  category: NormalizedCategory | null | undefined
+) {
+  return Boolean(
+    category &&
+      (category.startsWith("current_assets.") ||
+        category.startsWith("non_current_assets.") ||
+        category.startsWith("current_liabilities.") ||
+        category.startsWith("non_current_liabilities.") ||
+        category.startsWith("equity."))
+  );
+}
+
+export function sanitizeCategoryForStatementType(params: {
+  category: NormalizedCategory | null | undefined;
+  statementType: StatementType | null | undefined;
+}) {
+  const { category, statementType } = params;
+
+  if (!category) {
+    return null;
+  }
+
+  if (statementType === "balance_sheet") {
+    return isBalanceSheetLeafCategory(category) ? category : null;
+  }
+
+  return category;
+}
+
 export function normalizeAccountName(accountName: string) {
-  return accountName.trim().toLowerCase().replace(/\s+/g, " ");
+  return normalizeMappingLabel(stripOuterWhitespace(accountName));
+}
+
+export function normalizeMappingText(accountName: string) {
+  return normalizeAccountName(accountName);
+}
+
+function exactMatch(normalizedAccountName: string, pattern: string) {
+  return normalizedAccountName === normalizeMappingText(pattern);
+}
+
+function containsMatch(normalizedAccountName: string, pattern: string) {
+  return normalizedAccountName.includes(normalizeMappingText(pattern));
+}
+
+function buildRuleExplanation(
+  concept: MappingConcept,
+  pattern: string,
+  confidence: "high" | "medium",
+  category: NormalizedCategory | null,
+  statementType: StatementType
+) {
+  if (!category) {
+    return confidence === "high"
+      ? `Identified as ${concept} using explicit ${statementType === "income" ? "income statement" : "balance sheet"} rule: "${pattern}". Left unmapped for review.`
+      : `Identified as ${concept} using broader ${statementType === "income" ? "income statement" : "balance sheet"} rule: "${pattern}". Left unmapped for review.`;
+  }
+
+  return confidence === "high"
+    ? `Matched explicit ${statementType === "income" ? "income statement" : "balance sheet"} rule: "${pattern}" -> ${category}.`
+    : `Matched broader ${statementType === "income" ? "income statement" : "balance sheet"} rule: "${pattern}" -> ${category}.`;
 }
 
 export function inferStatementTypeFromCategory(
@@ -78,7 +580,15 @@ export function inferStatementTypeFromCategory(
   if (
     category === "Revenue" ||
     category === "COGS" ||
-    category === "Operating Expenses"
+    category === "Gross Profit" ||
+    category === "Operating Expenses" ||
+    category === "Depreciation / Amortization" ||
+    category === "EBITDA" ||
+    category === "Operating Income" ||
+    category === "Pre-tax" ||
+    category === "Net Income" ||
+    category === "Tax Expense" ||
+    category === "Non-operating"
   ) {
     return "income";
   }
@@ -95,7 +605,7 @@ export function parseStatementType(
 
   const normalized = value.trim().toLowerCase();
 
-  if (["income", "p&l", "pnl", "income statement"].includes(normalized)) {
+  if (["income", "income_statement", "p&l", "pnl", "income statement"].includes(normalized)) {
     return "income";
   }
 
@@ -115,16 +625,166 @@ export function parseCategory(
 
   const normalized = value.trim().toLowerCase();
 
+  if (normalized === "current_assets") return null;
+  if (normalized === "current_assets.cash") return "current_assets.cash";
+  if (normalized === "current_assets.accounts_receivable") {
+    return "current_assets.accounts_receivable";
+  }
+  if (normalized === "current_assets.inventory") return "current_assets.inventory";
+  if (normalized === "non_current_assets") return null;
+  if (normalized === "non_current_assets.ppe") return "non_current_assets.ppe";
+  if (normalized === "current_liabilities") return null;
+  if (normalized === "current_liabilities.accounts_payable") {
+    return "current_liabilities.accounts_payable";
+  }
+  if (normalized === "current_liabilities.short_term_debt") {
+    return "current_liabilities.short_term_debt";
+  }
+  if (normalized === "non_current_liabilities") return null;
+  if (normalized === "non_current_liabilities.long_term_debt") {
+    return "non_current_liabilities.long_term_debt";
+  }
+  if (normalized === "equity") return null;
+  if (normalized === "equity.common_stock") return "equity.common_stock";
+  if (normalized === "equity.retained_earnings") return "equity.retained_earnings";
+
   if (normalized === "revenue") return "Revenue";
   if (normalized === "cogs") return "COGS";
+  if (normalized === "gross profit" || normalized === "gross income") {
+    return "Gross Profit";
+  }
   if (normalized === "operating expenses" || normalized === "opex") {
     return "Operating Expenses";
   }
-  if (normalized === "assets" || normalized === "asset") return "Assets";
-  if (normalized === "liabilities" || normalized === "liability") {
-    return "Liabilities";
+  if (
+    normalized === "depreciation" ||
+    normalized === "amortization" ||
+    normalized === "depreciation and amortization" ||
+    normalized === "dep and amort" ||
+    normalized === "dep amort" ||
+    normalized === "d&a"
+  ) {
+    return "Depreciation / Amortization";
   }
-  if (normalized === "equity") return "Equity";
+  if (
+    normalized === "ebitda" ||
+    normalized === "adjusted ebitda" ||
+    normalized === "ebitda non gaap"
+  ) {
+    return "EBITDA";
+  }
+  if (normalized === "operating income" || normalized === "ebit") {
+    return "Operating Income";
+  }
+  if (
+    normalized === "pretax income" ||
+    normalized === "pre tax" ||
+    normalized === "pre-tax" ||
+    normalized === "income before tax" ||
+    normalized === "ebt"
+  ) {
+    return "Pre-tax";
+  }
+  if (normalized === "net income" || normalized === "net earnings") {
+    return "Net Income";
+  }
+  if (
+    normalized === "tax expense" ||
+    normalized === "income tax" ||
+    normalized === "income tax expense"
+  ) {
+    return "Tax Expense";
+  }
+  if (
+    normalized === "non operating" ||
+    normalized === "non-operating" ||
+    normalized === "interest expense" ||
+    normalized === "interest income" ||
+    normalized === "other income" ||
+    normalized === "gain" ||
+    normalized === "loss" ||
+    normalized === "non recurring" ||
+    normalized === "non-recurring"
+  ) {
+    return "Non-operating";
+  }
+  if (normalized === "assets" || normalized === "asset") return null;
+  if (normalized === "current assets" || normalized === "current_assets") {
+    return null;
+  }
+  if (normalized === "cash") return "current_assets.cash";
+  if (
+    normalized === "accounts receivable" ||
+    normalized === "trade receivables" ||
+    normalized === "receivables"
+  ) {
+    return "current_assets.accounts_receivable";
+  }
+  if (normalized === "inventory" || normalized === "inventories") {
+    return "current_assets.inventory";
+  }
+  if (normalized === "non current assets" || normalized === "non-current assets") {
+    return null;
+  }
+  if (
+    normalized === "property plant and equipment" ||
+    normalized === "pp&e" ||
+    normalized === "ppe" ||
+    normalized === "fixed assets"
+  ) {
+    return "non_current_assets.ppe";
+  }
+  if (normalized === "liabilities" || normalized === "liability") {
+    return null;
+  }
+  if (
+    normalized === "current liabilities" ||
+    normalized === "current_liabilities"
+  ) {
+    return null;
+  }
+  if (
+    normalized === "accounts payable" ||
+    normalized === "trade payables" ||
+    normalized === "payables"
+  ) {
+    return "current_liabilities.accounts_payable";
+  }
+  if (
+    normalized === "short term debt" ||
+    normalized === "short-term debt" ||
+    normalized === "current portion of debt"
+  ) {
+    return "current_liabilities.short_term_debt";
+  }
+  if (
+    normalized === "non current liabilities" ||
+    normalized === "non-current liabilities"
+  ) {
+    return null;
+  }
+  if (
+    normalized === "long term debt" ||
+    normalized === "long-term debt" ||
+    normalized === "notes payable" ||
+    normalized === "term loan"
+  ) {
+    return "non_current_liabilities.long_term_debt";
+  }
+  if (
+    normalized === "common stock" ||
+    normalized === "share capital" ||
+    normalized === "capital stock"
+  ) {
+    return "equity.common_stock";
+  }
+  if (
+    normalized === "retained earnings" ||
+    normalized === "accumulated deficit"
+  ) {
+    return "equity.retained_earnings";
+  }
+  if (normalized === "Equity") return null;
 
   return null;
 }
@@ -142,47 +802,290 @@ export function parseBooleanFlag(value: string | boolean | null | undefined) {
   return ["true", "1", "yes", "y"].includes(normalized);
 }
 
-export function suggestAccountMapping(
-  accountName: string,
-  savedMappings: AccountMapping[] = []
-): AutoMappingResult {
-  const normalizedAccountName = normalizeAccountName(accountName);
-
-  const savedMapping = savedMappings.find(
-    (mapping) => mapping.account_name_key === normalizedAccountName
-  );
-
-  if (savedMapping) {
-    return {
-      category: savedMapping.category,
-      statementType: savedMapping.statement_type,
-      matchedBy: "saved_mapping",
-      confidence: "high",
-      explanation: "Using saved mapping for this company."
-    };
-  }
-
-  for (const rule of KEYWORD_RULES) {
-    const matchedKeyword = rule.keywords.find((keyword) =>
-      normalizedAccountName.includes(keyword)
+function findIncomeStatementRule(normalizedAccountName: string) {
+  for (const rule of INCOME_STATEMENT_RULES) {
+    const matchedPattern = rule.patterns.find((pattern) =>
+      rule.mode === "exact"
+        ? exactMatch(normalizedAccountName, pattern)
+        : containsMatch(normalizedAccountName, pattern)
     );
 
-    if (matchedKeyword) {
+    if (matchedPattern) {
       return {
-        category: rule.category,
-        statementType: inferStatementTypeFromCategory(rule.category),
-        matchedBy: "keyword_rule",
-        confidence: "medium",
-        explanation: `Matched via keyword rule: "${matchedKeyword}" -> ${rule.category}.`
+        ...rule,
+        matchedPattern
       };
     }
   }
 
+  return null;
+}
+
+function findBalanceSheetRule(normalizedAccountName: string) {
+  for (const rule of BALANCE_SHEET_RULES) {
+    const matchedPattern = rule.patterns.find((pattern) =>
+      rule.mode === "exact"
+        ? exactMatch(normalizedAccountName, pattern)
+        : containsMatch(normalizedAccountName, pattern)
+    );
+
+    if (matchedPattern) {
+      return {
+        ...rule,
+        matchedPattern
+      };
+    }
+  }
+
+  return null;
+}
+
+export function suggestAccountMapping(
+  accountName: string,
+  savedMappings: AccountMapping[] = [],
+  preferredStatementType: StatementType | null = null,
+  companyId: string | null = null
+): AutoMappingResult {
+  const normalizedAccountName = normalizeMappingText(accountName);
+  const decisionPath: string[] = [];
+
+  console.log("AUTO MAPPING INPUT", {
+    accountName,
+    normalizedAccountName,
+    detectedStatementType: preferredStatementType ?? "unspecified"
+  });
+
+  const memoryMatch = findSavedMapping({
+    mappings: savedMappings,
+    companyId,
+    accountName,
+    statementType: preferredStatementType
+  });
+
+  if (memoryMatch) {
+    const sanitizedMemoryCategory = sanitizeCategoryForStatementType({
+      category: memoryMatch.record.category,
+      statementType: memoryMatch.record.statement_type
+    });
+    if (!sanitizedMemoryCategory) {
+      console.log("MAPPING MEMORY MISS", {
+        accountName,
+        normalizedAccountName,
+        detectedStatementType: preferredStatementType ?? "unspecified",
+        reason: "saved_mapping_invalid_for_statement_type"
+      });
+    } else {
+    const concept = deriveConceptFromCategory(
+      sanitizedMemoryCategory,
+      memoryMatch.record.statement_type
+    );
+
+    console.log("MAPPING MEMORY HIT", {
+      accountName,
+      normalizedAccountName,
+      scope: memoryMatch.scope,
+      appliedSavedMapping: {
+        category: sanitizedMemoryCategory,
+        statementType: memoryMatch.record.statement_type
+      }
+    });
+
+    return {
+      concept,
+      category: sanitizedMemoryCategory,
+      statementType: memoryMatch.record.statement_type,
+      normalizedLabel: normalizedAccountName,
+      matchedBy: "memory",
+      confidence: "high",
+      explanation:
+        memoryMatch.scope === "company"
+          ? "Previously confirmed mapping for this company"
+          : "Previously confirmed global mapping",
+      memoryScope: memoryMatch.scope,
+      mappingId: memoryMatch.record.id
+    };
+    }
+  }
+
+  console.log("MAPPING MEMORY MISS", {
+    accountName,
+    normalizedAccountName,
+    detectedStatementType: preferredStatementType ?? "unspecified"
+  });
+
+  const tryIncomeRules = preferredStatementType !== "balance_sheet";
+  const tryBalanceRules = preferredStatementType !== "income";
+
+  if (tryIncomeRules) {
+    decisionPath.push("income_rules");
+    const incomeRule = findIncomeStatementRule(normalizedAccountName);
+
+    if (incomeRule) {
+      console.log("AUTO MAPPING DECISION", {
+        accountName,
+        detectedStatementType: preferredStatementType ?? "unspecified",
+        decisionPath,
+        matchedRule: incomeRule.matchedPattern,
+        category: incomeRule.category
+      });
+      return {
+        concept: incomeRule.concept,
+        category: incomeRule.category,
+        statementType: incomeRule.statementType,
+        normalizedLabel: normalizedAccountName,
+        matchedBy: "keyword_rule",
+        confidence: incomeRule.confidence,
+        explanation: buildRuleExplanation(
+          incomeRule.concept,
+          incomeRule.matchedPattern,
+          incomeRule.confidence,
+          incomeRule.category,
+          incomeRule.statementType
+        )
+      };
+    }
+  }
+
+  if (tryBalanceRules) {
+    decisionPath.push("balance_sheet_rules");
+    const balanceRule = findBalanceSheetRule(normalizedAccountName);
+
+    if (balanceRule) {
+      console.log("AUTO MAPPING DECISION", {
+        accountName,
+        detectedStatementType: preferredStatementType ?? "unspecified",
+        decisionPath,
+        matchedRule: balanceRule.matchedPattern,
+        category: balanceRule.category
+      });
+      return {
+        concept: balanceRule.concept,
+        category: balanceRule.category,
+        statementType: inferStatementTypeFromCategory(balanceRule.category),
+        normalizedLabel: normalizedAccountName,
+        matchedBy: "keyword_rule",
+        confidence: balanceRule.confidence,
+        explanation: buildRuleExplanation(
+          balanceRule.concept,
+          balanceRule.matchedPattern,
+          balanceRule.confidence,
+          balanceRule.category,
+          "balance_sheet"
+        )
+      };
+    }
+  }
+
+  console.log("AUTO MAPPING FALLBACK", {
+    accountName,
+    detectedStatementType: preferredStatementType ?? "unspecified",
+    decisionPath,
+    reason: "fallback_to_rule_based_or_unmapped"
+  });
+
   return {
+    concept: null,
     category: null,
     statementType: null,
+    normalizedLabel: normalizedAccountName,
     matchedBy: "unmapped",
     confidence: "low",
-    explanation: "No saved mapping or keyword rule matched this account."
+    explanation:
+      "No strong saved mapping or explicit account rule matched this label. Left unmapped for review rather than forcing a Revenue classification."
+  };
+}
+
+export async function resolveAccountMapping(params: {
+  supabase: any;
+  accountName: string;
+  savedMappings?: AccountMapping[];
+  preferredStatementType?: StatementType | null;
+  companyId?: string | null;
+}): Promise<AutoMappingResult> {
+  const {
+    supabase,
+    accountName,
+    savedMappings = [],
+    preferredStatementType = null,
+    companyId = null
+  } = params;
+  const normalizedLabel = normalizeMappingText(accountName);
+
+  if (preferredStatementType) {
+    const memoryMatch = await getSavedMapping({
+      supabase,
+      companyId,
+      accountName,
+      statementType: preferredStatementType
+    });
+
+    if (memoryMatch) {
+      const sanitizedMemoryCategory = sanitizeCategoryForStatementType({
+        category: memoryMatch.record.category,
+        statementType: memoryMatch.record.statement_type
+      });
+      if (!sanitizedMemoryCategory) {
+        console.log("MAPPING MEMORY MISS", {
+          accountName,
+          normalizedLabel,
+          detectedStatementType: preferredStatementType ?? "unspecified",
+          reason: "saved_mapping_invalid_for_statement_type"
+        });
+      } else {
+      const savedMapping = memoryMatch.record;
+      const concept = deriveConceptFromCategory(
+        sanitizedMemoryCategory,
+        savedMapping.statement_type
+      );
+
+      if (savedMapping.id) {
+        void supabase
+          .rpc("increment_account_mapping_usage", {
+            mapping_id_input: savedMapping.id
+          })
+          .then(({ error }: { error?: { message?: string | null } | null }) => {
+            if (error) {
+              console.error("Failed to increment account mapping usage", {
+                mappingId: savedMapping.id,
+                error
+              });
+            }
+          })
+          .catch((error: unknown) => {
+            console.error("Failed to increment account mapping usage", {
+              mappingId: savedMapping.id,
+              error
+            });
+          });
+      }
+
+      return {
+        concept: concept ?? null,
+        category: sanitizedMemoryCategory,
+        statementType: savedMapping.statement_type,
+        normalizedLabel,
+        matchedBy: "memory",
+        confidence: "high",
+        explanation:
+          memoryMatch.scope === "company"
+            ? "Previously confirmed mapping for this company"
+            : "Previously confirmed global mapping",
+        memoryScope: memoryMatch.scope,
+        mappingId: savedMapping.id
+      };
+      }
+    }
+  }
+
+  const fallback = suggestAccountMapping(
+    accountName,
+    savedMappings,
+    preferredStatementType,
+    companyId
+  );
+
+  return {
+    ...fallback,
+    normalizedLabel
   };
 }

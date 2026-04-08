@@ -1,8 +1,11 @@
 import {
   inferStatementTypeFromCategory,
+  isBalanceSheetLeafCategory,
+  isBalanceSheetParentCategory,
   normalizeAccountName,
   parseCategory,
   parseStatementType,
+  sanitizeCategoryForStatementType,
   suggestAccountMapping
 } from "@/lib/auto-mapping";
 import { getPreviewMappingMeta } from "@/lib/mapping-intelligence";
@@ -19,6 +22,7 @@ import type { ImportColumnMapping, RawImportRow } from "@/lib/import-preview";
 export type ImportPreviewRow = {
   rowNumber: number;
   accountName: string;
+  normalizedLabel: string;
   accountKey: string;
   amountText: string;
   amountValue: number | null;
@@ -30,7 +34,11 @@ export type ImportPreviewRow = {
   matchedBy: AuditMatchedBy;
   confidence: AuditConfidence;
   mappingExplanation: string;
+  memoryScope?: "company" | "global" | null;
   needsReview: boolean;
+  isExcluded: boolean;
+  isNonBlocking: boolean;
+  isForcedInclude: boolean;
 };
 
 export type ImportAccountReviewRow = {
@@ -43,11 +51,137 @@ export type ImportAccountReviewRow = {
   matchedBy: AuditMatchedBy;
   confidence: AuditConfidence;
   mappingExplanation: string;
+  memoryScope?: "company" | "global" | null;
   needsReview: boolean;
   hasConflict: boolean;
   sourcePeriodLabels: string[];
   sourcePeriodDates: string[];
+  isExcluded: boolean;
+  isNonBlocking: boolean;
+  isForcedInclude: boolean;
 };
+
+export type GroupedImportPreviewRow = {
+  accountName: string;
+  normalizedLabel: string;
+  accountKey: string;
+  rowNumbers: number[];
+  category: NormalizedCategory | "";
+  statementType: StatementType | "";
+  matchedBy: AuditMatchedBy;
+  confidence: AuditConfidence;
+  mappingExplanation: string;
+  memoryScope?: "company" | "global" | null;
+  needsReview: boolean;
+  isExcluded: boolean;
+  isNonBlocking: boolean;
+  isForcedInclude: boolean;
+  periods: Array<{
+    rowNumber: number;
+    periodLabel: string;
+    periodDate: string;
+    amountText: string;
+    amountValue: number | null;
+  }>;
+};
+
+const NON_FINANCIAL_PREVIEW_PATTERNS = [
+  "margin",
+  "ratio",
+  "%",
+  "per share",
+  "eps",
+  "tax rate"
+];
+
+const NON_BLOCKING_DERIVED_LABELS = [
+  "cost and expenses",
+  "gross profit",
+  "operating income",
+  "income before tax",
+  "net income"
+];
+
+function resolveBalanceSheetCategory(params: {
+  manualCategory: NormalizedCategory | null;
+  csvCategory: NormalizedCategory | null;
+  suggestionCategory: NormalizedCategory | null;
+  statementType: StatementType | null;
+}) {
+  const { manualCategory, csvCategory, suggestionCategory, statementType } = params;
+
+  if (statementType !== "balance_sheet") {
+    return manualCategory ?? csvCategory ?? suggestionCategory ?? null;
+  }
+
+  if (isBalanceSheetLeafCategory(manualCategory)) {
+    return manualCategory;
+  }
+
+  if (isBalanceSheetLeafCategory(csvCategory)) {
+    return csvCategory;
+  }
+
+  if (isBalanceSheetLeafCategory(suggestionCategory)) {
+    return suggestionCategory;
+  }
+
+  return null;
+}
+
+export function isNonBlockingDerivedLabel(normalizedLabel: string) {
+  if (!normalizedLabel) {
+    return false;
+  }
+
+  return NON_BLOCKING_DERIVED_LABELS.includes(normalizedLabel);
+}
+
+function parseImportAmount(value: string) {
+  if (value == null) {
+    return null;
+  }
+
+  const str = String(value).trim();
+
+  if (!str) {
+    return null;
+  }
+
+  const isNegative = str.includes("(") && str.includes(")");
+  const cleaned = str.replace(/[$,]/g, "").replace(/[()]/g, "");
+  const parsed = Number(cleaned);
+
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+
+  return isNegative ? -parsed : parsed;
+}
+
+function getImportFieldValue(
+  row: RawImportRow,
+  selectedKey: string,
+  fallbackKeys: string[]
+) {
+  if (selectedKey) {
+    const selectedValue = row[selectedKey];
+
+    if (selectedValue != null && String(selectedValue).trim() !== "") {
+      return String(selectedValue).trim();
+    }
+  }
+
+  for (const key of fallbackKeys) {
+    const value = row[key];
+
+    if (value != null && String(value).trim() !== "") {
+      return String(value).trim();
+    }
+  }
+
+  return "";
+}
 
 function severityRank(confidence: AuditConfidence) {
   if (confidence === "low") return 3;
@@ -56,72 +190,260 @@ function severityRank(confidence: AuditConfidence) {
 }
 
 function matchedByRank(matchedBy: AuditMatchedBy) {
+  if (matchedBy === "memory") return 5;
   if (matchedBy === "manual") return 4;
   if (matchedBy === "csv_value" || matchedBy === "csv") return 3;
   if (matchedBy === "keyword" || matchedBy === "keyword_rule") return 2;
   return 1;
 }
 
+function isNonFinancialPreviewLabel(accountName: string) {
+  const normalized = normalizeAccountName(accountName);
+
+  if (!normalized) {
+    return false;
+  }
+
+  return NON_FINANCIAL_PREVIEW_PATTERNS.some((pattern) => {
+    const normalizedPattern = normalizeAccountName(pattern);
+
+    if (!normalizedPattern) {
+      return false;
+    }
+
+    if (pattern === "%") {
+      return accountName.includes("%");
+    }
+
+    return normalized.includes(normalizedPattern);
+  });
+}
+
 export function buildImportPreviewRows(params: {
+  companyId: string | null;
   rows: RawImportRow[];
   columnMapping: ImportColumnMapping;
   savedMappings: AccountMapping[];
+  fallbackPeriod?: {
+    label: string;
+    periodDate: string;
+  } | null;
 }) {
-  const { rows, columnMapping, savedMappings } = params;
-
-  return rows.map<ImportPreviewRow>((row, index) => {
-    const accountName = getCellValue(row, columnMapping.accountName);
-    const amountText = getCellValue(row, columnMapping.amount);
-    const manualCategory = parseCategory(getCellValue(row, "__manual_category"));
-    const manualStatementType = parseStatementType(
-      getCellValue(row, "__manual_statement_type")
-    );
-    const csvCategory = parseCategory(getCellValue(row, columnMapping.category));
-    const csvStatementType = parseStatementType(
-      getCellValue(row, columnMapping.statementType)
-    );
-    const suggestion = suggestAccountMapping(accountName, savedMappings);
-    const category = manualCategory ?? csvCategory ?? suggestion.category ?? null;
-    const statementType =
-      manualStatementType ??
-      csvStatementType ??
-      suggestion.statementType ??
-      inferStatementTypeFromCategory(category);
-    const mappingMeta = getPreviewMappingMeta({
-      accountName,
-      category,
-      statementType,
-      savedMappings,
-      hasCsvValues: Boolean(csvCategory || csvStatementType),
-      hasManualOverride: Boolean(manualCategory || manualStatementType)
-    });
-    const amountValue = Number.isFinite(Number(amountText)) ? Number(amountText) : null;
-    const needsReview =
-      !accountName ||
-      amountValue === null ||
-      !category ||
-      !statementType ||
-      mappingMeta.confidence === "low";
-
-    return {
-      rowNumber: index + 1,
-      accountName,
-      accountKey: normalizeAccountName(accountName),
-      amountText,
-      amountValue,
-      sourcePeriodLabel: getCellValue(row, columnMapping.periodLabel),
-      sourcePeriodDate: getCellValue(row, columnMapping.periodDate),
-      statementType: statementType ?? "",
-      category: category ?? "",
-      addbackFlag:
-        getCellValue(row, "__manual_addback_flag") ||
-        getCellValue(row, columnMapping.addbackFlag),
-      matchedBy: mappingMeta.matchedBy,
-      confidence: mappingMeta.confidence,
-      mappingExplanation: mappingMeta.explanation,
-      needsReview
-    };
+  const { companyId, rows, columnMapping, savedMappings, fallbackPeriod = null } = params;
+  console.log("BUILD IMPORT PREVIEW CALLED", {
+    totalRows: rows.length
   });
+  const accountNameKey = columnMapping.accountName;
+  const amountKey = columnMapping.amount;
+  const periodLabelKey = columnMapping.periodLabel;
+  const periodDateKey = columnMapping.periodDate;
+  const statementTypeKey = columnMapping.statementType;
+  const categoryKey = columnMapping.category;
+  const acceptedRows: ImportPreviewRow[] = [];
+
+  const builtRows = rows
+    .map<ImportPreviewRow | null>((row, index) => {
+      const accountName = getImportFieldValue(row, accountNameKey, [
+        "Account Name",
+        "Account",
+        "Line Item",
+        "Description"
+      ]);
+      const amountText = getImportFieldValue(row, amountKey, [
+        "Amount",
+        "Value",
+        "Balance"
+      ]);
+      const amountValue = parseImportAmount(amountText);
+      const sourcePeriodLabel = getImportFieldValue(row, periodLabelKey, [
+        "Period Label",
+        "Period",
+        "Month"
+      ]);
+      const sourcePeriodDate = getImportFieldValue(row, periodDateKey, [
+        "Period Date",
+        "Date",
+        "Period End"
+      ]);
+      const sourceStatementType = getImportFieldValue(row, statementTypeKey, [
+        "Statement Type",
+        "Statement"
+      ]);
+      const sourceCategory = getImportFieldValue(row, categoryKey, ["Category"]);
+      const periodLabel = sourcePeriodLabel || fallbackPeriod?.label || null;
+      const periodDate = sourcePeriodDate || fallbackPeriod?.periodDate || null;
+      const normalizedLabel = normalizeAccountName(accountName);
+
+      if (index < 3) {
+        console.log("ROW EXTRACTION DEBUG", {
+          rowIndex: index,
+          rawRow: row,
+          selectedHeaders: {
+            accountName: columnMapping.accountName,
+            amount: columnMapping.amount,
+            periodLabel: columnMapping.periodLabel,
+            periodDate: columnMapping.periodDate,
+            statementType: columnMapping.statementType,
+            category: columnMapping.category
+          },
+          extracted: {
+            accountName,
+            amountText,
+            amountValue,
+            sourcePeriodLabel,
+            sourcePeriodDate,
+            sourceStatementType,
+            sourceCategory
+          },
+          validation: {
+            hasAccountName: !!accountName,
+            hasAmountValue: amountValue !== null,
+            hasPeriod: !!(sourcePeriodLabel || sourcePeriodDate)
+          }
+        });
+      }
+
+      if (!accountName) {
+        return null;
+      }
+
+      if (isNonFinancialPreviewLabel(accountName)) {
+        if (index < 3) {
+          console.log("POST-VALIDATION DROP", {
+            rowIndex: index,
+            reason: "nonFinancialLabel",
+            accountName,
+            normalizedLabel,
+            sourceStatementType,
+            sourceCategory
+          });
+        }
+        return null;
+      }
+
+      if (!accountName) {
+        return null;
+      }
+
+      if (amountValue === null) {
+        return null;
+      }
+
+      if (!periodLabel && !periodDate) {
+        return null;
+      }
+
+      const manualCategory = parseCategory(getCellValue(row, "__manual_category"));
+      const manualStatementType = parseStatementType(
+        getCellValue(row, "__manual_statement_type")
+      );
+      const csvCategory = parseCategory(
+        sourceCategory
+      );
+      const csvStatementType = parseStatementType(
+        sourceStatementType
+      );
+      const preferredStatementType = manualStatementType ?? csvStatementType ?? null;
+      const suggestion = suggestAccountMapping(
+        accountName,
+        savedMappings,
+        preferredStatementType,
+        companyId
+      );
+      const suggestedOrProvidedStatementType =
+        manualStatementType ?? csvStatementType ?? suggestion.statementType ?? null;
+      const category = resolveBalanceSheetCategory({
+        manualCategory,
+        csvCategory,
+        suggestionCategory: suggestion.category,
+        statementType: suggestedOrProvidedStatementType
+      });
+      const statementType =
+        suggestedOrProvidedStatementType ??
+        inferStatementTypeFromCategory(category);
+      const sanitizedCategory = sanitizeCategoryForStatementType({
+        category,
+        statementType
+      });
+      const mappingMeta = getPreviewMappingMeta({
+        accountName,
+        category: sanitizedCategory,
+        statementType,
+        savedMappings,
+        hasCsvValues: Boolean(csvCategory || csvStatementType),
+        hasManualOverride: Boolean(manualCategory || manualStatementType)
+      });
+      if (statementType === "balance_sheet") {
+        console.log("BALANCE SHEET CATEGORY VALIDATION", {
+          accountName,
+          incomingCategory: manualCategory ?? csvCategory ?? suggestion.category ?? null,
+          parsedCategory: category,
+          statementType,
+          isLeaf: isBalanceSheetLeafCategory(category),
+          isParent: isBalanceSheetParentCategory(category),
+          finalCategory: sanitizedCategory,
+          manualCategory,
+          csvCategory,
+          suggestionCategory: suggestion.category,
+          manualWasParent: isBalanceSheetParentCategory(manualCategory),
+          csvWasParent: isBalanceSheetParentCategory(csvCategory)
+        });
+      }
+      const needsReview =
+        !accountName ||
+        amountValue === null ||
+        !sanitizedCategory ||
+        !statementType ||
+        mappingMeta.confidence === "low";
+
+      const previewRow: ImportPreviewRow = {
+        rowNumber: index + 1,
+        accountName: accountName.trim() || `Row ${index + 1}`,
+        normalizedLabel,
+        accountKey: normalizedLabel || `row-${index + 1}`,
+        amountText,
+        amountValue: Number(amountValue ?? amountText ?? 0),
+        sourcePeriodLabel: periodLabel ?? "",
+        sourcePeriodDate: periodDate ?? "",
+        statementType: (statementType ?? "") as StatementType | "",
+        category: (sanitizedCategory ?? "") as NormalizedCategory | "",
+        addbackFlag:
+          getCellValue(row, "__manual_addback_flag") ||
+          getCellValue(row, columnMapping.addbackFlag),
+        matchedBy: mappingMeta.matchedBy,
+        confidence: mappingMeta.confidence,
+        mappingExplanation: mappingMeta.explanation,
+        memoryScope:
+          suggestion.matchedBy === "memory" ? suggestion.memoryScope ?? null : null,
+        needsReview,
+        isExcluded: false,
+        isNonBlocking: isNonBlockingDerivedLabel(normalizedLabel),
+        isForcedInclude: false
+      };
+
+      if (index < 3) {
+        console.log("PREVIEW ROW ACCEPTED", {
+          rowIndex: index,
+          accountName,
+          amountValue,
+          sourcePeriodLabel: periodLabel,
+          sourcePeriodDate: periodDate
+        });
+      }
+
+      acceptedRows.push(previewRow);
+
+      return previewRow;
+    })
+    .filter((row): row is ImportPreviewRow => Boolean(row));
+
+  console.log("PREVIEW VALIDATION SUMMARY", {
+    totalRows: rows.length,
+    validRowsBeforeGrouping: builtRows.length,
+    firstAcceptedRow: acceptedRows[0] ?? null
+  });
+
+  return builtRows;
 }
 
 export function buildImportAccountReviewRows(previewRows: ImportPreviewRow[]) {
@@ -166,10 +488,14 @@ export function buildImportAccountReviewRows(previewRows: ImportPreviewRow[]) {
         matchedBy: primaryRow.matchedBy,
         confidence: primaryRow.confidence,
         mappingExplanation: primaryRow.mappingExplanation,
+        memoryScope: primaryRow.memoryScope ?? null,
         needsReview: rows.some((row) => row.needsReview) || uniqueMappings.size > 1,
         hasConflict: uniqueMappings.size > 1,
         sourcePeriodLabels,
-        sourcePeriodDates
+        sourcePeriodDates,
+        isExcluded: rows.every((row) => row.isExcluded),
+        isNonBlocking: rows.every((row) => row.isNonBlocking),
+        isForcedInclude: rows.some((row) => row.isForcedInclude)
       };
     })
     .sort((left, right) => {
@@ -186,6 +512,73 @@ export function buildImportAccountReviewRows(previewRows: ImportPreviewRow[]) {
 
       if (confidenceDelta !== 0) {
         return confidenceDelta;
+      }
+
+      return left.accountName.localeCompare(right.accountName);
+    });
+}
+
+export function buildGroupedImportPreviewRows(previewRows: ImportPreviewRow[]) {
+  const grouped = new Map<string, ImportPreviewRow[]>();
+
+  const rowsEligibleForGrouping = previewRows.filter(
+    (row) =>
+      Boolean(row.accountName.trim()) &&
+      row.amountValue !== null &&
+      Boolean(row.sourcePeriodLabel || row.sourcePeriodDate)
+  );
+
+  rowsEligibleForGrouping.forEach((row) => {
+    const key =
+      row.normalizedLabel ||
+      row.accountName.trim() ||
+      `row-${row.rowNumber}`;
+    const current = grouped.get(key) ?? [];
+    current.push(row);
+    grouped.set(key, current);
+  });
+
+  return Array.from(grouped.values())
+    .map<GroupedImportPreviewRow>((rows) => {
+      const sortedRows = [...rows].sort((left, right) => left.rowNumber - right.rowNumber);
+      const primaryRow = [...rows].sort((left, right) => {
+        const confidenceDelta =
+          severityRank(right.confidence) - severityRank(left.confidence);
+
+        if (confidenceDelta !== 0) {
+          return confidenceDelta;
+        }
+
+        return matchedByRank(right.matchedBy) - matchedByRank(left.matchedBy);
+      })[0];
+
+      return {
+        accountName: primaryRow.accountName,
+        normalizedLabel: primaryRow.normalizedLabel,
+        accountKey: primaryRow.accountKey,
+        rowNumbers: sortedRows.map((row) => row.rowNumber),
+        category: primaryRow.category,
+        statementType: primaryRow.statementType,
+        matchedBy: primaryRow.matchedBy,
+        confidence: primaryRow.confidence,
+        mappingExplanation: primaryRow.mappingExplanation,
+        memoryScope: primaryRow.memoryScope ?? null,
+        needsReview: rows.some((row) => row.needsReview),
+        isExcluded: rows.every((row) => row.isExcluded),
+        isNonBlocking: rows.every((row) => row.isNonBlocking),
+        isForcedInclude: rows.some((row) => row.isForcedInclude),
+        periods: sortedRows.map((row) => ({
+          rowNumber: row.rowNumber,
+          periodLabel: row.sourcePeriodLabel,
+          periodDate: row.sourcePeriodDate,
+          amountText: row.amountText,
+          amountValue: row.amountValue
+        }))
+      };
+    })
+    .sort((left, right) => {
+      if (left.needsReview !== right.needsReview) {
+        return left.needsReview ? -1 : 1;
       }
 
       return left.accountName.localeCompare(right.accountName);

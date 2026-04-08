@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAccountMappingsSchemaError } from "@/lib/account-mapping-schema";
-import { normalizeAccountName, parseCategory, parseStatementType } from "@/lib/auto-mapping";
+import { parseCategory, parseStatementType } from "@/lib/auto-mapping";
+import { saveConfirmedMappingToMemory } from "@/lib/mapping-memory";
 import { getSupabaseServerClient } from "@/lib/supabase";
 import type { AccountMapping } from "@/lib/types";
 
@@ -16,11 +17,20 @@ export async function GET(request: NextRequest) {
   }
 
   const supabase = getSupabaseServerClient();
-  const { data, error } = await supabase
-    .from("account_mappings")
-    .select("*")
-    .eq("company_id", companyId)
-    .returns<AccountMapping[]>();
+  const [{ data: companyMappings, error: companyError }, { data: globalMappings, error: globalError }] = await Promise.all([
+    supabase
+      .from("account_mappings")
+      .select("*")
+      .eq("company_id", companyId)
+      .returns<AccountMapping[]>(),
+    supabase
+      .from("account_mappings")
+      .select("*")
+      .is("company_id", null)
+      .returns<AccountMapping[]>()
+  ]);
+
+  const error = companyError ?? globalError;
 
   if (error) {
     console.warn("Account mappings unavailable for GET request.", {
@@ -32,7 +42,10 @@ export async function GET(request: NextRequest) {
   }
 
   return NextResponse.json({
-    data: Array.isArray(data) ? data : []
+    data: [
+      ...(Array.isArray(companyMappings) ? companyMappings : []),
+      ...(Array.isArray(globalMappings) ? globalMappings : [])
+    ]
   });
 }
 
@@ -40,14 +53,18 @@ export async function POST(request: NextRequest) {
   const body = (await request.json()) as {
     companyId?: string;
     accountName?: string;
+    concept?: string;
     category?: string;
     statementType?: string;
+    allowOverwrite?: boolean;
   };
 
   const companyId = body.companyId?.trim();
   const accountName = body.accountName?.trim();
+  const concept = body.concept?.trim();
   const category = parseCategory(body.category);
   const statementType = parseStatementType(body.statementType);
+  const allowOverwrite = body.allowOverwrite === true;
 
   if (!companyId || !accountName || !category || !statementType) {
     return NextResponse.json(
@@ -57,34 +74,49 @@ export async function POST(request: NextRequest) {
   }
 
   const supabase = getSupabaseServerClient();
-  const { data, error } = await supabase
-    .from("account_mappings")
-    .upsert(
-      {
-        company_id: companyId,
-        account_name: accountName,
-        account_name_key: normalizeAccountName(accountName),
-        category,
-        statement_type: statementType,
-        updated_at: new Date().toISOString()
-      },
-      {
-        onConflict: "company_id,account_name_key"
-      }
-    )
-    .select("*")
-    .single();
+  try {
+    const result = await saveConfirmedMappingToMemory({
+      supabase,
+      companyId,
+      accountName,
+      statementType,
+      concept: concept || category,
+      category,
+      allowOverwrite
+    });
 
-  if (error) {
-    if (isAccountMappingsSchemaError(error)) {
+    if (result.status === "conflict") {
+      return NextResponse.json(
+        {
+          status: "conflict",
+          existingRecord: result.existingRecord
+        },
+        { status: 409 }
+      );
+    }
+
+    return NextResponse.json(
+      {
+        status: result.status,
+        data: result.record
+      },
+      { status: result.status === "inserted" ? 201 : 200 }
+    );
+  } catch (error) {
+    if (
+      isAccountMappingsSchemaError(
+        error as { code?: string | null; message?: string | null } | null | undefined
+      )
+    ) {
       return NextResponse.json(
         { error: "Account mappings table is not available yet. Run the latest Supabase migration first." },
         { status: 400 }
       );
     }
 
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Account mapping save failed." },
+      { status: 500 }
+    );
   }
-
-  return NextResponse.json({ data }, { status: 201 });
 }

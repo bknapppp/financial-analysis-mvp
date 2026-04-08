@@ -61,11 +61,28 @@ function findMissingCategories(
     missing.push("Operating Expenses");
   }
 
-  const hasAssets = entriesForLatestPeriod.some((entry) => entry.category === "Assets");
-  const hasLiabilities = entriesForLatestPeriod.some(
-    (entry) => entry.category === "Liabilities"
+  const hasAssets = entriesForLatestPeriod.some(
+    (entry) =>
+      entry.category === "Assets" ||
+      entry.category === "current_assets" ||
+      entry.category.startsWith("current_assets.") ||
+      entry.category === "non_current_assets" ||
+      entry.category.startsWith("non_current_assets.")
   );
-  const hasEquity = entriesForLatestPeriod.some((entry) => entry.category === "Equity");
+  const hasLiabilities = entriesForLatestPeriod.some(
+    (entry) =>
+      entry.category === "Liabilities" ||
+      entry.category === "current_liabilities" ||
+      entry.category.startsWith("current_liabilities.") ||
+      entry.category === "non_current_liabilities" ||
+      entry.category.startsWith("non_current_liabilities.")
+  );
+  const hasEquity = entriesForLatestPeriod.some(
+    (entry) =>
+      entry.category === "Equity" ||
+      entry.category === "equity" ||
+      entry.category.startsWith("equity.")
+  );
 
   if (!hasAssets || !hasLiabilities || !hasEquity) {
     missing.push("Balance sheet components");

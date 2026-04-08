@@ -6,7 +6,7 @@ export type NormalizedImportPeriod = {
   periodDate: string;
   rawValue: string;
   source: "periodDate" | "periodLabel";
-  granularity: "month" | "quarter";
+  granularity: "month" | "quarter" | "year";
 };
 
 export type DetectedImportPeriod = NormalizedImportPeriod & {
@@ -48,15 +48,20 @@ const MONTH_LOOKUP: Record<string, number> = {
   december: 12
 };
 
+function normalizeYearToken(value: string) {
+  return value.trim().replace(/^(fy|cy)\s*/i, "").replace(/^['\s]+|['\s]+$/g, "");
+}
+
 function toFourDigitYear(value: string) {
-  const numeric = Number(value);
+  const normalizedToken = normalizeYearToken(value);
+  const numeric = Number(normalizedToken);
 
   if (!Number.isFinite(numeric)) {
     return null;
   }
 
-  if (value.length === 2) {
-    return numeric >= 70 ? 1900 + numeric : 2000 + numeric;
+  if (normalizedToken.length === 2) {
+    return numeric <= 49 ? 2000 + numeric : 1900 + numeric;
   }
 
   return numeric;
@@ -93,10 +98,21 @@ function buildQuarterPeriod(year: number, quarter: number, rawValue: string, sou
   };
 }
 
+function buildYearPeriod(year: number, rawValue: string, source: "periodDate" | "periodLabel"): NormalizedImportPeriod {
+  return {
+    key: `${year}`,
+    label: String(year),
+    periodDate: `${year}-01-01`,
+    rawValue,
+    source,
+    granularity: "year"
+  };
+}
+
 function normalizeMonthLabel(rawValue: string) {
   const compact = rawValue.trim().replace(/[._]/g, " ");
   const monthYear = compact.match(
-    /^([A-Za-z]+)[\s-]+(\d{2}|\d{4})$/
+    /^([A-Za-z]+)[\s-]+(?:(?:FY|CY)\s*)?('?[\d]{2,4})$/i
   );
 
   if (monthYear) {
@@ -104,6 +120,17 @@ function normalizeMonthLabel(rawValue: string) {
     const year = toFourDigitYear(monthYear[2]);
 
     if (month && year) {
+      return buildMonthPeriod(year, month, rawValue, "periodLabel");
+    }
+  }
+
+  const yearMonthWord = compact.match(/^(?:(?:FY|CY)\s*)?('?[\d]{2,4})[\s-]+([A-Za-z]+)$/i);
+
+  if (yearMonthWord) {
+    const year = toFourDigitYear(yearMonthWord[1]);
+    const month = MONTH_LOOKUP[yearMonthWord[2].toLowerCase()];
+
+    if (year && month) {
       return buildMonthPeriod(year, month, rawValue, "periodLabel");
     }
   }
@@ -124,22 +151,34 @@ function normalizeMonthLabel(rawValue: string) {
 
 function normalizeQuarterLabel(rawValue: string) {
   const compact = rawValue.trim().replace(/\s+/g, " ");
-  const quarterFirst = compact.match(/^Q([1-4])[\s-]+(\d{4})$/i);
+  const quarterFirst = compact.match(/^Q([1-4])[\s-]+(?:(?:FY|CY)\s*)?('?[\d]{2,4})$/i);
 
   if (quarterFirst) {
+    const year = toFourDigitYear(quarterFirst[2]);
+
+    if (!year) {
+      return null;
+    }
+
     return buildQuarterPeriod(
-      Number(quarterFirst[2]),
+      year,
       Number(quarterFirst[1]),
       rawValue,
       "periodLabel"
     );
   }
 
-  const yearFirst = compact.match(/^(\d{4})[\s-]+Q([1-4])$/i);
+  const yearFirst = compact.match(/^(?:(?:FY|CY)\s*)?('?[\d]{2,4})[\s-]+Q([1-4])$/i);
 
   if (yearFirst) {
+    const year = toFourDigitYear(yearFirst[1]);
+
+    if (!year) {
+      return null;
+    }
+
     return buildQuarterPeriod(
-      Number(yearFirst[1]),
+      year,
       Number(yearFirst[2]),
       rawValue,
       "periodLabel"
@@ -147,6 +186,23 @@ function normalizeQuarterLabel(rawValue: string) {
   }
 
   return null;
+}
+
+function normalizeYearLabel(rawValue: string) {
+  const compact = rawValue.trim().replace(/\s+/g, " ");
+  const bareYear = compact.match(/^(?:(?:FY|CY)\s*)?('?[\d]{2,4})$/i);
+
+  if (!bareYear) {
+    return null;
+  }
+
+  const year = toFourDigitYear(bareYear[1]);
+
+  if (!year) {
+    return null;
+  }
+
+  return buildYearPeriod(year, rawValue, "periodLabel");
 }
 
 export function normalizeImportedPeriod(input: PeriodInput): NormalizedImportPeriod | null {
@@ -171,7 +227,11 @@ export function normalizeImportedPeriod(input: PeriodInput): NormalizedImportPer
     return null;
   }
 
-  return normalizeQuarterLabel(rawLabel) ?? normalizeMonthLabel(rawLabel);
+  return (
+    normalizeQuarterLabel(rawLabel) ??
+    normalizeMonthLabel(rawLabel) ??
+    normalizeYearLabel(rawLabel)
+  );
 }
 
 export function normalizeStoredReportingPeriod(
