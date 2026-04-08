@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "test": "node --experimental-strip-types lib/import-periods.test.ts && node --experimental-strip-types lib/statement-parser.test.ts && node --experimental-strip-types lib/auto-mapping.test.ts && node --experimental-strip-types lib/mapping-memory.test.ts"
+    "test": "node --experimental-strip-types lib/import-periods.test.ts && node --experimental-strip-types lib/statement-parser.test.ts && node --experimental-strip-types lib/auto-mapping.test.ts && node --experimental-strip-types lib/mapping-memory.test.ts && node --experimental-strip-types lib/import-mapping-regression.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.1",
