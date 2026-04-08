@@ -11,20 +11,27 @@ function sumAmounts(entries: FinancialEntry[]) {
   return entries.reduce((total, entry) => total + Number(entry.amount), 0);
 }
 
+const EXCLUDED_BALANCE_SHEET_PARENT_CATEGORIES = new Set<FinancialEntry["category"]>([
+  "Assets",
+  "current_assets",
+  "non_current_assets",
+  "Liabilities",
+  "current_liabilities",
+  "non_current_liabilities",
+  "Equity",
+  "equity"
+]);
+
+function isLeafBalanceSheetCategory(category: FinancialEntry["category"]) {
+  return !EXCLUDED_BALANCE_SHEET_PARENT_CATEGORIES.has(category);
+}
+
 function isCurrentAssetCategory(category: FinancialEntry["category"]) {
-  return (
-    category === "Assets" ||
-    category === "current_assets" ||
-    category.startsWith("current_assets.")
-  );
+  return category.startsWith("current_assets.");
 }
 
 function isCurrentLiabilityCategory(category: FinancialEntry["category"]) {
-  return (
-    category === "Liabilities" ||
-    category === "current_liabilities" ||
-    category.startsWith("current_liabilities.")
-  );
+  return category.startsWith("current_liabilities.");
 }
 
 function byCategory(entries: FinancialEntry[], category: FinancialEntry["category"]) {
@@ -44,11 +51,18 @@ function calculateSnapshotForPeriod(
   const operatingExpenses = sumAmounts(
     byCategory(periodEntries, "Operating Expenses")
   );
+  const leafBalanceSheetEntries = periodEntries.filter(
+    (entry) =>
+      entry.statement_type === "balance_sheet" &&
+      isLeafBalanceSheetCategory(entry.category)
+  );
   const currentAssets = sumAmounts(
-    periodEntries.filter((entry) => isCurrentAssetCategory(entry.category))
+    leafBalanceSheetEntries.filter((entry) => isCurrentAssetCategory(entry.category))
   );
   const currentLiabilities = sumAmounts(
-    periodEntries.filter((entry) => isCurrentLiabilityCategory(entry.category))
+    leafBalanceSheetEntries.filter((entry) =>
+      isCurrentLiabilityCategory(entry.category)
+    )
   );
 
   const grossProfit = revenue - cogs;
