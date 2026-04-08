@@ -1011,13 +1011,30 @@ export async function resolveAccountMapping(params: {
   } = params;
   const normalizedLabel = normalizeMappingText(accountName);
 
+  /**
+   * Lookup flow:
+   * 1) If preloaded mappings are supplied, resolve in-memory first.
+   * 2) If no preloaded mappings were supplied, fall back to a direct DB lookup.
+   * 3) If no saved mapping applies, use deterministic keyword rules.
+   *
+   * This preserves mapping precedence (company -> global) while avoiding N+1
+   * round trips during imports where mappings are preloaded once.
+   */
   if (preferredStatementType) {
-    const memoryMatch = await getSavedMapping({
-      supabase,
-      companyId,
-      accountName,
-      statementType: preferredStatementType
-    });
+    const memoryMatch =
+      savedMappings.length > 0
+        ? findSavedMapping({
+            mappings: savedMappings,
+            companyId,
+            accountName,
+            statementType: preferredStatementType
+          })
+        : await getSavedMapping({
+            supabase,
+            companyId,
+            accountName,
+            statementType: preferredStatementType
+          });
 
     if (memoryMatch) {
       const sanitizedMemoryCategory = sanitizeCategoryForStatementType({

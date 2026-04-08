@@ -4,27 +4,19 @@ import type {
   PeriodSnapshot,
   ReportingPeriod,
   StatementRow
-} from "@/lib/types";
-import { calculateAdjustedEbitdaForPeriod } from "@/lib/add-backs";
+} from "./types.ts";
+import { calculateAdjustedEbitdaForPeriod } from "./add-backs.ts";
 
 function sumAmounts(entries: FinancialEntry[]) {
   return entries.reduce((total, entry) => total + Number(entry.amount), 0);
 }
 
 function isCurrentAssetCategory(category: FinancialEntry["category"]) {
-  return (
-    category === "Assets" ||
-    category === "current_assets" ||
-    category.startsWith("current_assets.")
-  );
+  return category.startsWith("current_assets.");
 }
 
 function isCurrentLiabilityCategory(category: FinancialEntry["category"]) {
-  return (
-    category === "Liabilities" ||
-    category === "current_liabilities" ||
-    category.startsWith("current_liabilities.")
-  );
+  return category.startsWith("current_liabilities.");
 }
 
 function byCategory(entries: FinancialEntry[], category: FinancialEntry["category"]) {
