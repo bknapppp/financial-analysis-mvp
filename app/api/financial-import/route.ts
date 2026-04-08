@@ -367,6 +367,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    /**
+     * Mapping lookup flow (import path):
+     * - Before: each row with a statement type called `resolveAccountMapping`, which
+     *   performed a per-row DB lookup for memory mappings (`getSavedMapping`), causing
+     *   N+1 round trips for large imports.
+     * - Now: preload company + global mappings once per import and resolve in memory.
+     *   `resolveAccountMapping` only hits DB when no preloaded mappings are provided.
+     */
     const [{ data: companyMappingsResult, error: companyMappingsError }, { data: globalMappingsResult, error: globalMappingsError }] = await Promise.all([
       supabase
         .from("account_mappings")
@@ -452,6 +460,7 @@ export async function POST(request: NextRequest) {
       confidence: string;
       mapping_explanation: string;
     }> = [];
+    const mappingResolutionCache = new Map<string, Awaited<ReturnType<typeof resolveAccountMapping>>>();
     for (const { row, rowNumber, periodId } of resolvedAssignments) {
       const accountName =
         typeof row.accountName === "string"
@@ -462,13 +471,20 @@ export async function POST(request: NextRequest) {
       const amount = Number(row.amount);
       const providedCategory = parseCategory(row.category);
       const providedStatementType = parseStatementType(row.statementType);
-      const suggestedMapping = await resolveAccountMapping({
-        supabase,
-        accountName,
-        savedMappings,
-        preferredStatementType: providedStatementType,
-        companyId
-      });
+      const mappingCacheKey = `${normalizeAccountName(accountName)}::${
+        providedStatementType ?? "none"
+      }`;
+      let suggestedMapping = mappingResolutionCache.get(mappingCacheKey);
+      if (!suggestedMapping) {
+        suggestedMapping = await resolveAccountMapping({
+          supabase,
+          accountName,
+          savedMappings,
+          preferredStatementType: providedStatementType,
+          companyId
+        });
+        mappingResolutionCache.set(mappingCacheKey, suggestedMapping);
+      }
       const statementType =
         providedStatementType ??
         suggestedMapping.statementType ??
