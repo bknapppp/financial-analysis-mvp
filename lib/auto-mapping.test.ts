@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { suggestAccountMapping } from "./auto-mapping.ts";
+import { resolveAccountMapping, suggestAccountMapping } from "./auto-mapping.ts";
 import { normalizeMappingLabel } from "./mapping-memory.ts";
 import type { AccountMapping } from "./types.ts";
 
@@ -258,5 +258,58 @@ const memoryApplied = suggestAccountMapping(
 assert.equal(memoryApplied.matchedBy, "memory");
 assert.equal(memoryApplied.category, "equity.common_stock");
 assert.equal(memoryApplied.statementType, "balance_sheet");
+
+let inMemoryLookupDbCalls = 0;
+const throwingSupabase = {
+  from() {
+    inMemoryLookupDbCalls += 1;
+    throw new Error("DB lookup should not run when savedMappings are preloaded.");
+  },
+  rpc() {
+    return Promise.resolve({ error: null });
+  }
+};
+
+const resolvedFromPreloadedMappings = await resolveAccountMapping({
+  supabase: throwingSupabase,
+  accountName: "Common Stock",
+  savedMappings,
+  preferredStatementType: "balance_sheet",
+  companyId: "company-a"
+});
+assert.equal(resolvedFromPreloadedMappings.matchedBy, "memory");
+assert.equal(resolvedFromPreloadedMappings.category, "equity.common_stock");
+assert.equal(inMemoryLookupDbCalls, 0);
+
+let fallbackDbCalls = 0;
+const fallbackSupabase = {
+  from() {
+    fallbackDbCalls += 1;
+    return {
+      select() {
+        return this;
+      },
+      eq() {
+        return this;
+      },
+      is() {
+        return this;
+      },
+      async maybeSingle() {
+        return { data: null, error: null };
+      }
+    };
+  }
+};
+
+const resolvedWithoutPreload = await resolveAccountMapping({
+  supabase: fallbackSupabase,
+  accountName: "Revenue",
+  savedMappings: [],
+  preferredStatementType: "income",
+  companyId: "company-a"
+});
+assert.equal(fallbackDbCalls > 0, true);
+assert.equal(resolvedWithoutPreload.category, "Revenue");
 
 console.log("auto-mapping tests passed");
