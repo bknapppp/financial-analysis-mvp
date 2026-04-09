@@ -1,4 +1,8 @@
-import { normalizeAccountName, suggestAccountMapping } from "@/lib/auto-mapping";
+import {
+  normalizeAccountName,
+  resolveMappingSelection,
+  suggestAccountMapping
+} from "@/lib/auto-mapping";
 import type {
   AccountMapping,
   AuditConfidence,
@@ -20,12 +24,15 @@ type MappingMeta = {
 };
 
 type PreviewMappingInput = {
+  companyId?: string | null;
   accountName: string;
   category: NormalizedCategory | null;
   statementType: StatementType | null;
   savedMappings: AccountMapping[];
-  hasCsvValues: boolean;
-  hasManualOverride: boolean;
+  manualCategory?: NormalizedCategory | null;
+  manualStatementType?: StatementType | null;
+  csvCategory?: NormalizedCategory | null;
+  csvStatementType?: StatementType | null;
 };
 
 function toAuditMatchedBy(
@@ -118,29 +125,16 @@ export function getEntryMappingMeta(
 }
 
 export function getPreviewMappingMeta({
+  companyId = null,
   accountName,
   category,
   statementType,
   savedMappings,
-  hasCsvValues,
-  hasManualOverride
+  manualCategory = null,
+  manualStatementType = null,
+  csvCategory = null,
+  csvStatementType = null
 }: PreviewMappingInput): MappingMeta {
-  if (hasManualOverride) {
-    return {
-      matchedBy: "manual",
-      confidence: "high",
-      explanation: "Mapping was adjusted during review before import."
-    };
-  }
-
-  if (hasCsvValues) {
-    return {
-      matchedBy: "csv_value",
-      confidence: "high",
-      explanation: "Using category or statement type provided in the CSV."
-    };
-  }
-
   if (!accountName || !category || !statementType) {
     return {
       matchedBy: "manual",
@@ -149,27 +143,26 @@ export function getPreviewMappingMeta({
     };
   }
 
-  const suggestion = suggestAccountMapping(accountName, savedMappings);
+  const suggestion = resolveMappingSelection({
+    accountName,
+    companyId,
+    savedMappings,
+    preferredStatementType: statementType,
+    manualCategory,
+    manualStatementType,
+    csvCategory,
+    csvStatementType
+  });
 
   if (
-    suggestion.matchedBy === "memory" &&
+    (suggestion.matchedBy === "memory" ||
+      suggestion.matchedBy === "manual" ||
+      suggestion.matchedBy === "csv_value") &&
     suggestion.category === category &&
     suggestion.statementType === statementType
   ) {
     return {
       matchedBy: "memory",
-      confidence: "high",
-      explanation: suggestion.explanation
-    };
-  }
-
-  if (
-    suggestion.matchedBy === "saved_mapping" &&
-    suggestion.category === category &&
-    suggestion.statementType === statementType
-  ) {
-    return {
-      matchedBy: "saved_mapping",
       confidence: "high",
       explanation: suggestion.explanation
     };

@@ -21,13 +21,13 @@ export function EbitdaBridge({ bridge }: EbitdaBridgeProps) {
       <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
         <div>
           <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
-            Adjustment Bridge
+            Adjusted EBITDA
           </p>
           <h3 className="mt-2 text-lg font-semibold text-slate-900">
             Adjusted EBITDA bridge
           </h3>
           <p className="mt-1 text-sm text-slate-500">
-            Reported EBITDA reconciled to accepted addbacks for {bridge.periodLabel}.
+            Canonical EBITDA reconciled to accepted addbacks for {bridge.periodLabel}.
           </p>
         </div>
 
@@ -44,7 +44,7 @@ export function EbitdaBridge({ bridge }: EbitdaBridgeProps) {
       </div>
 
       <div className="mt-5 space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-        <BridgeRow label="Reported EBITDA" value={bridge.reportedEbitda} />
+        <BridgeRow label="Canonical EBITDA" value={bridge.reportedEbitda} />
         {bridge.groups.map((group) => {
           const isExpanded = expandedType === group.type;
 

@@ -1,17 +1,41 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { buildBalanceSheet as buildSnapshotBalanceSheet, buildIncomeStatement as buildSnapshotIncomeStatement } from "@/lib/calculations";
+import { AddBackReviewPanel } from "@/components/add-back-review-panel";
+import {
+  CreditScenarioPanel,
+  DEFAULT_CREDIT_SCENARIO_INPUT_VALUES,
+  parseCreditScenarioInputValues,
+  type CreditScenarioInputValues
+} from "@/components/credit-scenario-panel";
+import {
+  BALANCE_SHEET_VALIDATION_TOLERANCE,
+  buildBalanceSheetRollup,
+  buildBalanceSheetValidation,
+  canonicalizeCategoryPath
+} from "@/components/financials-view-rollup";
+import { DashboardCharts } from "@/components/dashboard-charts";
+import { DealDecisionPanel } from "@/components/deal-decision-panel";
+import { EbitdaBridge } from "@/components/ebitda-bridge";
+import { EbitdaExplainabilityPanel } from "@/components/ebitda-explainability-panel";
 import { MultiPeriodSummaryTable } from "@/components/multi-period-summary-table";
+import { PerformanceDrivers } from "@/components/performance-drivers";
+import { RiskFlagsPanel } from "@/components/risk-flags-panel";
 import { StatementTable } from "@/components/statement-table";
+import { UnderwritingSnapshotPanel } from "@/components/underwriting-snapshot-panel";
+import { buildCreditScenario } from "@/lib/credit-scenario";
 import { formatCurrency } from "@/lib/formatters";
+import { buildRiskFlags } from "@/lib/risk-flags";
 import type {
   DashboardData,
   FinancialEntry,
   NormalizedPeriodOutput,
   NormalizedStatement,
-  PeriodSnapshot
+  PeriodSnapshot,
+  UnderwritingEbitdaBasis
 } from "@/lib/types";
 
 type FinancialsViewProps = {
@@ -19,518 +43,13 @@ type FinancialsViewProps = {
 };
 
 type FinancialsMode = "reported" | "adjusted";
-type ValidationSeverity = "pass" | "warning" | "fail";
-type ValidationCheck = {
-  key: string;
-  label: string;
-  severity: ValidationSeverity;
-  message: string;
-  computedValue?: number;
-  sourceValue?: number;
-  difference?: number;
-  contributingLineItems?: Array<{
-    accountName: string;
-    normalizedCategory: string;
-    amount: number;
-  }>;
-};
-type BalanceSheetValidationResult = {
-  overallSeverity: ValidationSeverity;
-  checks: ValidationCheck[];
-  computedTotals: {
-    currentAssets: number;
-    nonCurrentAssets: number;
-    totalAssets: number;
-    currentLiabilities: number;
-    nonCurrentLiabilities: number;
-    totalLiabilities: number;
-    totalEquity: number;
-    totalLiabilitiesAndEquity: number;
-    workingCapital: number;
-  };
-  sourceTotals: Partial<Record<SourceTotalKey, { accountName: string; amount: number }>>;
-};
-type SourceTotalKey =
-  | "totalCurrentAssets"
-  | "totalAssets"
-  | "totalCurrentLiabilities"
-  | "totalLiabilities"
-  | "totalEquity"
-  | "totalLiabilitiesAndEquity";
+type WorkspaceTab = "overview" | "financials" | "adjustments";
 
-const BALANCE_SHEET_CATEGORY_PREFIXES = {
-  currentAssets: ["current_assets"],
-  nonCurrentAssets: ["non_current_assets"],
-  currentLiabilities: ["current_liabilities"],
-  nonCurrentLiabilities: ["non_current_liabilities"],
-  equity: ["equity"]
-} as const;
-const BALANCE_SHEET_VALIDATION_TOLERANCE = 1;
-const SOURCE_TOTAL_PATTERNS: Record<SourceTotalKey, string[]> = {
-  totalCurrentAssets: ["total current assets"],
-  totalAssets: ["total assets"],
-  totalCurrentLiabilities: ["total current liabilities"],
-  totalLiabilities: ["total liabilities"],
-  totalEquity: ["total equity", "total stockholders equity", "total shareholders equity"],
-  totalLiabilitiesAndEquity: [
-    "total liabilities and equity",
-    "total liabilities & equity"
-  ]
-};
-
-type BalanceSheetFamilyKey = keyof typeof BALANCE_SHEET_CATEGORY_PREFIXES;
-type BalanceSheetDebugRow = {
-  accountName: string;
-  account_name?: string | null;
-  category?: string | null;
-  normalizedCategory: string;
-  normalized_category?: string | null;
-  statementType: string;
-  statement_type?: string | null;
-  periodId: string;
-  amount: number;
-  familyMatchedAs: string[];
-};
-
-function normalizeCategoryKey(value: string | null | undefined) {
-  return (value ?? "").trim().toLowerCase();
-}
-
-function normalizeLabelKey(value: string | null | undefined) {
-  return normalizeCategoryKey(value).replace(/[^\w]+/g, " ").replace(/\s+/g, " ").trim();
-}
-
-function canonicalizeCategoryPath(value: string | null | undefined) {
-  return normalizeCategoryKey(value)
-    .replace(/[.\s/-]+/g, "_")
-    .replace(/_+/g, "_")
-    .replace(/^_+|_+$/g, "");
-}
-
-function matchesCategoryFamily(category: string | null | undefined, family: string) {
-  const canonicalCategory = canonicalizeCategoryPath(category);
-  const canonicalFamily = canonicalizeCategoryPath(family);
-
-  if (!canonicalCategory || !canonicalFamily) {
-    return false;
-  }
-
-  return (
-    canonicalCategory === canonicalFamily ||
-    canonicalCategory.startsWith(`${canonicalFamily}_`)
-  );
-}
-
-function matchesCategoryPrefix(
-  category: string | null | undefined,
-  prefixes: readonly string[]
-) {
-  return prefixes.some((prefix) => matchesCategoryFamily(category, prefix));
-}
-
-function getEntryAccountName(entry: FinancialEntry) {
-  const rawEntry = entry as FinancialEntry & {
-    accountName?: string | null;
-    account_name?: string | null;
-  };
-
-  return rawEntry.account_name ?? rawEntry.accountName ?? entry.account_name ?? "";
-}
-
-function getEntryCategory(entry: FinancialEntry) {
-  const rawEntry = entry as FinancialEntry & {
-    normalizedCategory?: string | null;
-    normalized_category?: string | null;
-    category?: string | null;
-  };
-
-  return (
-    rawEntry.category ??
-    entry.category ??
-    rawEntry.normalized_category ??
-    rawEntry.normalizedCategory ??
-    ""
-  );
-}
-
-function getEntryStatementType(entry: FinancialEntry) {
-  const rawEntry = entry as FinancialEntry & {
-    statementType?: string | null;
-    statement_type?: string | null;
-  };
-
-  return (
-    rawEntry.statement_type ??
-    rawEntry.statementType ??
-    entry.statement_type ??
-    ""
-  );
-}
-
-function getMatchedFamilies(category: string) {
-  return Object.entries(BALANCE_SHEET_CATEGORY_PREFIXES)
-    .filter(([, prefixes]) => matchesCategoryPrefix(category, prefixes))
-    .map(([family]) => family);
-}
-
-function isBalanceSheetEntry(entry: FinancialEntry) {
-  const category = getEntryCategory(entry);
-  const statementType = getEntryStatementType(entry);
-
-  return (
-    statementType === "balance_sheet" ||
-    matchesCategoryPrefix(category, [
-      ...BALANCE_SHEET_CATEGORY_PREFIXES.currentAssets,
-      ...BALANCE_SHEET_CATEGORY_PREFIXES.nonCurrentAssets,
-      ...BALANCE_SHEET_CATEGORY_PREFIXES.currentLiabilities,
-      ...BALANCE_SHEET_CATEGORY_PREFIXES.nonCurrentLiabilities,
-      ...BALANCE_SHEET_CATEGORY_PREFIXES.equity
-    ])
-  );
-}
-
-function toBalanceSheetDebugRow(entry: FinancialEntry): BalanceSheetDebugRow {
-  const rawEntry = entry as FinancialEntry & {
-    accountName?: string | null;
-    account_name?: string | null;
-    normalizedCategory?: string | null;
-    normalized_category?: string | null;
-    statementType?: string | null;
-    statement_type?: string | null;
-    category?: string | null;
-  };
-  const category = getEntryCategory(entry);
-  const statementType = getEntryStatementType(entry);
-
-  return {
-    accountName: getEntryAccountName(entry),
-    account_name: rawEntry.account_name ?? rawEntry.accountName ?? null,
-    category: rawEntry.category ?? null,
-    normalizedCategory: category,
-    normalized_category:
-      rawEntry.normalized_category ?? rawEntry.normalizedCategory ?? null,
-    statementType,
-    statement_type: rawEntry.statement_type ?? rawEntry.statementType ?? null,
-    periodId: entry.period_id,
-    amount: Number(entry.amount),
-    familyMatchedAs: getMatchedFamilies(category)
-  };
-}
-
-function buildBalanceSheetRollup(entries: FinancialEntry[], periodId: string) {
-  console.log("ALL ENTRIES BEFORE FILTER:", entries);
-
-  const selectedPeriodEntries = entries.filter((entry) => entry.period_id === periodId);
-
-  console.log("PERIOD FILTER CHECK", {
-    selectedPeriodId: periodId,
-    rows: selectedPeriodEntries.map((entry) => ({
-      account: entry.account_name,
-      periodId: entry.period_id,
-      amount: entry.amount
-    }))
-  });
-
-  const selectedPeriodRows = selectedPeriodEntries
-    .filter(isBalanceSheetEntry)
-    .map(toBalanceSheetDebugRow);
-
-  const filterRowsForFamily = (
-    rows: BalanceSheetDebugRow[],
-    familyPrefixes: readonly string[]
-  ) =>
-    rows.filter((row) => {
-      const normalizedCategory = row.normalizedCategory;
-      const matches = matchesCategoryPrefix(normalizedCategory, familyPrefixes);
-
-      console.log("GROUPING CHECK", {
-        account: row.account_name ?? row.accountName,
-        normalizedCategory,
-        matchesCurrentAssets: matchesCategoryFamily(
-          normalizedCategory,
-          "current_assets"
-        ),
-        matchesCurrentLiabilities: matchesCategoryFamily(
-          normalizedCategory,
-          "current_liabilities"
-        )
-      });
-
-      return matches;
-    });
-
-  const familyRows = {
-    currentAssets: filterRowsForFamily(
-      selectedPeriodRows,
-      BALANCE_SHEET_CATEGORY_PREFIXES.currentAssets
-    ),
-    nonCurrentAssets: filterRowsForFamily(
-      selectedPeriodRows,
-      BALANCE_SHEET_CATEGORY_PREFIXES.nonCurrentAssets
-    ),
-    currentLiabilities: filterRowsForFamily(
-      selectedPeriodRows,
-      BALANCE_SHEET_CATEGORY_PREFIXES.currentLiabilities
-    ),
-    nonCurrentLiabilities: filterRowsForFamily(
-      selectedPeriodRows,
-      BALANCE_SHEET_CATEGORY_PREFIXES.nonCurrentLiabilities
-    ),
-    equity: filterRowsForFamily(
-      selectedPeriodRows,
-      BALANCE_SHEET_CATEGORY_PREFIXES.equity
-    )
-  } satisfies Record<BalanceSheetFamilyKey, BalanceSheetDebugRow[]>;
-
-  const sumRows = (rows: BalanceSheetDebugRow[]) =>
-    rows.reduce((total, line) => total + line.amount, 0);
-
-  const totals = {
-    totalCurrentAssets: sumRows(familyRows.currentAssets),
-    totalNonCurrentAssets: sumRows(familyRows.nonCurrentAssets),
-    totalCurrentLiabilities: sumRows(familyRows.currentLiabilities),
-    totalNonCurrentLiabilities: sumRows(familyRows.nonCurrentLiabilities),
-    totalEquity: sumRows(familyRows.equity)
-  };
-
-  const finalTotals = {
-    ...totals,
-    totalAssets: totals.totalCurrentAssets + totals.totalNonCurrentAssets,
-    totalLiabilities:
-      totals.totalCurrentLiabilities + totals.totalNonCurrentLiabilities,
-    totalLiabilitiesAndEquity:
-      totals.totalCurrentLiabilities +
-      totals.totalNonCurrentLiabilities +
-      totals.totalEquity,
-    workingCapital: totals.totalCurrentAssets - totals.totalCurrentLiabilities
-  };
-
-  return {
-    selectedPeriodRows,
-    familyRows,
-    finalTotals
-  };
-}
-
-function severityRank(value: ValidationSeverity) {
-  if (value === "fail") return 3;
-  if (value === "warning") return 2;
-  return 1;
-}
-
-function withinTolerance(left: number, right: number, tolerance = BALANCE_SHEET_VALIDATION_TOLERANCE) {
-  return Math.abs(left - right) <= tolerance;
-}
-
-function buildBalanceSheetValidation(params: {
-  entries: FinancialEntry[];
-  snapshot: PeriodSnapshot;
-  rollup: ReturnType<typeof buildBalanceSheetRollup>;
-}): BalanceSheetValidationResult {
-  const { entries, snapshot, rollup } = params;
-  const selectedPeriodEntries = entries.filter((entry) => entry.period_id === snapshot.periodId);
-  const sourceTotals = Object.entries(SOURCE_TOTAL_PATTERNS).reduce<
-    Partial<Record<SourceTotalKey, { accountName: string; amount: number }>>
-  >((acc, [key, patterns]) => {
-    const matched = selectedPeriodEntries.find((entry) =>
-      patterns.includes(normalizeLabelKey(entry.account_name))
-    );
-
-    if (matched) {
-      acc[key as SourceTotalKey] = {
-        accountName: matched.account_name,
-        amount: Number(matched.amount)
-      };
-    }
-
-    return acc;
-  }, {});
-
-  const computedTotals = {
-    currentAssets: rollup.finalTotals.totalCurrentAssets,
-    nonCurrentAssets: rollup.finalTotals.totalNonCurrentAssets,
-    totalAssets: rollup.finalTotals.totalAssets,
-    currentLiabilities: rollup.finalTotals.totalCurrentLiabilities,
-    nonCurrentLiabilities: rollup.finalTotals.totalNonCurrentLiabilities,
-    totalLiabilities: rollup.finalTotals.totalLiabilities,
-    totalEquity: rollup.finalTotals.totalEquity,
-    totalLiabilitiesAndEquity: rollup.finalTotals.totalLiabilitiesAndEquity,
-    workingCapital: rollup.finalTotals.workingCapital
-  };
-
-  const checks: ValidationCheck[] = [];
-  const balanceDifference = computedTotals.totalAssets - computedTotals.totalLiabilitiesAndEquity;
-
-  checks.push({
-    key: "balance_equation",
-    label: "Balance Equation",
-    severity: withinTolerance(
-      computedTotals.totalAssets,
-      computedTotals.totalLiabilitiesAndEquity
-    )
-      ? "pass"
-      : "fail",
-    message: withinTolerance(
-      computedTotals.totalAssets,
-      computedTotals.totalLiabilitiesAndEquity
-    )
-      ? "Assets reconcile to liabilities and equity."
-      : "Assets do not reconcile to liabilities and equity.",
-    computedValue: computedTotals.totalAssets,
-    sourceValue: computedTotals.totalLiabilitiesAndEquity,
-    difference: balanceDifference
-  });
-
-  const sourceComparisonConfig: Array<{
-    key: SourceTotalKey;
-    label: string;
-    computedValue: number;
-    contributingLineItems: ValidationCheck["contributingLineItems"];
-  }> = [
-    {
-      key: "totalCurrentAssets",
-      label: "Current Assets",
-      computedValue: computedTotals.currentAssets,
-      contributingLineItems: rollup.familyRows.currentAssets.map((row) => ({
-        accountName: row.accountName,
-        normalizedCategory: row.normalizedCategory,
-        amount: row.amount
-      }))
-    },
-    {
-      key: "totalAssets",
-      label: "Total Assets",
-      computedValue: computedTotals.totalAssets,
-      contributingLineItems: [
-        ...rollup.familyRows.currentAssets,
-        ...rollup.familyRows.nonCurrentAssets
-      ].map((row) => ({
-        accountName: row.accountName,
-        normalizedCategory: row.normalizedCategory,
-        amount: row.amount
-      }))
-    },
-    {
-      key: "totalCurrentLiabilities",
-      label: "Current Liabilities",
-      computedValue: computedTotals.currentLiabilities,
-      contributingLineItems: rollup.familyRows.currentLiabilities.map((row) => ({
-        accountName: row.accountName,
-        normalizedCategory: row.normalizedCategory,
-        amount: row.amount
-      }))
-    },
-    {
-      key: "totalLiabilities",
-      label: "Total Liabilities",
-      computedValue: computedTotals.totalLiabilities,
-      contributingLineItems: [
-        ...rollup.familyRows.currentLiabilities,
-        ...rollup.familyRows.nonCurrentLiabilities
-      ].map((row) => ({
-        accountName: row.accountName,
-        normalizedCategory: row.normalizedCategory,
-        amount: row.amount
-      }))
-    },
-    {
-      key: "totalEquity",
-      label: "Total Equity",
-      computedValue: computedTotals.totalEquity,
-      contributingLineItems: rollup.familyRows.equity.map((row) => ({
-        accountName: row.accountName,
-        normalizedCategory: row.normalizedCategory,
-        amount: row.amount
-      }))
-    },
-    {
-      key: "totalLiabilitiesAndEquity",
-      label: "Total Liabilities and Equity",
-      computedValue: computedTotals.totalLiabilitiesAndEquity,
-      contributingLineItems: [
-        ...rollup.familyRows.currentLiabilities,
-        ...rollup.familyRows.nonCurrentLiabilities,
-        ...rollup.familyRows.equity
-      ].map((row) => ({
-        accountName: row.accountName,
-        normalizedCategory: row.normalizedCategory,
-        amount: row.amount
-      }))
-    }
-  ];
-
-  sourceComparisonConfig.forEach((item) => {
-    const source = sourceTotals[item.key];
-
-    if (!source) {
-      return;
-    }
-
-    const difference = item.computedValue - source.amount;
-    checks.push({
-      key: `source_${item.key}`,
-      label: `${item.label}: Source vs Computed`,
-      severity: withinTolerance(item.computedValue, source.amount)
-        ? "pass"
-        : "warning",
-      message: withinTolerance(item.computedValue, source.amount)
-        ? `Source ${source.accountName} agrees with computed ${item.label.toLowerCase()}.`
-        : `Source ${source.accountName} does not agree with computed ${item.label.toLowerCase()}.`,
-      computedValue: item.computedValue,
-      sourceValue: source.amount,
-      difference,
-      contributingLineItems: item.contributingLineItems
-    });
-  });
-
-  const sectionChecks: Array<{
-    key: string;
-    label: string;
-    rows: BalanceSheetDebugRow[];
-  }> = [
-    { key: "missing_current_assets", label: "Current Assets Section", rows: rollup.familyRows.currentAssets },
-    {
-      key: "missing_non_current_assets",
-      label: "Non-Current Assets Section",
-      rows: rollup.familyRows.nonCurrentAssets
-    },
-    {
-      key: "missing_current_liabilities",
-      label: "Current Liabilities Section",
-      rows: rollup.familyRows.currentLiabilities
-    },
-    {
-      key: "missing_non_current_liabilities",
-      label: "Non-Current Liabilities Section",
-      rows: rollup.familyRows.nonCurrentLiabilities
-    },
-    { key: "missing_equity", label: "Equity Section", rows: rollup.familyRows.equity }
-  ];
-
-  sectionChecks.forEach((item) => {
-    checks.push({
-      key: item.key,
-      label: item.label,
-      severity: item.rows.length > 0 ? "pass" : "warning",
-      message:
-        item.rows.length > 0
-          ? `${item.label} is present.`
-          : `${item.label} is missing from the normalized balance sheet.`
-    });
-  });
-
-  const overallSeverity = checks.reduce<ValidationSeverity>((current, check) => {
-    return severityRank(check.severity) > severityRank(current) ? check.severity : current;
-  }, "pass");
-
-  return {
-    overallSeverity,
-    checks,
-    computedTotals,
-    sourceTotals
-  };
-}
-
+const WORKSPACE_TABS: Array<{ id: WorkspaceTab; label: string }> = [
+  { id: "overview", label: "Overview" },
+  { id: "financials", label: "Financials" },
+  { id: "adjustments", label: "Adjustments" }
+];
 function toNormalizedStatementRows(
   rows: Array<{ label: string; value: number }>,
   subtotalLabels: string[]
@@ -553,7 +72,7 @@ function buildReportedIncomeStatement(params: {
     return {
       ...normalizedOutput.incomeStatement,
       title: "Income Statement",
-      footerLabel: "Reported EBITDA",
+      footerLabel: "EBITDA",
       footerValue: snapshot.ebitda
     };
   }
@@ -563,10 +82,12 @@ function buildReportedIncomeStatement(params: {
     title: "Income Statement",
     rows: toNormalizedStatementRows(buildSnapshotIncomeStatement(snapshot), [
       "Gross Profit",
-      "Reported EBITDA",
+      "EBIT",
+      "Net Income",
+      "Computed EBITDA",
       "Adjusted EBITDA"
     ]),
-    footerLabel: "Reported EBITDA",
+    footerLabel: "EBITDA",
     footerValue: snapshot.ebitda
   };
 }
@@ -591,7 +112,9 @@ function buildAdjustedIncomeStatement(params: {
     title: "Income Statement",
     rows: toNormalizedStatementRows(buildSnapshotIncomeStatement(snapshot), [
       "Gross Profit",
-      "Reported EBITDA",
+      "EBIT",
+      "Net Income",
+      "Computed EBITDA",
       "Adjusted EBITDA"
     ]),
     footerLabel: "Adjusted EBITDA",
@@ -713,8 +236,18 @@ function buildBalanceSheet(params: {
 }
 
 export function FinancialsView({ data }: FinancialsViewProps) {
+  const router = useRouter();
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>("overview");
   const [mode, setMode] = useState<FinancialsMode>("reported");
   const [showValidationDetails, setShowValidationDetails] = useState(false);
+  const [underwritingInputValues, setUnderwritingInputValues] =
+    useState<CreditScenarioInputValues>(DEFAULT_CREDIT_SCENARIO_INPUT_VALUES);
+  const [underwritingEbitdaBasis, setUnderwritingEbitdaBasis] =
+    useState<UnderwritingEbitdaBasis>("computed");
+  const [selectedPeriodId, setSelectedPeriodId] = useState(data.snapshot.periodId || "");
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isDeletingCompany, setIsDeletingCompany] = useState(false);
+  const [isDeletingPeriod, setIsDeletingPeriod] = useState(false);
 
   const availablePeriods = useMemo(() => {
     const entryCountsByPeriodId = new Map<string, number>();
@@ -739,15 +272,19 @@ export function FinancialsView({ data }: FinancialsViewProps) {
       );
   }, [data.entries, data.snapshots]);
 
-  const selectedPeriodBeforeFallback = data.snapshot.periodId || "";
+  const selectedPeriodBeforeFallback = selectedPeriodId || data.snapshot.periodId || "";
 
   const effectiveSnapshot = useMemo(() => {
+    const requestedPeriodId = selectedPeriodId || data.snapshot.periodId;
     const currentHasData = availablePeriods.some(
-      (period) => period.periodId === data.snapshot.periodId
+      (period) => period.periodId === requestedPeriodId
     );
 
     if (currentHasData) {
-      return data.snapshot;
+      return (
+        data.snapshots.find((snapshot) => snapshot.periodId === requestedPeriodId) ??
+        data.snapshot
+      );
     }
 
     const latestAvailablePeriodId = availablePeriods[availablePeriods.length - 1]?.periodId ?? "";
@@ -756,7 +293,7 @@ export function FinancialsView({ data }: FinancialsViewProps) {
       data.snapshots.find((snapshot) => snapshot.periodId === latestAvailablePeriodId) ??
       data.snapshot
     );
-  }, [availablePeriods, data.snapshot, data.snapshots]);
+  }, [availablePeriods, data.snapshot, data.snapshots, selectedPeriodId]);
 
   const effectiveNormalizedOutput = useMemo(
     () =>
@@ -818,6 +355,24 @@ export function FinancialsView({ data }: FinancialsViewProps) {
   }, [data.entries, effectiveSnapshot]);
 
   useEffect(() => {
+    console.log("INCOME STATEMENT AGGREGATION", {
+      selectedPeriod: {
+        periodId: effectiveSnapshot.periodId,
+        label: effectiveSnapshot.label,
+        periodDate: effectiveSnapshot.periodDate ?? null
+      },
+      aggregation:
+        effectiveNormalizedOutput?.incomeStatementDebug ??
+        effectiveSnapshot.incomeStatementDebug ??
+        null,
+      metrics:
+        effectiveNormalizedOutput?.incomeStatementMetricDebug ??
+        effectiveSnapshot.incomeStatementMetricDebug ??
+        null
+    });
+  }, [effectiveNormalizedOutput, effectiveSnapshot]);
+
+  useEffect(() => {
     const balanceSheetRollup = buildBalanceSheetRollup(
       data.entries,
       effectiveSnapshot.periodId
@@ -877,8 +432,23 @@ export function FinancialsView({ data }: FinancialsViewProps) {
     });
   }, [balanceSheetValidation]);
 
+  useEffect(() => {
+    setUnderwritingEbitdaBasis(mode === "adjusted" ? "adjusted" : "computed");
+  }, [mode]);
+
+  useEffect(() => {
+    const nextPeriodId =
+      data.snapshot.periodId || availablePeriods[availablePeriods.length - 1]?.periodId || "";
+    setSelectedPeriodId(nextPeriodId);
+  }, [availablePeriods, data.snapshot.periodId]);
+
   const adjustedFooterDisplay =
     data.readiness.status === "blocked" ? "Not reliable" : null;
+  const effectiveBridge = effectiveNormalizedOutput?.bridge ?? data.ebitdaBridge ?? null;
+  const ebitdaExplainability =
+    effectiveNormalizedOutput?.ebitdaExplainability ??
+    effectiveSnapshot.ebitdaExplainability ??
+    null;
   const balanceDifference =
     balanceSheetValidation.computedTotals.totalAssets -
     balanceSheetValidation.computedTotals.totalLiabilitiesAndEquity;
@@ -887,31 +457,168 @@ export function FinancialsView({ data }: FinancialsViewProps) {
   const sourceComparisonChecks = balanceSheetValidation.checks.filter(
     (check) => check.key.startsWith("source_") && check.sourceValue !== undefined
   );
+  const parsedUnderwritingInputs = useMemo(
+    () => parseCreditScenarioInputValues(underwritingInputValues),
+    [underwritingInputValues]
+  );
+  const underwritingScenario = useMemo(
+    () =>
+      buildCreditScenario({
+        inputs: parsedUnderwritingInputs,
+        ebitda:
+          underwritingEbitdaBasis === "adjusted"
+            ? effectiveSnapshot.adjustedEbitda
+            : effectiveSnapshot.ebitda
+      }),
+    [effectiveSnapshot, parsedUnderwritingInputs, underwritingEbitdaBasis]
+  );
+  const missingUnderwritingInputs = useMemo(() => {
+    const fieldLabels: Record<keyof typeof parsedUnderwritingInputs, string> = {
+      loanAmount: "Loan amount",
+      annualInterestRatePercent: "Interest rate",
+      loanTermYears: "Loan term",
+      amortizationYears: "Amortization",
+      collateralValue: "Collateral value"
+    };
+
+    return Object.entries(parsedUnderwritingInputs)
+      .filter(([, value]) => value === null)
+      .map(([key]) => fieldLabels[key as keyof typeof parsedUnderwritingInputs]);
+  }, [parsedUnderwritingInputs]);
+  const acceptedAddBackItemsForSnapshot = useMemo(
+    () =>
+      data.addBackReviewItems.filter(
+        (item) =>
+          item.periodId === effectiveSnapshot.periodId && item.status === "accepted"
+      ),
+    [data.addBackReviewItems, effectiveSnapshot.periodId]
+  );
+  const riskFlags = useMemo(
+    () =>
+      buildRiskFlags({
+        snapshot: effectiveSnapshot,
+        creditScenario: underwritingScenario,
+        readiness: data.readiness,
+        dataQuality: data.dataQuality,
+        acceptedAddBackItems: acceptedAddBackItemsForSnapshot
+      }),
+    [
+      acceptedAddBackItemsForSnapshot,
+      data.dataQuality,
+      data.readiness,
+      effectiveSnapshot,
+      underwritingScenario
+    ]
+  );
+
+  async function deleteCompany() {
+    if (!data.company || isDeletingCompany) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete ${data.company.name} and all related periods, entries, mappings, and add-backs? This cannot be undone.`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setDeleteError(null);
+    setIsDeletingCompany(true);
+
+    try {
+      const response = await fetch(`/api/companies/${data.company.id}`, {
+        method: "DELETE"
+      });
+      const result = (await response.json()) as { error?: string };
+
+      if (!response.ok) {
+        throw new Error(result.error || "Company could not be deleted.");
+      }
+
+      router.push("/deals");
+      router.refresh();
+    } catch (error) {
+      setDeleteError(
+        error instanceof Error ? error.message : "Company could not be deleted."
+      );
+    } finally {
+      setIsDeletingCompany(false);
+    }
+  }
+
+  async function deletePeriod() {
+    if (!effectiveSnapshot.periodId || isDeletingPeriod) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete ${effectiveSnapshot.label} and all entries and add-backs for this reporting period? This cannot be undone.`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setDeleteError(null);
+    setIsDeletingPeriod(true);
+
+    try {
+      const response = await fetch(`/api/periods/${effectiveSnapshot.periodId}`, {
+        method: "DELETE"
+      });
+      const result = (await response.json()) as { error?: string };
+
+      if (!response.ok) {
+        throw new Error(result.error || "Reporting period could not be deleted.");
+      }
+
+      router.refresh();
+    } catch (error) {
+      setDeleteError(
+        error instanceof Error ? error.message : "Reporting period could not be deleted."
+      );
+    } finally {
+      setIsDeletingPeriod(false);
+    }
+  }
 
   return (
     <main className="min-h-screen px-4 py-8 md:px-8">
       <div className="mx-auto flex max-w-7xl flex-col gap-8">
         <section className="rounded-[2rem] border border-slate-200 bg-white px-6 py-6 shadow-panel md:px-8">
-          <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+          <div className="flex flex-col gap-6">
+            <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
             <div className="max-w-3xl">
               <p className="text-xs font-medium uppercase tracking-[0.24em] text-slate-500">
                 {data.company?.name || "No company selected"} •{" "}
                 {effectiveSnapshot.label || "No reporting period loaded"}
               </p>
               <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950 md:text-4xl">
-                Financial Statements
+                {data.company?.name || "No company selected"}
               </h1>
               <p className="mt-3 text-sm text-slate-600 md:text-base">
-                Review reported and adjusted financial statement presentation, balance sheet detail, and multi-period operating history.
+                Selected period: {effectiveSnapshot.label || "No reporting period loaded"}
               </p>
             </div>
 
-            <div className="flex flex-wrap gap-3">
+              <div className="flex flex-wrap items-start gap-3">
+              {data.company ? (
+                <button
+                  type="button"
+                  onClick={deleteCompany}
+                  disabled={isDeletingCompany}
+                  className="rounded-xl border border-rose-200 px-4 py-2.5 text-sm font-medium text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isDeletingCompany ? "Deleting company..." : "Delete Company"}
+                </button>
+              ) : null}
               <Link
-                href="/"
+                href="/deals"
                 className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
               >
-                Back to Adjusted EBITDA Review
+                All Deals
               </Link>
               <Link
                 href="/source-data"
@@ -919,7 +626,27 @@ export function FinancialsView({ data }: FinancialsViewProps) {
               >
                 Source Data
               </Link>
+              </div>
             </div>
+
+            <nav aria-label="Deal workspace sections" className="border-b border-slate-200">
+              <div className="flex flex-wrap gap-1">
+                {WORKSPACE_TABS.map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`border-b-2 px-4 py-3 text-sm font-medium ${
+                      activeTab === tab.id
+                        ? "border-slate-900 text-slate-950"
+                        : "border-transparent text-slate-500 hover:text-slate-700"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </nav>
           </div>
         </section>
 
@@ -934,31 +661,64 @@ export function FinancialsView({ data }: FinancialsViewProps) {
               </h2>
             </div>
 
-            <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 p-1">
-              <button
-                type="button"
-                onClick={() => setMode("reported")}
-                className={`rounded-full px-4 py-2 text-sm font-medium ${
-                  mode === "reported"
-                    ? "bg-white text-slate-900 shadow-sm"
-                    : "text-slate-600"
-                }`}
-              >
-                Reported
-              </button>
-              <button
-                type="button"
-                onClick={() => setMode("adjusted")}
-                className={`rounded-full px-4 py-2 text-sm font-medium ${
-                  mode === "adjusted"
-                    ? "bg-white text-slate-900 shadow-sm"
-                    : "text-slate-600"
-                }`}
-              >
-                Adjusted
-              </button>
+            <div className="flex flex-col gap-3 sm:items-end">
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
+                  Period
+                </label>
+                <select
+                  value={effectiveSnapshot.periodId}
+                  onChange={(event) => setSelectedPeriodId(event.target.value)}
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400"
+                  disabled={availablePeriods.length === 0 || isDeletingPeriod}
+                >
+                  {availablePeriods.map((period) => (
+                    <option key={period.periodId} value={period.periodId}>
+                      {period.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={deletePeriod}
+                  disabled={!effectiveSnapshot.periodId || isDeletingPeriod}
+                  className="rounded-xl border border-rose-200 px-3 py-2 text-sm font-medium text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isDeletingPeriod ? "Deleting period..." : "Delete Period"}
+                </button>
+              </div>
+              <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 p-1">
+                <button
+                  type="button"
+                  onClick={() => setMode("reported")}
+                  className={`rounded-full px-4 py-2 text-sm font-medium ${
+                    mode === "reported"
+                      ? "bg-white text-slate-900 shadow-sm"
+                      : "text-slate-600"
+                  }`}
+                >
+                  Reported
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMode("adjusted")}
+                  className={`rounded-full px-4 py-2 text-sm font-medium ${
+                    mode === "adjusted"
+                      ? "bg-white text-slate-900 shadow-sm"
+                      : "text-slate-600"
+                  }`}
+                >
+                  Adjusted
+                </button>
+              </div>
             </div>
           </div>
+
+          {deleteError ? (
+            <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+              {deleteError}
+            </div>
+          ) : null}
 
           {mode === "adjusted" ? (
             <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -971,17 +731,145 @@ export function FinancialsView({ data }: FinancialsViewProps) {
           )}
         </section>
 
-        <section className="grid gap-6 xl:grid-cols-2">
-          <StatementTable
-            statement={incomeStatement}
-            footerValueDisplay={mode === "adjusted" ? adjustedFooterDisplay : null}
-          />
+        {activeTab === "overview" ? (
+          <section className="space-y-6">
+            <UnderwritingSnapshotPanel
+              snapshot={effectiveSnapshot}
+              scenario={underwritingScenario}
+              ebitdaBasis={underwritingEbitdaBasis}
+              missingInputs={missingUnderwritingInputs}
+            />
+            <DealDecisionPanel
+              snapshot={effectiveSnapshot}
+              creditScenario={underwritingScenario}
+              riskFlags={riskFlags}
+              acceptedAddBackTotal={effectiveSnapshot.acceptedAddBacks ?? 0}
+            />
+            <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel">
+              <div className="mb-4">
+                <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
+                  Similar deals
+                </p>
+                <h2 className="mt-2 text-xl font-semibold text-slate-900">
+                  Similar deals
+                </h2>
+              </div>
+
+              {data.similarDeals.length > 0 ? (
+                <div className="overflow-x-auto rounded-xl border border-slate-200">
+                  <table className="min-w-full divide-y divide-slate-200 text-[13px]">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                          Company
+                        </th>
+                        <th className="px-3 py-2 text-right text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                          EBITDA
+                        </th>
+                        <th className="px-3 py-2 text-right text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                          Adjusted EBITDA
+                        </th>
+                        <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                          Decision
+                        </th>
+                        <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                          Primary Risk
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 bg-white">
+                      {data.similarDeals.map((deal) => (
+                        <tr
+                          key={deal.companyId}
+                          className="cursor-pointer transition-colors hover:bg-slate-50"
+                          onClick={() => router.push(`/deal/${deal.companyId}`)}
+                        >
+                          <td className="px-3 py-2.5 font-medium text-slate-900">
+                            {deal.companyName}
+                          </td>
+                          <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">
+                            {deal.ebitda === null ? "—" : formatCurrency(deal.ebitda)}
+                          </td>
+                          <td className="px-3 py-2.5 text-right tabular-nums text-slate-900">
+                            {deal.adjustedEbitda === null
+                              ? "—"
+                              : formatCurrency(deal.adjustedEbitda)}
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700">
+                              {deal.decision}
+                            </span>
+                          </td>
+                          <td className="max-w-[260px] px-3 py-2.5 text-[12px] text-slate-600">
+                            <span className="block truncate">{deal.primaryRisk ?? "—"}</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-sm text-slate-500">No similar deals found</p>
+              )}
+            </section>
+            <RiskFlagsPanel
+              snapshot={effectiveSnapshot}
+              creditScenario={underwritingScenario}
+              readiness={data.readiness}
+              dataQuality={data.dataQuality}
+              acceptedAddBackItems={acceptedAddBackItemsForSnapshot}
+            />
+            <CreditScenarioPanel
+              snapshot={effectiveSnapshot}
+              inputValues={underwritingInputValues}
+              onInputValuesChange={setUnderwritingInputValues}
+              ebitdaBasis={underwritingEbitdaBasis}
+              onEbitdaBasisChange={setUnderwritingEbitdaBasis}
+              scenario={underwritingScenario}
+            />
+          </section>
+        ) : null}
+
+        {activeTab === "financials" ? (
+          <>
+        <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+          <div className="space-y-4">
+            <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel">
+              <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
+                    Financial Truth
+                  </p>
+                  <h2 className="mt-2 text-xl font-semibold text-slate-900">
+                    Income statement and earnings base
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Start with the reported statement, then follow the canonical EBITDA build and accepted adjustment path into underwriting.
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
+                    EBITDA Basis
+                  </p>
+                  <p className="mt-1 text-lg font-semibold text-slate-900">
+                    {formatCurrency(effectiveSnapshot.ebitda)}
+                  </p>
+                </div>
+              </div>
+            </section>
+            <StatementTable
+              statement={incomeStatement}
+              footerValueDisplay={mode === "adjusted" ? adjustedFooterDisplay : null}
+            />
+            <EbitdaExplainabilityPanel explainability={ebitdaExplainability} />
+            <EbitdaBridge bridge={effectiveBridge} />
+          </div>
           <div className="space-y-4">
             <section className="rounded-[1.75rem] bg-white p-5 shadow-panel">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h2 className="text-lg font-semibold text-slate-900">
-                    Reconciliation Summary
+                    Balance Sheet Validation
                   </h2>
                   <p className="mt-1 text-sm text-slate-500">
                     {balanceSheetValidation.overallSeverity === "pass"
@@ -1229,8 +1117,51 @@ export function FinancialsView({ data }: FinancialsViewProps) {
           </div>
         </section>
 
+        <section className="space-y-4">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
+              Operating Context
+            </p>
+            <h2 className="mt-2 text-xl font-semibold text-slate-900">
+              Trend support for underwriting
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Keep multi-period context close to the deal analysis workflow without repeating EBITDA or adjustment summaries.
+            </p>
+          </div>
+
+          <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
+            <DashboardCharts series={data.series} />
+            <PerformanceDrivers analyses={data.driverAnalyses} />
+          </div>
+        </section>
+
         <MultiPeriodSummaryTable snapshots={data.snapshots} />
+          </>
+        ) : null}
+
+        {activeTab === "adjustments" ? (
+          <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel">
+            <div className="mb-4">
+              <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
+                Adjustments
+              </p>
+              <h2 className="mt-2 text-xl font-semibold text-slate-900">
+                Add-backs and adjusted EBITDA
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Review, document, and approve adjustments within the company profile for the selected period.
+              </p>
+            </div>
+            <AddBackReviewPanel
+              companyId={data.company?.id ?? null}
+              periods={data.periods}
+              items={data.addBackReviewItems}
+            />
+          </section>
+        ) : null}
       </div>
     </main>
   );
 }
+

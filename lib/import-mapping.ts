@@ -5,10 +5,9 @@ import {
   normalizeAccountName,
   parseCategory,
   parseStatementType,
+  resolveMappingSelection,
   sanitizeCategoryForStatementType,
-  suggestAccountMapping
 } from "@/lib/auto-mapping";
-import { getPreviewMappingMeta } from "@/lib/mapping-intelligence";
 import { getCellValue } from "@/lib/import-preview";
 import type {
   AccountMapping,
@@ -102,33 +101,6 @@ const NON_BLOCKING_DERIVED_LABELS = [
   "net income"
 ];
 
-function resolveBalanceSheetCategory(params: {
-  manualCategory: NormalizedCategory | null;
-  csvCategory: NormalizedCategory | null;
-  suggestionCategory: NormalizedCategory | null;
-  statementType: StatementType | null;
-}) {
-  const { manualCategory, csvCategory, suggestionCategory, statementType } = params;
-
-  if (statementType !== "balance_sheet") {
-    return manualCategory ?? csvCategory ?? suggestionCategory ?? null;
-  }
-
-  if (isBalanceSheetLeafCategory(manualCategory)) {
-    return manualCategory;
-  }
-
-  if (isBalanceSheetLeafCategory(csvCategory)) {
-    return csvCategory;
-  }
-
-  if (isBalanceSheetLeafCategory(suggestionCategory)) {
-    return suggestionCategory;
-  }
-
-  return null;
-}
-
 export function isNonBlockingDerivedLabel(normalizedLabel: string) {
   if (!normalizedLabel) {
     return false;
@@ -195,6 +167,20 @@ function matchedByRank(matchedBy: AuditMatchedBy) {
   if (matchedBy === "csv_value" || matchedBy === "csv") return 3;
   if (matchedBy === "keyword" || matchedBy === "keyword_rule") return 2;
   return 1;
+}
+
+function toPreviewMatchedBy(
+  value: "manual" | "memory" | "saved_mapping" | "csv_value" | "keyword_rule" | "unmapped"
+): AuditMatchedBy {
+  if (value === "keyword_rule") {
+    return "keyword_rule";
+  }
+
+  if (value === "unmapped") {
+    return "manual";
+  }
+
+  return value;
 }
 
 function isNonFinancialPreviewLabel(accountName: string) {
@@ -343,40 +329,27 @@ export function buildImportPreviewRows(params: {
       const csvStatementType = parseStatementType(
         sourceStatementType
       );
-      const preferredStatementType = manualStatementType ?? csvStatementType ?? null;
-      const suggestion = suggestAccountMapping(
+      const selection = resolveMappingSelection({
         accountName,
+        companyId,
         savedMappings,
-        preferredStatementType,
-        companyId
-      );
-      const suggestedOrProvidedStatementType =
-        manualStatementType ?? csvStatementType ?? suggestion.statementType ?? null;
-      const category = resolveBalanceSheetCategory({
+        preferredStatementType: manualStatementType ?? csvStatementType ?? null,
         manualCategory,
+        manualStatementType,
         csvCategory,
-        suggestionCategory: suggestion.category,
-        statementType: suggestedOrProvidedStatementType
+        csvStatementType
       });
+      const category = selection.category;
       const statementType =
-        suggestedOrProvidedStatementType ??
-        inferStatementTypeFromCategory(category);
+        selection.statementType ?? inferStatementTypeFromCategory(category);
       const sanitizedCategory = sanitizeCategoryForStatementType({
         category,
         statementType
       });
-      const mappingMeta = getPreviewMappingMeta({
-        accountName,
-        category: sanitizedCategory,
-        statementType,
-        savedMappings,
-        hasCsvValues: Boolean(csvCategory || csvStatementType),
-        hasManualOverride: Boolean(manualCategory || manualStatementType)
-      });
       if (statementType === "balance_sheet") {
         console.log("BALANCE SHEET CATEGORY VALIDATION", {
           accountName,
-          incomingCategory: manualCategory ?? csvCategory ?? suggestion.category ?? null,
+          incomingCategory: manualCategory ?? csvCategory ?? selection.category ?? null,
           parsedCategory: category,
           statementType,
           isLeaf: isBalanceSheetLeafCategory(category),
@@ -384,7 +357,7 @@ export function buildImportPreviewRows(params: {
           finalCategory: sanitizedCategory,
           manualCategory,
           csvCategory,
-          suggestionCategory: suggestion.category,
+          suggestionCategory: selection.category,
           manualWasParent: isBalanceSheetParentCategory(manualCategory),
           csvWasParent: isBalanceSheetParentCategory(csvCategory)
         });
@@ -394,7 +367,7 @@ export function buildImportPreviewRows(params: {
         amountValue === null ||
         !sanitizedCategory ||
         !statementType ||
-        mappingMeta.confidence === "low";
+        selection.confidence === "low";
 
       const previewRow: ImportPreviewRow = {
         rowNumber: index + 1,
@@ -410,11 +383,11 @@ export function buildImportPreviewRows(params: {
         addbackFlag:
           getCellValue(row, "__manual_addback_flag") ||
           getCellValue(row, columnMapping.addbackFlag),
-        matchedBy: mappingMeta.matchedBy,
-        confidence: mappingMeta.confidence,
-        mappingExplanation: mappingMeta.explanation,
+        matchedBy: toPreviewMatchedBy(selection.matchedBy),
+        confidence: selection.confidence,
+        mappingExplanation: selection.explanation,
         memoryScope:
-          suggestion.matchedBy === "memory" ? suggestion.memoryScope ?? null : null,
+          selection.matchedBy === "memory" ? selection.memoryScope ?? null : null,
         needsReview,
         isExcluded: false,
         isNonBlocking: isNonBlockingDerivedLabel(normalizedLabel),

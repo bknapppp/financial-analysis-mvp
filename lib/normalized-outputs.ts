@@ -1,4 +1,3 @@
-import { getCanonicalPeriodAdjustment } from "@/lib/add-backs";
 import { getEntryMappingMeta } from "@/lib/mapping-intelligence";
 import { buildReconciliationReport } from "@/lib/reconciliation";
 import type {
@@ -69,47 +68,107 @@ function buildIncomeStatement(snapshot: PeriodSnapshot): Extract<
   NormalizedStatement,
   { statementKey: "income_statement" }
 > {
+  const rows: Extract<NormalizedStatement, { statementKey: "income_statement" }>["rows"] = [
+    { key: "revenue", label: "Revenue", value: snapshot.revenue, kind: "line_item" },
+    { key: "cogs", label: "COGS", value: snapshot.cogs, kind: "line_item" },
+    {
+      key: "gross_profit",
+      label: "Gross Profit",
+      value: snapshot.grossProfit,
+      kind: "subtotal",
+      rollupKey: "gross_profit"
+    },
+    {
+      key: "operating_expenses",
+      label: "Operating Expenses",
+      value: snapshot.operatingExpenses,
+      kind: "line_item"
+    },
+    {
+      key: "depreciation_and_amortization",
+      label: "Depreciation / Amortization",
+      value: snapshot.depreciationAndAmortization ?? 0,
+      kind: "line_item"
+    },
+    {
+      key: "ebit",
+      label: "EBIT",
+      value: snapshot.ebit ?? 0,
+      kind: "subtotal",
+      rollupKey: "ebit"
+    }
+  ];
+
+  if ((snapshot.reportedOperatingIncome ?? 0) !== 0) {
+    rows.push({
+      key: "reported_operating_income_reference",
+      label: "Reported Operating Income (Reference)",
+      value: snapshot.reportedOperatingIncome ?? 0,
+      kind: "metric",
+      rollupKey: "reported_operating_income_reference"
+    });
+  }
+
+  rows.push(
+    {
+      key: "non_operating",
+      label: "Non-operating",
+      value: snapshot.nonOperating ?? 0,
+      kind: "line_item"
+    },
+    {
+      key: "tax_expense",
+      label: "Tax Expense",
+      value: snapshot.taxExpense ?? 0,
+      kind: "line_item"
+    },
+    {
+      key: "net_income",
+      label: "Net Income",
+      value: snapshot.netIncome ?? 0,
+      kind: "subtotal",
+      rollupKey: "net_income"
+    },
+    {
+      key: "computed_ebitda",
+      label: "Computed EBITDA",
+      value: snapshot.ebitda,
+      kind: "subtotal",
+      rollupKey: "computed_ebitda"
+    }
+  );
+
+  if ((snapshot.reportedEbitda ?? 0) !== 0) {
+    rows.push({
+      key: "reported_ebitda_reference",
+      label: "Reported EBITDA (Reference)",
+      value: snapshot.reportedEbitda ?? 0,
+      kind: "metric",
+      rollupKey: "reported_ebitda_reference"
+    });
+  }
+
+  rows.push(
+    {
+      key: "approved_add_backs",
+      label: "Approved Add-Backs",
+      value: snapshot.acceptedAddBacks,
+      kind: "metric",
+      rollupKey: "approved_add_backs"
+    },
+    {
+      key: "adjusted_ebitda",
+      label: "Adjusted EBITDA",
+      value: snapshot.adjustedEbitda,
+      kind: "subtotal",
+      rollupKey: "adjusted_ebitda"
+    }
+  );
+
   return {
     statementKey: "income_statement",
     title: "Income Statement",
-    rows: [
-      { key: "revenue", label: "Revenue", value: snapshot.revenue, kind: "line_item" },
-      { key: "cogs", label: "COGS", value: snapshot.cogs, kind: "line_item" },
-      {
-        key: "gross_profit",
-        label: "Gross Profit",
-        value: snapshot.grossProfit,
-        kind: "subtotal",
-        rollupKey: "gross_profit"
-      },
-      {
-        key: "operating_expenses",
-        label: "Operating Expenses",
-        value: snapshot.operatingExpenses,
-        kind: "line_item"
-      },
-      {
-        key: "reported_ebitda",
-        label: "Reported EBITDA",
-        value: snapshot.ebitda,
-        kind: "subtotal",
-        rollupKey: "reported_ebitda"
-      },
-      {
-        key: "accepted_add_backs",
-        label: "Accepted Add-Backs",
-        value: snapshot.adjustedEbitda - snapshot.ebitda,
-        kind: "metric",
-        rollupKey: "accepted_add_backs"
-      },
-      {
-        key: "adjusted_ebitda",
-        label: "Adjusted EBITDA",
-        value: snapshot.adjustedEbitda,
-        kind: "subtotal",
-        rollupKey: "adjusted_ebitda"
-      }
-    ],
+    rows,
     footerLabel: "Adjusted EBITDA",
     footerValue: snapshot.adjustedEbitda
   };
@@ -167,11 +226,6 @@ export function buildNormalizedPeriodOutputs(params: {
     );
     const incomeStatement = buildIncomeStatement(snapshot);
     const balanceSheet = buildBalanceSheet(snapshot);
-    const acceptedAddBacks = getCanonicalPeriodAdjustment({
-      periodId: snapshot.periodId,
-      addBacks,
-      entries: entries.filter((entry) => entry.period_id === snapshot.periodId)
-    }).acceptedAddBackTotal;
     const reconciliation = buildReconciliationReport({
       snapshot,
       entries,
@@ -187,7 +241,7 @@ export function buildNormalizedPeriodOutputs(params: {
       incomeStatement,
       balanceSheet,
       reportedEbitda: snapshot.ebitda,
-      acceptedAddBacks,
+      acceptedAddBacks: snapshot.acceptedAddBacks,
       adjustedEbitda: snapshot.adjustedEbitda,
       grossMarginPercent: snapshot.grossMarginPercent,
       reportedEbitdaMarginPercent: snapshot.ebitdaMarginPercent,
@@ -195,7 +249,10 @@ export function buildNormalizedPeriodOutputs(params: {
       reportedEbitdaGrowthPercent: snapshot.ebitdaGrowthPercent,
       adjustedEbitdaGrowthPercent: snapshot.adjustedEbitdaGrowthPercent,
       reconciliation,
-      bridge: bridgesByPeriodId.get(snapshot.periodId) ?? null
+      bridge: bridgesByPeriodId.get(snapshot.periodId) ?? null,
+      incomeStatementDebug: snapshot.incomeStatementDebug,
+      incomeStatementMetricDebug: snapshot.incomeStatementMetricDebug,
+      ebitdaExplainability: snapshot.ebitdaExplainability
     };
   });
 }

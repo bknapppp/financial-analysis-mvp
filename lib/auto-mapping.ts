@@ -36,11 +36,25 @@ export type AutoMappingResult = {
   category: NormalizedCategory | null;
   statementType: StatementType | null;
   normalizedLabel?: string;
-  matchedBy: "memory" | "saved_mapping" | "keyword_rule" | "unmapped";
+  matchedBy:
+    | "manual"
+    | "memory"
+    | "saved_mapping"
+    | "csv_value"
+    | "keyword_rule"
+    | "unmapped";
   confidence: "high" | "medium" | "low";
   explanation: string;
   memoryScope?: "company" | "global" | null;
   mappingId?: string;
+  resolutionSource:
+    | "manual_override"
+    | "company_saved_mapping"
+    | "global_saved_mapping"
+    | "csv_mapping"
+    | "keyword_rule"
+    | "unmapped";
+  decisionPath?: string[];
 };
 
 type KeywordRule = {
@@ -65,6 +79,107 @@ const CONCEPT_CATEGORY_MAP: Record<IncomeStatementConcept, NormalizedCategory> =
   "Tax Expense": "Tax Expense",
   "Non-operating": "Non-operating"
 };
+
+export type MappingCategoryOption = {
+  value: NormalizedCategory;
+  label: string;
+};
+
+export const INCOME_MAPPING_CATEGORIES: NormalizedCategory[] = [
+  "Revenue",
+  "COGS",
+  "Gross Profit",
+  "Operating Expenses",
+  "Depreciation / Amortization",
+  "EBITDA",
+  "Operating Income",
+  "Pre-tax",
+  "Net Income",
+  "Tax Expense",
+  "Non-operating"
+];
+
+export const BALANCE_SHEET_LEAF_MAPPING_CATEGORIES: NormalizedCategory[] = [
+  "current_assets.cash",
+  "current_assets.accounts_receivable",
+  "current_assets.inventory",
+  "current_assets.other",
+  "non_current_assets.ppe",
+  "non_current_assets.other",
+  "current_liabilities.accounts_payable",
+  "current_liabilities.short_term_debt",
+  "current_liabilities.other",
+  "non_current_liabilities.long_term_debt",
+  "non_current_liabilities.other",
+  "equity.common_stock",
+  "equity.retained_earnings",
+  "equity.other"
+];
+
+const MAPPING_CATEGORY_LABELS: Record<NormalizedCategory, string> = {
+  Revenue: "Revenue",
+  COGS: "COGS",
+  "Gross Profit": "Gross Profit",
+  "Operating Expenses": "Operating Expenses",
+  "Depreciation / Amortization": "Depreciation / Amortization",
+  EBITDA: "EBITDA",
+  "Operating Income": "Operating Income",
+  "Pre-tax": "Pre-tax",
+  "Net Income": "Net Income",
+  "Tax Expense": "Tax Expense",
+  "Non-operating": "Non-operating",
+  current_assets: "Current Assets",
+  "current_assets.cash": "Cash",
+  "current_assets.accounts_receivable": "Accounts Receivable",
+  "current_assets.inventory": "Inventory",
+  "current_assets.other": "Other Current Assets",
+  non_current_assets: "Non-current Assets",
+  "non_current_assets.ppe": "Property, Plant & Equipment",
+  "non_current_assets.other": "Other Non-current Assets",
+  current_liabilities: "Current Liabilities",
+  "current_liabilities.accounts_payable": "Accounts Payable",
+  "current_liabilities.short_term_debt": "Short-term Debt",
+  "current_liabilities.other": "Other Current Liabilities",
+  non_current_liabilities: "Non-current Liabilities",
+  "non_current_liabilities.long_term_debt": "Long-term Debt",
+  "non_current_liabilities.other": "Other Non-current Liabilities",
+  equity: "Equity",
+  "equity.common_stock": "Common Stock",
+  "equity.retained_earnings": "Retained Earnings",
+  "equity.other": "Other Equity",
+  Assets: "Assets",
+  Liabilities: "Liabilities",
+  Equity: "Equity"
+};
+
+export function getMappingCategoryLabel(
+  category: NormalizedCategory | string | null | undefined
+) {
+  if (!category) {
+    return "";
+  }
+
+  return (
+    MAPPING_CATEGORY_LABELS[category as NormalizedCategory] ??
+    String(category)
+  );
+}
+
+export function getMappingCategoryOptions(
+  statementType: StatementType | "" | null | undefined
+): MappingCategoryOption[] {
+  const categories =
+    statementType === "balance_sheet"
+      ? BALANCE_SHEET_LEAF_MAPPING_CATEGORIES
+      : statementType === "income"
+        ? INCOME_MAPPING_CATEGORIES
+        : [...INCOME_MAPPING_CATEGORIES, ...BALANCE_SHEET_LEAF_MAPPING_CATEGORIES];
+
+  return categories.map((value) => ({
+    value,
+    label: getMappingCategoryLabel(value)
+  }));
+}
 
 function deriveConceptFromCategory(
   category: NormalizedCategory,
@@ -570,6 +685,278 @@ function buildRuleExplanation(
     : `Matched broader ${statementType === "income" ? "income statement" : "balance sheet"} rule: "${pattern}" -> ${category}.`;
 }
 
+function buildResolvedResult(params: {
+  category: NormalizedCategory | null;
+  statementType: StatementType | null;
+  normalizedLabel: string;
+  matchedBy: AutoMappingResult["matchedBy"];
+  resolutionSource: AutoMappingResult["resolutionSource"];
+  confidence: AutoMappingResult["confidence"];
+  explanation: string;
+  memoryScope?: "company" | "global" | null;
+  mappingId?: string;
+  decisionPath: string[];
+}) {
+  const concept =
+    params.category && params.statementType
+      ? deriveConceptFromCategory(params.category, params.statementType)
+      : null;
+
+  return {
+    concept,
+    category: params.category,
+    statementType: params.statementType,
+    normalizedLabel: params.normalizedLabel,
+    matchedBy: params.matchedBy,
+    confidence: params.confidence,
+    explanation: params.explanation,
+    memoryScope: params.memoryScope ?? null,
+    mappingId: params.mappingId,
+    resolutionSource: params.resolutionSource,
+    decisionPath: params.decisionPath
+  } satisfies AutoMappingResult;
+}
+
+function buildProvidedMappingCandidate(params: {
+  category: NormalizedCategory | null;
+  statementType: StatementType | null;
+}) {
+  const inferredStatementType =
+    params.statementType ?? inferStatementTypeFromCategory(params.category);
+  const sanitizedCategory = sanitizeCategoryForStatementType({
+    category: params.category,
+    statementType: inferredStatementType
+  });
+
+  if (!sanitizedCategory || !inferredStatementType) {
+    return null;
+  }
+
+  return {
+    category: sanitizedCategory,
+    statementType: inferredStatementType
+  };
+}
+
+export function resolveMappingSelection(params: {
+  accountName: string;
+  savedMappings?: AccountMapping[];
+  preferredStatementType?: StatementType | null;
+  companyId?: string | null;
+  manualCategory?: NormalizedCategory | null;
+  manualStatementType?: StatementType | null;
+  csvCategory?: NormalizedCategory | null;
+  csvStatementType?: StatementType | null;
+}): AutoMappingResult {
+  const {
+    accountName,
+    savedMappings = [],
+    preferredStatementType = null,
+    companyId = null,
+    manualCategory = null,
+    manualStatementType = null,
+    csvCategory = null,
+    csvStatementType = null
+  } = params;
+  const normalizedAccountName = normalizeMappingText(accountName);
+  const decisionPath: string[] = [];
+  const lookupStatementType =
+    manualStatementType ??
+    inferStatementTypeFromCategory(manualCategory) ??
+    preferredStatementType ??
+    csvStatementType ??
+    inferStatementTypeFromCategory(csvCategory) ??
+    null;
+
+  console.log("AUTO MAPPING INPUT", {
+    accountName,
+    normalizedAccountName,
+    detectedStatementType: lookupStatementType ?? "unspecified"
+  });
+
+  const manualCandidate = buildProvidedMappingCandidate({
+    category: manualCategory,
+    statementType: manualStatementType
+  });
+
+  if (manualCandidate) {
+    decisionPath.push("manual_override");
+    return buildResolvedResult({
+      category: manualCandidate.category,
+      statementType: manualCandidate.statementType,
+      normalizedLabel: normalizedAccountName,
+      matchedBy: "manual",
+      confidence: "high",
+      explanation: "Mapping was adjusted during review before import.",
+      resolutionSource: "manual_override",
+      decisionPath
+    });
+  }
+
+  const memoryMatch = findSavedMapping({
+    mappings: savedMappings,
+    companyId,
+    accountName,
+    statementType: lookupStatementType
+  });
+
+  if (memoryMatch) {
+    const sanitizedMemoryCategory = sanitizeCategoryForStatementType({
+      category: memoryMatch.record.category,
+      statementType: memoryMatch.record.statement_type
+    });
+
+    if (!sanitizedMemoryCategory) {
+      decisionPath.push("saved_mapping_invalid_for_statement_type");
+      console.log("MAPPING MEMORY MISS", {
+        accountName,
+        normalizedAccountName,
+        detectedStatementType: lookupStatementType ?? "unspecified",
+        reason: "saved_mapping_invalid_for_statement_type"
+      });
+    } else {
+      decisionPath.push(
+        memoryMatch.scope === "company" ? "company_saved_mapping" : "global_saved_mapping"
+      );
+
+      console.log("MAPPING MEMORY HIT", {
+        accountName,
+        normalizedAccountName,
+        scope: memoryMatch.scope,
+        appliedSavedMapping: {
+          category: sanitizedMemoryCategory,
+          statementType: memoryMatch.record.statement_type
+        }
+      });
+
+      return buildResolvedResult({
+        category: sanitizedMemoryCategory,
+        statementType: memoryMatch.record.statement_type,
+        normalizedLabel: normalizedAccountName,
+        matchedBy: "memory",
+        confidence: "high",
+        explanation:
+          memoryMatch.scope === "company"
+            ? "Previously confirmed mapping for this company."
+            : "Previously confirmed global mapping.",
+        memoryScope: memoryMatch.scope,
+        mappingId: memoryMatch.record.id,
+        resolutionSource:
+          memoryMatch.scope === "company"
+            ? "company_saved_mapping"
+            : "global_saved_mapping",
+        decisionPath
+      });
+    }
+  }
+
+  const csvCandidate = buildProvidedMappingCandidate({
+    category: csvCategory,
+    statementType: csvStatementType
+  });
+
+  if (csvCandidate) {
+    decisionPath.push("csv_mapping");
+    return buildResolvedResult({
+      category: csvCandidate.category,
+      statementType: csvCandidate.statementType,
+      normalizedLabel: normalizedAccountName,
+      matchedBy: "csv_value",
+      confidence: "high",
+      explanation: "Using category or statement type provided in the source file.",
+      resolutionSource: "csv_mapping",
+      decisionPath
+    });
+  }
+
+  const tryIncomeRules = lookupStatementType !== "balance_sheet";
+  const tryBalanceRules = lookupStatementType !== "income";
+
+  if (tryIncomeRules) {
+    decisionPath.push("income_rules");
+    const incomeRule = findIncomeStatementRule(normalizedAccountName);
+
+    if (incomeRule) {
+      console.log("AUTO MAPPING DECISION", {
+        accountName,
+        detectedStatementType: lookupStatementType ?? "unspecified",
+        decisionPath,
+        matchedRule: incomeRule.matchedPattern,
+        category: incomeRule.category
+      });
+
+      return buildResolvedResult({
+        category: incomeRule.category,
+        statementType: incomeRule.statementType,
+        normalizedLabel: normalizedAccountName,
+        matchedBy: "keyword_rule",
+        confidence: incomeRule.confidence,
+        explanation: buildRuleExplanation(
+          incomeRule.concept,
+          incomeRule.matchedPattern,
+          incomeRule.confidence,
+          incomeRule.category,
+          incomeRule.statementType
+        ),
+        resolutionSource: "keyword_rule",
+        decisionPath
+      });
+    }
+  }
+
+  if (tryBalanceRules) {
+    decisionPath.push("balance_sheet_rules");
+    const balanceRule = findBalanceSheetRule(normalizedAccountName);
+
+    if (balanceRule) {
+      console.log("AUTO MAPPING DECISION", {
+        accountName,
+        detectedStatementType: lookupStatementType ?? "unspecified",
+        decisionPath,
+        matchedRule: balanceRule.matchedPattern,
+        category: balanceRule.category
+      });
+
+      return buildResolvedResult({
+        category: balanceRule.category,
+        statementType: inferStatementTypeFromCategory(balanceRule.category),
+        normalizedLabel: normalizedAccountName,
+        matchedBy: "keyword_rule",
+        confidence: balanceRule.confidence,
+        explanation: buildRuleExplanation(
+          balanceRule.concept,
+          balanceRule.matchedPattern,
+          balanceRule.confidence,
+          balanceRule.category,
+          "balance_sheet"
+        ),
+        resolutionSource: "keyword_rule",
+        decisionPath
+      });
+    }
+  }
+
+  decisionPath.push("unmapped");
+  console.log("AUTO MAPPING FALLBACK", {
+    accountName,
+    detectedStatementType: lookupStatementType ?? "unspecified",
+    decisionPath,
+    reason: "fallback_to_unmapped"
+  });
+
+  return buildResolvedResult({
+    category: null,
+    statementType: null,
+    normalizedLabel: normalizedAccountName,
+    matchedBy: "unmapped",
+    confidence: "low",
+    explanation:
+      "No strong saved mapping or explicit account rule matched this label. Left unmapped for review rather than forcing a Revenue classification.",
+    resolutionSource: "unmapped",
+    decisionPath
+  });
+}
+
 export function inferStatementTypeFromCategory(
   category: NormalizedCategory | null
 ): StatementType | null {
@@ -846,153 +1233,12 @@ export function suggestAccountMapping(
   preferredStatementType: StatementType | null = null,
   companyId: string | null = null
 ): AutoMappingResult {
-  const normalizedAccountName = normalizeMappingText(accountName);
-  const decisionPath: string[] = [];
-
-  console.log("AUTO MAPPING INPUT", {
+  return resolveMappingSelection({
     accountName,
-    normalizedAccountName,
-    detectedStatementType: preferredStatementType ?? "unspecified"
+    savedMappings,
+    preferredStatementType,
+    companyId
   });
-
-  const memoryMatch = findSavedMapping({
-    mappings: savedMappings,
-    companyId,
-    accountName,
-    statementType: preferredStatementType
-  });
-
-  if (memoryMatch) {
-    const sanitizedMemoryCategory = sanitizeCategoryForStatementType({
-      category: memoryMatch.record.category,
-      statementType: memoryMatch.record.statement_type
-    });
-    if (!sanitizedMemoryCategory) {
-      console.log("MAPPING MEMORY MISS", {
-        accountName,
-        normalizedAccountName,
-        detectedStatementType: preferredStatementType ?? "unspecified",
-        reason: "saved_mapping_invalid_for_statement_type"
-      });
-    } else {
-    const concept = deriveConceptFromCategory(
-      sanitizedMemoryCategory,
-      memoryMatch.record.statement_type
-    );
-
-    console.log("MAPPING MEMORY HIT", {
-      accountName,
-      normalizedAccountName,
-      scope: memoryMatch.scope,
-      appliedSavedMapping: {
-        category: sanitizedMemoryCategory,
-        statementType: memoryMatch.record.statement_type
-      }
-    });
-
-    return {
-      concept,
-      category: sanitizedMemoryCategory,
-      statementType: memoryMatch.record.statement_type,
-      normalizedLabel: normalizedAccountName,
-      matchedBy: "memory",
-      confidence: "high",
-      explanation:
-        memoryMatch.scope === "company"
-          ? "Previously confirmed mapping for this company"
-          : "Previously confirmed global mapping",
-      memoryScope: memoryMatch.scope,
-      mappingId: memoryMatch.record.id
-    };
-    }
-  }
-
-  console.log("MAPPING MEMORY MISS", {
-    accountName,
-    normalizedAccountName,
-    detectedStatementType: preferredStatementType ?? "unspecified"
-  });
-
-  const tryIncomeRules = preferredStatementType !== "balance_sheet";
-  const tryBalanceRules = preferredStatementType !== "income";
-
-  if (tryIncomeRules) {
-    decisionPath.push("income_rules");
-    const incomeRule = findIncomeStatementRule(normalizedAccountName);
-
-    if (incomeRule) {
-      console.log("AUTO MAPPING DECISION", {
-        accountName,
-        detectedStatementType: preferredStatementType ?? "unspecified",
-        decisionPath,
-        matchedRule: incomeRule.matchedPattern,
-        category: incomeRule.category
-      });
-      return {
-        concept: incomeRule.concept,
-        category: incomeRule.category,
-        statementType: incomeRule.statementType,
-        normalizedLabel: normalizedAccountName,
-        matchedBy: "keyword_rule",
-        confidence: incomeRule.confidence,
-        explanation: buildRuleExplanation(
-          incomeRule.concept,
-          incomeRule.matchedPattern,
-          incomeRule.confidence,
-          incomeRule.category,
-          incomeRule.statementType
-        )
-      };
-    }
-  }
-
-  if (tryBalanceRules) {
-    decisionPath.push("balance_sheet_rules");
-    const balanceRule = findBalanceSheetRule(normalizedAccountName);
-
-    if (balanceRule) {
-      console.log("AUTO MAPPING DECISION", {
-        accountName,
-        detectedStatementType: preferredStatementType ?? "unspecified",
-        decisionPath,
-        matchedRule: balanceRule.matchedPattern,
-        category: balanceRule.category
-      });
-      return {
-        concept: balanceRule.concept,
-        category: balanceRule.category,
-        statementType: inferStatementTypeFromCategory(balanceRule.category),
-        normalizedLabel: normalizedAccountName,
-        matchedBy: "keyword_rule",
-        confidence: balanceRule.confidence,
-        explanation: buildRuleExplanation(
-          balanceRule.concept,
-          balanceRule.matchedPattern,
-          balanceRule.confidence,
-          balanceRule.category,
-          "balance_sheet"
-        )
-      };
-    }
-  }
-
-  console.log("AUTO MAPPING FALLBACK", {
-    accountName,
-    detectedStatementType: preferredStatementType ?? "unspecified",
-    decisionPath,
-    reason: "fallback_to_rule_based_or_unmapped"
-  });
-
-  return {
-    concept: null,
-    category: null,
-    statementType: null,
-    normalizedLabel: normalizedAccountName,
-    matchedBy: "unmapped",
-    confidence: "low",
-    explanation:
-      "No strong saved mapping or explicit account rule matched this label. Left unmapped for review rather than forcing a Revenue classification."
-  };
 }
 
 export async function resolveAccountMapping(params: {
@@ -1050,11 +1296,6 @@ export async function resolveAccountMapping(params: {
         });
       } else {
       const savedMapping = memoryMatch.record;
-      const concept = deriveConceptFromCategory(
-        sanitizedMemoryCategory,
-        savedMapping.statement_type
-      );
-
       if (savedMapping.id) {
         void supabase
           .rpc("increment_account_mapping_usage", {
@@ -1076,8 +1317,7 @@ export async function resolveAccountMapping(params: {
           });
       }
 
-      return {
-        concept: concept ?? null,
+      return buildResolvedResult({
         category: sanitizedMemoryCategory,
         statementType: savedMapping.statement_type,
         normalizedLabel,
@@ -1085,11 +1325,18 @@ export async function resolveAccountMapping(params: {
         confidence: "high",
         explanation:
           memoryMatch.scope === "company"
-            ? "Previously confirmed mapping for this company"
-            : "Previously confirmed global mapping",
+            ? "Previously confirmed mapping for this company."
+            : "Previously confirmed global mapping.",
         memoryScope: memoryMatch.scope,
-        mappingId: savedMapping.id
-      };
+        mappingId: savedMapping.id,
+        resolutionSource:
+          memoryMatch.scope === "company"
+            ? "company_saved_mapping"
+            : "global_saved_mapping",
+        decisionPath: [
+          memoryMatch.scope === "company" ? "company_saved_mapping" : "global_saved_mapping"
+        ]
+      });
       }
     }
   }

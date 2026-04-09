@@ -2,12 +2,13 @@
   "name": "financial-analysis-mvp",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "test": "node --experimental-strip-types lib/import-periods.test.ts && node --experimental-strip-types lib/statement-parser.test.ts && node --experimental-strip-types lib/auto-mapping.test.ts && node --experimental-strip-types lib/mapping-memory.test.ts && node --experimental-strip-types lib/import-mapping-regression.test.ts"
+    "test": "node --experimental-strip-types lib/import-periods.test.ts && node --experimental-strip-types lib/statement-parser.test.ts && node --experimental-strip-types lib/auto-mapping.test.ts && node --experimental-strip-types lib/mapping-memory.test.ts && node --experimental-strip-types lib/import-mapping-regression.test.ts && node --experimental-strip-types lib/add-backs.test.ts && node --experimental-strip-types lib/calculations.test.ts && node --experimental-strip-types lib/credit-scenario.test.ts && node --experimental-strip-types components/financials-view-rollup.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.1",

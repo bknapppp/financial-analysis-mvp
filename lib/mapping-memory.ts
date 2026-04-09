@@ -12,6 +12,9 @@ export type PersistedMappingMemoryRecord = AccountMapping & {
   concept?: string | null;
   confidence?: string | null;
   source?: string | null;
+  usage_count?: number | null;
+  use_count?: number | null;
+  times_used?: number | null;
 };
 
 export type SaveConfirmedMappingResult =
@@ -46,6 +49,79 @@ export function normalizeMappingLabel(label: string): string {
   return value;
 }
 
+function getMappingNormalizedLabel(
+  mapping: AccountMapping | PersistedMappingMemoryRecord
+) {
+  return (
+    ("normalized_label" in mapping ? mapping.normalized_label : null) ??
+    mapping.account_name_key
+  );
+}
+
+function getMappingUsageCount(mapping: PersistedMappingMemoryRecord) {
+  return (
+    mapping.usage_count ??
+    mapping.use_count ??
+    mapping.times_used ??
+    0
+  );
+}
+
+function getMappingTimestamp(value: string | null | undefined) {
+  if (!value) {
+    return 0;
+  }
+
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function compareSavedMappingPriority(
+  left: PersistedMappingMemoryRecord,
+  right: PersistedMappingMemoryRecord
+) {
+  const updatedAtDelta =
+    getMappingTimestamp(right.updated_at) - getMappingTimestamp(left.updated_at);
+
+  if (updatedAtDelta !== 0) {
+    return updatedAtDelta;
+  }
+
+  const usageDelta = getMappingUsageCount(right) - getMappingUsageCount(left);
+
+  if (usageDelta !== 0) {
+    return usageDelta;
+  }
+
+  const createdAtDelta =
+    getMappingTimestamp(right.created_at) - getMappingTimestamp(left.created_at);
+
+  if (createdAtDelta !== 0) {
+    return createdAtDelta;
+  }
+
+  return right.id.localeCompare(left.id);
+}
+
+async function fetchSavedMappingCandidates(query: {
+  limit?: (value: number) => PromiseLike<{ data?: unknown; error?: unknown }>;
+  maybeSingle?: () => Promise<{ data?: unknown; error?: unknown }>;
+}) {
+  if (typeof query.limit === "function") {
+    const result = await query.limit(20);
+    return Array.isArray(result.data)
+      ? [...result.data].sort(compareSavedMappingPriority)
+      : [];
+  }
+
+  if (typeof query.maybeSingle === "function") {
+    const result = await query.maybeSingle();
+    return result.data ? [result.data as PersistedMappingMemoryRecord] : [];
+  }
+
+  return [];
+}
+
 function filterSavedMappings(params: {
   mappings: AccountMapping[];
   companyId: string | null;
@@ -53,27 +129,32 @@ function filterSavedMappings(params: {
   statementType: StatementType | null;
   scope: SavedMappingScope;
 }) {
-  return params.mappings.filter((mapping) => {
-    const mappingWithNormalizedLabel = mapping as AccountMapping & {
-      normalized_label?: string | null;
-    };
-    const mappingNormalizedLabel =
-      mappingWithNormalizedLabel.normalized_label ?? mapping.account_name_key;
+  return params.mappings
+    .filter((mapping) => {
+      const mappingNormalizedLabel = getMappingNormalizedLabel(
+        mapping as PersistedMappingMemoryRecord
+      );
     const sameScope =
       params.scope === "company"
         ? mapping.company_id === params.companyId
         : mapping.company_id === null;
 
-    if (!sameScope || mappingNormalizedLabel !== params.normalizedLabel) {
-      return false;
-    }
+      if (!sameScope || mappingNormalizedLabel !== params.normalizedLabel) {
+        return false;
+      }
 
-    if (params.statementType) {
-      return mapping.statement_type === params.statementType;
-    }
+      if (params.statementType) {
+        return mapping.statement_type === params.statementType;
+      }
 
-    return true;
-  });
+      return true;
+    })
+    .sort((left, right) =>
+      compareSavedMappingPriority(
+        left as PersistedMappingMemoryRecord,
+        right as PersistedMappingMemoryRecord
+      )
+    );
 }
 
 export function findSavedMapping(params: {
@@ -134,33 +215,35 @@ export async function getSavedMapping(params: {
   }
 
   if (params.companyId) {
-    const companyResult = await params.supabase
+    const companyMatches = await fetchSavedMappingCandidates(
+      params.supabase
       .from("account_mappings")
       .select("*")
       .eq("company_id", params.companyId)
       .eq("normalized_label", normalizedLabel)
       .eq("statement_type", params.statementType)
-      .maybeSingle();
+    );
 
-    if (companyResult.data) {
+    if (companyMatches[0]) {
       return {
-        record: companyResult.data,
+        record: companyMatches[0],
         scope: "company"
       };
     }
   }
 
-  const globalResult = await params.supabase
+  const globalMatches = await fetchSavedMappingCandidates(
+    params.supabase
     .from("account_mappings")
     .select("*")
     .is("company_id", null)
     .eq("normalized_label", normalizedLabel)
     .eq("statement_type", params.statementType)
-    .maybeSingle();
+  );
 
-  if (globalResult.data) {
+  if (globalMatches[0]) {
     return {
-      record: globalResult.data,
+      record: globalMatches[0],
       scope: "global"
     };
   }
@@ -176,6 +259,7 @@ export async function saveConfirmedMappingToMemory(params: {
   concept: string;
   category: NormalizedCategory;
   allowOverwrite?: boolean;
+  source?: string;
 }): Promise<SaveConfirmedMappingResult> {
   const normalizedLabel = normalizeMappingLabel(params.accountName);
 
@@ -222,7 +306,7 @@ export async function saveConfirmedMappingToMemory(params: {
         category: params.category,
         statement_type: params.statementType,
         confidence: "high",
-        source: "user",
+        source: params.source ?? "manual_override",
         updated_at: new Date().toISOString()
       })
       .eq("id", existingRecord.id)
@@ -250,7 +334,7 @@ export async function saveConfirmedMappingToMemory(params: {
       category: params.category,
       statement_type: params.statementType,
       confidence: "high",
-      source: "user"
+      source: params.source ?? "manual_override"
     })
     .select("*")
     .single();

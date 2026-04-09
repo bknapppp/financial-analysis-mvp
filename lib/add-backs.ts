@@ -10,7 +10,7 @@ import type {
   FinancialEntry,
   PeriodSnapshot,
   ReportingPeriod
-} from "@/lib/types";
+} from "./types";
 
 const KEYWORD_RULES: Array<{
   type: AddBackType;
@@ -231,12 +231,11 @@ export function getCanonicalPeriodAdjustment(params: {
 }) {
   const { periodId, addBacks, entries } = params;
   const periodAddBacks = addBacks.filter((item) => item.period_id === periodId);
+  const acceptedAddBacks = periodAddBacks.filter(
+    (item) => item.status === "accepted"
+  );
 
-  if (periodAddBacks.length > 0) {
-    const acceptedAddBacks = periodAddBacks.filter(
-      (item) => item.status === "accepted"
-    );
-
+  if (acceptedAddBacks.length > 0) {
     return {
       periodId,
       source: "persisted" as const,
@@ -266,6 +265,16 @@ export function getCanonicalPeriodAdjustment(params: {
       amount: Number(entry.amount),
       source: "legacy_fallback" as const
     }));
+
+  if (periodAddBacks.length > 0 && legacyLines.length === 0) {
+    return {
+      periodId,
+      source: "persisted" as const,
+      usesLegacyFallback: false,
+      acceptedAddBackTotal: 0,
+      lines: []
+    };
+  }
 
   return {
     periodId,

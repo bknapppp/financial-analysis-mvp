@@ -7,7 +7,7 @@ import {
   parseBooleanFlag,
   parseCategory,
   parseStatementType,
-  resolveAccountMapping
+  resolveMappingSelection
 } from "@/lib/auto-mapping";
 import { isAccountMappingsSchemaError } from "@/lib/account-mapping-schema";
 import { isFinancialEntryTraceabilitySchemaError } from "@/lib/financial-entry-schema";
@@ -47,28 +47,6 @@ type ResolvedRowAssignment = {
   rowNumber: number;
   periodId: string | null;
 };
-
-function resolvePersistedCategory(params: {
-  providedCategory: NormalizedCategory | null;
-  suggestedCategory: NormalizedCategory | null;
-  statementType: StatementType | null;
-}) {
-  const { providedCategory, suggestedCategory, statementType } = params;
-
-  if (statementType !== "balance_sheet") {
-    return providedCategory ?? suggestedCategory ?? null;
-  }
-
-  if (isBalanceSheetLeafCategory(providedCategory)) {
-    return providedCategory;
-  }
-
-  if (isBalanceSheetLeafCategory(suggestedCategory)) {
-    return suggestedCategory;
-  }
-
-  return null;
-}
 
 function buildEntryKey(
   accountName: string,
@@ -460,7 +438,10 @@ export async function POST(request: NextRequest) {
       confidence: string;
       mapping_explanation: string;
     }> = [];
-    const mappingResolutionCache = new Map<string, Awaited<ReturnType<typeof resolveAccountMapping>>>();
+    const mappingResolutionCache = new Map<
+      string,
+      ReturnType<typeof resolveMappingSelection>
+    >();
     for (const { row, rowNumber, periodId } of resolvedAssignments) {
       const accountName =
         typeof row.accountName === "string"
@@ -471,35 +452,27 @@ export async function POST(request: NextRequest) {
       const amount = Number(row.amount);
       const providedCategory = parseCategory(row.category);
       const providedStatementType = parseStatementType(row.statementType);
-      const mappingCacheKey = `${normalizeAccountName(accountName)}::${
+      const mappingCacheKey = [
+        normalizeAccountName(accountName),
+        providedCategory ?? "none",
         providedStatementType ?? "none"
-      }`;
-      let suggestedMapping = mappingResolutionCache.get(mappingCacheKey);
-      if (!suggestedMapping) {
-        suggestedMapping = await resolveAccountMapping({
-          supabase,
+      ].join("::");
+      let selectedMapping = mappingResolutionCache.get(mappingCacheKey);
+      if (!selectedMapping) {
+        selectedMapping = resolveMappingSelection({
           accountName,
+          companyId,
           savedMappings,
           preferredStatementType: providedStatementType,
-          companyId
+          csvCategory: providedCategory,
+          csvStatementType: providedStatementType
         });
-        mappingResolutionCache.set(mappingCacheKey, suggestedMapping);
+        mappingResolutionCache.set(mappingCacheKey, selectedMapping);
       }
       const statementType =
-        providedStatementType ??
-        suggestedMapping.statementType ??
-        inferStatementTypeFromCategory(
-          resolvePersistedCategory({
-            providedCategory,
-            suggestedCategory: suggestedMapping.category,
-            statementType: providedStatementType ?? suggestedMapping.statementType ?? null
-          })
-        );
-      const category = resolvePersistedCategory({
-        providedCategory,
-        suggestedCategory: suggestedMapping.category,
-        statementType
-      });
+        selectedMapping.statementType ??
+        inferStatementTypeFromCategory(selectedMapping.category);
+      const category = selectedMapping.category;
       const addbackFlag = parseBooleanFlag(row.addbackFlag);
       const providedMatchedBy = row.matchedBy?.trim();
       const providedConfidence = row.confidence?.trim();
@@ -515,7 +488,7 @@ export async function POST(request: NextRequest) {
           isParent: isBalanceSheetParentCategory(category),
           finalCategory: category,
           providedCategory,
-          suggestedCategory: suggestedMapping.category,
+          suggestedCategory: selectedMapping.category,
           providedWasParent: isBalanceSheetParentCategory(providedCategory)
         });
       }
@@ -593,23 +566,15 @@ export async function POST(request: NextRequest) {
         addback_flag: addbackFlag,
         matched_by:
           providedMatchedBy ||
-          (providedCategory || providedStatementType
-            ? "csv_value"
-            : suggestedMapping.matchedBy === "memory"
-              ? "memory"
-            : suggestedMapping.matchedBy === "keyword_rule"
-              ? "keyword"
-              : "manual"),
+          (selectedMapping.matchedBy === "keyword_rule"
+            ? "keyword"
+            : selectedMapping.matchedBy),
         confidence:
           providedConfidence ||
-          (providedCategory || providedStatementType
-            ? "high"
-            : suggestedMapping.confidence),
+          selectedMapping.confidence,
         mapping_explanation:
           providedExplanation ||
-          (providedCategory || providedStatementType
-            ? "Using category or statement type provided in the source file."
-            : suggestedMapping.explanation)
+          selectedMapping.explanation
       });
     }
 

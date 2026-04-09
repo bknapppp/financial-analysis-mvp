@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { getMappingCategoryLabel } from "@/lib/auto-mapping";
 
 type ExistingSavedMapping = {
   concept?: string | null;
@@ -42,6 +43,8 @@ export function SaveMappingButton({
   const [conflictRecord, setConflictRecord] = useState<ExistingSavedMapping | null>(
     null
   );
+  const displayConcept = concept || getMappingCategoryLabel(category);
+  const displayCategory = getMappingCategoryLabel(category);
 
   async function submitMapping(allowOverwrite = false) {
     const response = await fetch("/api/account-mappings", {
@@ -148,7 +151,7 @@ export function SaveMappingButton({
                 Concept: {conflictRecord.concept || "Not specified"}
               </p>
               <p className="mt-1 text-sm text-slate-700">
-                Category: {conflictRecord.category || "Not specified"}
+                Category: {getMappingCategoryLabel(conflictRecord.category) || "Not specified"}
               </p>
             </div>
 
@@ -157,9 +160,9 @@ export function SaveMappingButton({
                 New Mapping
               </p>
               <p className="mt-2 text-sm text-slate-700">
-                Concept: {concept || category}
+                Concept: {displayConcept}
               </p>
-              <p className="mt-1 text-sm text-slate-700">Category: {category}</p>
+              <p className="mt-1 text-sm text-slate-700">Category: {displayCategory}</p>
             </div>
           </div>
 

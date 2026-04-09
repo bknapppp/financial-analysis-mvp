@@ -51,6 +51,58 @@ function parseConfidence(value: unknown) {
     : null;
 }
 
+function buildPostValidationErrors(params: {
+  companyId?: string;
+  periodId?: string;
+  type: AddBackType | null;
+  description?: string;
+  amount: number;
+  classificationConfidence: AddBackClassificationConfidence | null;
+  source: AddBackSource | null;
+  status: AddBackStatus | null;
+  justification?: string;
+}) {
+  const fields: Record<string, string> = {};
+
+  if (!params.companyId) {
+    fields.companyId = "Required";
+  }
+
+  if (!params.periodId) {
+    fields.periodId = "Required";
+  }
+
+  if (!params.type) {
+    fields.type = "Invalid or missing";
+  }
+
+  if (!params.description) {
+    fields.description = "Required";
+  }
+
+  if (!Number.isFinite(params.amount)) {
+    fields.amount = "Must be a valid number";
+  }
+
+  if (!params.classificationConfidence) {
+    fields.classificationConfidence = "Invalid or missing";
+  }
+
+  if (!params.source) {
+    fields.source = "Invalid or missing";
+  }
+
+  if (!params.status) {
+    fields.status = "Invalid or missing";
+  }
+
+  if (!params.justification) {
+    fields.justification = "Required";
+  }
+
+  return fields;
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const companyId = searchParams.get("companyId");
@@ -113,22 +165,21 @@ export async function POST(request: NextRequest) {
     const justification = body.justification?.trim();
     const supportingReference = body.supportingReference?.trim() || null;
 
-    if (
-      !companyId ||
-      !periodId ||
-      !type ||
-      !description ||
-      !Number.isFinite(amount) ||
-      !classificationConfidence ||
-      !source ||
-      !status ||
-      !justification
-    ) {
+    const fields = buildPostValidationErrors({
+      companyId,
+      periodId,
+      type,
+      description,
+      amount,
+      classificationConfidence,
+      source,
+      status,
+      justification
+    });
+
+    if (Object.keys(fields).length > 0) {
       return NextResponse.json(
-        {
-          error:
-            "companyId, periodId, type, description, amount, classificationConfidence, source, status, and justification are required."
-        },
+        { error: "Validation failed", fields },
         { status: 400 }
       );
     }

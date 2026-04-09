@@ -27,6 +27,13 @@ type EditableRowState = {
   supportingReference: string;
 };
 
+type ManualFieldErrorKey = "description" | "amount" | "justification";
+
+type AddBackApiError = {
+  error?: string;
+  fields?: Partial<Record<ManualFieldErrorKey, string>>;
+};
+
 const FILTER_OPTIONS: Array<"all" | AddBackStatus> = [
   "all",
   "suggested",
@@ -67,6 +74,43 @@ function statusTone(status: AddBackStatus) {
   return "bg-amber-100 text-amber-800";
 }
 
+function validateManualDraft(draft: EditableRowState & { periodId: string }) {
+  const fields: Partial<Record<ManualFieldErrorKey, string>> = {};
+  const description = draft.description.trim();
+  const justification = draft.justification.trim();
+  const amountText = draft.amount.trim();
+
+  if (!description) {
+    fields.description = "Description is required.";
+  }
+
+  if (!amountText) {
+    fields.amount = "Amount is required.";
+  } else if (!Number.isFinite(Number(amountText))) {
+    fields.amount = "Amount must be a valid number.";
+  }
+
+  if (!justification) {
+    fields.justification = "Justification is required.";
+  }
+
+  return {
+    description,
+    justification,
+    amount: amountText === "" ? null : Number(amountText),
+    fields,
+    hasErrors: Object.keys(fields).length > 0
+  };
+}
+
+function formatApiError(payload: AddBackApiError, fallback: string) {
+  if (payload.fields && Object.keys(payload.fields).length > 0) {
+    return Object.values(payload.fields).join(" ");
+  }
+
+  return payload.error ?? fallback;
+}
+
 export function AddBackReviewPanel({
   companyId,
   periods,
@@ -82,6 +126,10 @@ export function AddBackReviewPanel({
   );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [manualErrors, setManualErrors] = useState<
+    Partial<Record<ManualFieldErrorKey, string>>
+  >({});
+  const [showManualDetails, setShowManualDetails] = useState(false);
 
   const filteredItems = useMemo(() => {
     const nextItems =
@@ -136,6 +184,7 @@ export function AddBackReviewPanel({
   }
 
   function refresh(message?: string) {
+    setErrorMessage(null);
     setSuccessMessage(message ?? null);
     startTransition(() => router.refresh());
   }
@@ -166,10 +215,10 @@ export function AddBackReviewPanel({
       })
     });
 
-    const payload = (await response.json()) as { error?: string };
+    const payload = (await response.json()) as AddBackApiError;
 
     if (!response.ok) {
-      setErrorMessage(payload.error ?? "Add-back could not be saved.");
+      setErrorMessage(formatApiError(payload, "Add-back could not be saved."));
       return;
     }
 
@@ -199,10 +248,10 @@ export function AddBackReviewPanel({
       })
     });
 
-    const payload = (await response.json()) as { error?: string };
+    const payload = (await response.json()) as AddBackApiError;
 
     if (!response.ok) {
-      setErrorMessage(payload.error ?? "Add-back could not be updated.");
+      setErrorMessage(formatApiError(payload, "Add-back could not be updated."));
       return;
     }
 
@@ -218,10 +267,10 @@ export function AddBackReviewPanel({
     const response = await fetch(`/api/add-backs/${item.id}`, {
       method: "DELETE"
     });
-    const payload = (await response.json()) as { error?: string };
+    const payload = (await response.json()) as AddBackApiError;
 
     if (!response.ok) {
-      setErrorMessage(payload.error ?? "Add-back could not be deleted.");
+      setErrorMessage(formatApiError(payload, "Add-back could not be deleted."));
       return;
     }
 
@@ -234,6 +283,19 @@ export function AddBackReviewPanel({
       return;
     }
 
+    const validation = validateManualDraft(manualDraft);
+
+    if (validation.hasErrors || validation.amount === null) {
+      setManualErrors(validation.fields);
+      setSuccessMessage(null);
+      setErrorMessage("Fix the highlighted manual add-back fields and try again.");
+      return;
+    }
+
+    setManualErrors({});
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
     const response = await fetch("/api/add-backs", {
       method: "POST",
       headers: {
@@ -244,24 +306,26 @@ export function AddBackReviewPanel({
         periodId: manualDraft.periodId,
         linkedEntryId: null,
         type: manualDraft.type,
-        description: manualDraft.description,
-        amount: Number(manualDraft.amount),
+        description: validation.description,
+        amount: validation.amount,
         classificationConfidence: manualDraft.classificationConfidence,
         source: "user",
         status: "accepted",
-        justification: manualDraft.justification,
+        justification: validation.justification,
         supportingReference: manualDraft.supportingReference || null
       })
     });
 
-    const payload = (await response.json()) as { error?: string };
+    const payload = (await response.json()) as AddBackApiError;
 
     if (!response.ok) {
-      setErrorMessage(payload.error ?? "Manual add-back could not be created.");
+      setManualErrors(payload.fields ?? {});
+      setErrorMessage(formatApiError(payload, "Manual add-back could not be created."));
       return;
     }
 
     setManualDraft(defaultDraft(periods[periods.length - 1]?.id ?? ""));
+    setManualErrors({});
     refresh("Manual add-back added.");
   }
 
@@ -310,22 +374,40 @@ export function AddBackReviewPanel({
         </div>
       ) : null}
 
-      <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-        <div className="grid gap-3 md:grid-cols-6">
-          <div className="md:col-span-2">
+      <div className="mt-5 rounded-[1.75rem] border border-slate-200 bg-slate-50/80 p-4">
+        <div className="border-b border-slate-200 pb-3">
+          <p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">
+            Manual Adjustment
+          </p>
+          <p className="mt-1.5 text-sm text-slate-600">
+            Enter a discrete underwriting adjustment for a specific reporting period.
+          </p>
+        </div>
+
+        <div className="mt-4 grid gap-3 xl:grid-cols-[1.7fr_0.9fr_1fr_0.9fr]">
+          <div>
             <label className="mb-1 block text-sm font-medium text-slate-700">
               Description
             </label>
             <input
               value={manualDraft.description}
               onChange={(event) =>
-                setManualDraft((current) => ({
-                  ...current,
-                  description: event.target.value
-                }))
+                {
+                  setManualDraft((current) => ({
+                    ...current,
+                    description: event.target.value
+                  }));
+                  setManualErrors((current) => ({ ...current, description: undefined }));
+                }
               }
               placeholder="Owner vehicle expense"
+              className={`w-full rounded-xl border px-3 py-1.5 text-sm text-slate-900 outline-none ring-0 transition focus:border-teal-500 ${
+                manualErrors.description ? "border-rose-300 bg-rose-50" : "border-slate-200"
+              }`}
             />
+            {manualErrors.description ? (
+              <p className="mt-1 text-xs text-rose-700">{manualErrors.description}</p>
+            ) : null}
           </div>
 
           <div>
@@ -380,81 +462,103 @@ export function AddBackReviewPanel({
               step="0.01"
               value={manualDraft.amount}
               onChange={(event) =>
-                setManualDraft((current) => ({
-                  ...current,
-                  amount: event.target.value
-                }))
+                {
+                  setManualDraft((current) => ({
+                    ...current,
+                    amount: event.target.value
+                  }));
+                  setManualErrors((current) => ({ ...current, amount: undefined }));
+                }
               }
               placeholder="1500"
+              className={`w-full rounded-xl border px-3 py-1.5 text-sm text-slate-900 outline-none ring-0 transition focus:border-teal-500 ${
+                manualErrors.amount ? "border-rose-300 bg-rose-50" : "border-slate-200"
+              }`}
             />
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">
-              Confidence
-            </label>
-            <select
-              value={manualDraft.classificationConfidence}
-              onChange={(event) =>
-                setManualDraft((current) => ({
-                  ...current,
-                  classificationConfidence:
-                    event.target.value as AddBackClassificationConfidence
-                }))
-              }
-            >
-              {CONFIDENCE_OPTIONS.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
+            {manualErrors.amount ? (
+              <p className="mt-1 text-xs text-rose-700">{manualErrors.amount}</p>
+            ) : null}
           </div>
         </div>
 
-        <div className="mt-3 grid gap-3 md:grid-cols-[1.4fr_0.8fr_auto]">
+        <div className="mt-3 grid gap-3 xl:grid-cols-[1.8fr_auto] xl:items-end">
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700">
-              Justification
+              Rationale
             </label>
-            <input
+            <textarea
               value={manualDraft.justification}
               onChange={(event) =>
-                setManualDraft((current) => ({
-                  ...current,
-                  justification: event.target.value
-                }))
+                {
+                  setManualDraft((current) => ({
+                    ...current,
+                    justification: event.target.value
+                  }));
+                  setManualErrors((current) => ({ ...current, justification: undefined }));
+                }
               }
-              placeholder="Normalize owner-specific costs."
+              placeholder="Explain why this adjustment is supportable in underwriting."
+              rows={3}
+              className={`w-full rounded-xl border px-3 py-1.5 text-sm text-slate-900 outline-none ring-0 transition focus:border-teal-500 ${
+                manualErrors.justification ? "border-rose-300 bg-rose-50" : "border-slate-200"
+              }`}
             />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">
-              Support
-            </label>
-            <input
-              value={manualDraft.supportingReference}
-              onChange={(event) =>
-                setManualDraft((current) => ({
-                  ...current,
-                  supportingReference: event.target.value
-                }))
-              }
-              placeholder="GL detail / email"
-            />
+            {manualErrors.justification ? (
+              <p className="mt-1 text-xs text-rose-700">{manualErrors.justification}</p>
+            ) : null}
           </div>
           <button
             type="button"
             onClick={createManualItem}
             disabled={isPending || !companyId}
-            className="self-end rounded-xl bg-accent px-4 py-2.5 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-60"
+            className="h-fit self-end justify-self-end rounded-xl bg-accent px-5 py-2.5 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-60"
           >
             Add manual
           </button>
         </div>
+
+        <div className="mt-3">
+          <button
+            type="button"
+            onClick={() => setShowManualDetails((current) => !current)}
+            className="inline-flex items-center gap-2 text-sm font-medium text-slate-700 hover:text-slate-900"
+          >
+            <span className="text-xs text-slate-500">{showManualDetails ? "▾" : "▸"}</span>
+            <span>More details</span>
+          </button>
+          {showManualDetails ? (
+            <div className="mt-3 grid gap-3 border-t border-slate-200 pt-3 md:grid-cols-[1fr_auto] md:items-end">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">
+                Support reference
+              </label>
+              <input
+                value={manualDraft.supportingReference}
+                onChange={(event) =>
+                  setManualDraft((current) => ({
+                    ...current,
+                    supportingReference: event.target.value
+                  }))
+                }
+                placeholder="GL detail, memo, diligence note, or email"
+                className="w-full rounded-xl border border-slate-200 px-3 py-1.5 text-sm text-slate-900 outline-none ring-0 transition focus:border-teal-500"
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                Optional documentation for the adjustment file.
+              </p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+              Confidence
+              <p className="mt-1 text-sm font-medium text-slate-900">
+                {manualDraft.classificationConfidence}
+              </p>
+            </div>
+            </div>
+          ) : null}
+        </div>
       </div>
 
-      <div className="mt-5 space-y-3">
+      <div className="mt-5 space-y-2">
         {filteredItems.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-300 px-4 py-6 text-sm text-slate-500">
             No add-backs match this filter yet.
@@ -469,43 +573,43 @@ export function AddBackReviewPanel({
           return (
             <div
               key={rowKey}
-              className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+              className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm"
             >
-              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div className="flex flex-col gap-2.5 md:flex-row md:items-start md:justify-between">
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="text-base font-semibold text-slate-900">
                       {item.description}
                     </p>
                     <span
-                      className={`rounded-full px-2 py-1 text-xs font-medium ${statusTone(item.status)}`}
+                      className={`rounded-full px-2 py-1 text-xs font-semibold ${statusTone(item.status)}`}
                     >
                       {item.status}
                     </span>
-                    <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700">
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">
                       {item.source === "system" ? "System" : "User"}
                     </span>
-                    <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700">
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">
                       {draft.classificationConfidence}
                     </span>
                   </div>
 
-                  <p className="mt-2 text-sm text-slate-600">
+                  <p className="mt-1.5 text-xs text-slate-500">
                     {item.periodLabel} • {getAddBackTypeLabel(item.type)}
                     {item.entryAccountName ? ` • ${item.entryAccountName}` : ""}
                   </p>
 
-                  <p className="mt-2 text-sm text-slate-700">{item.justification}</p>
+                  <p className="mt-1.5 text-sm text-slate-700">{item.justification}</p>
 
-                  <p className="mt-2 text-xs text-slate-500">
+                  <p className="mt-1.5 text-[11px] text-slate-400">
                     {item.entryCategory ? `${item.entryCategory} • ` : ""}
                     {item.entryStatementType ? `${item.entryStatementType} • ` : ""}
                     {item.matchedBy ? `${item.matchedBy.replace("_", " ")} • ` : ""}
-                    {item.confidence ? `${item.confidence} confidence` : "Manual item"}
+                    {item.confidence ? `${item.confidence} confidence` : ""}
                   </p>
 
                   {item.dependsOnLowConfidenceMapping ? (
-                    <p className="mt-2 text-xs font-medium text-amber-700">
+                    <p className="mt-1.5 text-[11px] font-medium text-amber-700">
                       Suggested from a low-confidence mapping.
                     </p>
                   ) : null}
@@ -584,7 +688,7 @@ export function AddBackReviewPanel({
                   </div>
                   <div>
                     <label className="mb-1 block text-sm font-medium text-slate-700">
-                      Support
+                      Support reference
                     </label>
                     <input
                       value={draft.supportingReference}
@@ -595,7 +699,7 @@ export function AddBackReviewPanel({
                   </div>
                   <div className="md:col-span-2">
                     <label className="mb-1 block text-sm font-medium text-slate-700">
-                      Justification
+                      Rationale
                     </label>
                     <textarea
                       value={draft.justification}
@@ -609,7 +713,7 @@ export function AddBackReviewPanel({
                 </div>
               ) : null}
 
-              <div className="mt-4 flex flex-wrap gap-2">
+              <div className="mt-3 flex flex-wrap gap-2">
                 {item.isPersisted ? (
                   <>
                     <button

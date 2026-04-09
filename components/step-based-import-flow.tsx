@@ -9,8 +9,18 @@ import {
   type ReactNode,
   type SetStateAction
 } from "react";
+import {
+  getMappingCategoryOptions,
+  isBalanceSheetLeafCategory,
+  isBalanceSheetParentCategory
+} from "@/lib/auto-mapping";
 import { normalizeImportedPeriod } from "@/lib/import-periods";
-import type { Company, ReportingPeriod } from "@/lib/types";
+import type {
+  Company,
+  NormalizedCategory,
+  ReportingPeriod,
+  StatementType
+} from "@/lib/types";
 import { SaveMappingButton } from "@/components/save-mapping-button";
 
 type PreviewFilter =
@@ -93,48 +103,6 @@ type StepBasedImportFlowProps = {
   };
 };
 
-const INCOME_CATEGORY_OPTIONS = [
-  "Revenue",
-  "COGS",
-  "Gross Profit",
-  "Operating Expenses",
-  "Depreciation / Amortization",
-  "EBITDA",
-  "Operating Income",
-  "Pre-tax",
-  "Net Income",
-  "Tax Expense",
-  "Non-operating"
-];
-
-const BALANCE_SHEET_LEAF_CATEGORY_OPTIONS = [
-  "current_assets.cash",
-  "current_assets.accounts_receivable",
-  "current_assets.inventory",
-  "non_current_assets.ppe",
-  "current_liabilities.accounts_payable",
-  "current_liabilities.short_term_debt",
-  "non_current_liabilities.long_term_debt",
-  "equity.common_stock",
-  "equity.retained_earnings"
-];
-
-const CATEGORY_OPTIONS = [
-  ...INCOME_CATEGORY_OPTIONS,
-  ...BALANCE_SHEET_LEAF_CATEGORY_OPTIONS
-];
-
-const PARENT_BALANCE_SHEET_CATEGORIES = new Set([
-  "Assets",
-  "Liabilities",
-  "Equity",
-  "current_assets",
-  "non_current_assets",
-  "current_liabilities",
-  "non_current_liabilities",
-  "equity"
-]);
-
 const STATEMENT_TYPE_OPTIONS = ["income", "balance_sheet"];
 
 const COLUMN_FIELDS = [
@@ -206,26 +174,8 @@ function canonicalPeriodKey(periodLabel: string, periodDate: string) {
   return normalized?.key ?? `${periodDate || ""}::${periodLabel || ""}`;
 }
 
-function isParentBalanceSheetCategory(value: string) {
-  return PARENT_BALANCE_SHEET_CATEGORIES.has(value);
-}
-
-function isLeafBalanceSheetCategory(value: string) {
-  return BALANCE_SHEET_LEAF_CATEGORY_OPTIONS.includes(
-    value as (typeof BALANCE_SHEET_LEAF_CATEGORY_OPTIONS)[number]
-  );
-}
-
-function categoryOptionsForStatementType(statementType: string) {
-  if (statementType === "balance_sheet") {
-    return BALANCE_SHEET_LEAF_CATEGORY_OPTIONS;
-  }
-
-  if (statementType === "income") {
-    return INCOME_CATEGORY_OPTIONS;
-  }
-
-  return CATEGORY_OPTIONS;
+function categoryOptionsForStatementType(statementType: StatementType | "") {
+  return getMappingCategoryOptions(statementType);
 }
 
 export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
@@ -964,11 +914,17 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
                               accountName: row.accountName,
                               field: "category",
                               value: selectedValue,
-                              isParentCategory: isParentBalanceSheetCategory(selectedValue),
+                              isParentCategory: isBalanceSheetParentCategory(
+                                selectedValue as NormalizedCategory | null
+                              ),
                               isLeafCategory:
                                 row.statementType === "balance_sheet"
-                                  ? isLeafBalanceSheetCategory(selectedValue)
-                                  : !isParentBalanceSheetCategory(selectedValue)
+                                  ? isBalanceSheetLeafCategory(
+                                      selectedValue as NormalizedCategory | null
+                                    )
+                                  : !isBalanceSheetParentCategory(
+                                      selectedValue as NormalizedCategory | null
+                                    )
                             });
                             updateRowsForAccount(row.accountKey, {
                               __manual_category: selectedValue
@@ -982,8 +938,8 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
                         >
                           <option value="">Review</option>
                           {categoryOptionsForStatementType(row.statementType).map((option) => (
-                            <option key={option} value={option}>
-                              {option}
+                            <option key={option.value} value={option.value}>
+                              {option.label}
                             </option>
                           ))}
                         </select>
@@ -998,10 +954,16 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
                             const nextStatementType = event.target.value;
                             const shouldClearCategory =
                               nextStatementType === "balance_sheet"
-                                ? !isLeafBalanceSheetCategory(row.category)
+                                ? !isBalanceSheetLeafCategory(
+                                    row.category as NormalizedCategory | null
+                                  )
                                 : nextStatementType === "income"
-                                  ? isParentBalanceSheetCategory(row.category) ||
-                                    isLeafBalanceSheetCategory(row.category)
+                                  ? isBalanceSheetParentCategory(
+                                      row.category as NormalizedCategory | null
+                                    ) ||
+                                    isBalanceSheetLeafCategory(
+                                      row.category as NormalizedCategory | null
+                                    )
                                   : false;
                             console.log("FOCUSED REVIEW MAPPING APPLIED", {
                               accountKey: row.accountKey,

@@ -1,4 +1,4 @@
-import { DashboardShell } from "@/components/dashboard-shell";
+import { FinancialsView } from "@/components/financials-view";
 import { getDashboardData } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
@@ -6,5 +6,5 @@ export const dynamic = "force-dynamic";
 export default async function HomePage() {
   const data = await getDashboardData();
 
-  return <DashboardShell data={data} />;
+  return <FinancialsView data={data} />;
 }

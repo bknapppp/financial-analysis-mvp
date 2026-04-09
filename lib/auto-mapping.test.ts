@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
-import { resolveAccountMapping, suggestAccountMapping } from "./auto-mapping.ts";
+import {
+  getMappingCategoryLabel,
+  getMappingCategoryOptions,
+  resolveAccountMapping,
+  suggestAccountMapping
+} from "./auto-mapping.ts";
 import { normalizeMappingLabel } from "./mapping-memory.ts";
 import type { AccountMapping } from "./types.ts";
 
@@ -311,5 +316,35 @@ const resolvedWithoutPreload = await resolveAccountMapping({
 });
 assert.equal(fallbackDbCalls > 0, true);
 assert.equal(resolvedWithoutPreload.category, "Revenue");
+
+const incomeOptions = getMappingCategoryOptions("income");
+assert.ok(incomeOptions.every((option) => !option.value.includes(".")));
+assert.equal(incomeOptions.some((option) => option.value === "Revenue"), true);
+assert.equal(
+  incomeOptions.some((option) => option.value === "current_assets.cash"),
+  false
+);
+
+const balanceSheetOptions = getMappingCategoryOptions("balance_sheet");
+assert.equal(
+  balanceSheetOptions.some((option) => option.value === "current_assets.cash"),
+  true
+);
+assert.equal(
+  balanceSheetOptions.some((option) => option.value === "Revenue"),
+  false
+);
+assert.equal(
+  balanceSheetOptions.some((option) => option.value === "current_assets"),
+  false
+);
+assert.equal(
+  balanceSheetOptions.find((option) => option.value === "current_assets.cash")?.label,
+  "Cash"
+);
+assert.equal(
+  getMappingCategoryLabel("non_current_liabilities.long_term_debt"),
+  "Long-term Debt"
+);
 
 console.log("auto-mapping tests passed");

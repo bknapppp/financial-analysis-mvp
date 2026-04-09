@@ -147,7 +147,7 @@ export type NormalizedStatement =
       statementKey: "income_statement";
       title: "Income Statement";
       rows: NormalizedStatementRow[];
-      footerLabel: "Reported EBITDA" | "Adjusted EBITDA";
+      footerLabel: "EBITDA" | "Adjusted EBITDA";
       footerValue: number;
     }
   | {
@@ -202,7 +202,15 @@ export type PeriodSnapshot = {
   cogs: number;
   grossProfit: number;
   operatingExpenses: number;
+  depreciationAndAmortization?: number;
+  nonOperating?: number;
+  taxExpense?: number;
+  netIncome?: number;
+  ebit?: number;
+  reportedOperatingIncome?: number;
+  reportedEbitda?: number;
   ebitda: number;
+  acceptedAddBacks: number;
   adjustedEbitda: number;
   grossMarginPercent: number;
   ebitdaMarginPercent: number;
@@ -215,13 +223,136 @@ export type PeriodSnapshot = {
   adjustedEbitdaGrowthPercent: number | null;
   grossMarginChange: number | null;
   ebitdaMarginChange: number | null;
+  incomeStatementDebug?: IncomeStatementAggregationDebug;
+  incomeStatementMetricDebug?: IncomeStatementMetricDebug;
+  ebitdaExplainability?: EbitdaExplainability;
 };
+
+export type IncomeStatementAggregationSource =
+  | "components"
+  | "subtotal_fallback"
+  | "none";
+
+export type IncomeStatementAggregationFamilyKey =
+  | "revenue"
+  | "cogs"
+  | "operatingExpenses"
+  | "depreciationAndAmortization"
+  | "nonOperating"
+  | "taxExpense"
+  | "netIncome"
+  | "operatingIncome"
+  | "ebitda";
+
+export type IncomeStatementAggregationFamilyDebug = {
+  source: IncomeStatementAggregationSource;
+  total: number;
+  selectedLabels: string[];
+  excludedLabels: string[];
+  componentCount: number;
+  subtotalCount: number;
+};
+
+export type IncomeStatementAggregationDebug = Record<
+  IncomeStatementAggregationFamilyKey,
+  IncomeStatementAggregationFamilyDebug
+>;
+
+export type IncomeStatementMetricSource =
+  | "computed_operations"
+  | "bottom_up"
+  | "reported_fallback"
+  | "none";
+
+export type IncomeStatementMetricDebug = {
+  ebit: {
+    source: IncomeStatementMetricSource;
+    selectedLabels: string[];
+    excludedLabels: string[];
+  };
+  ebitda: {
+    source: IncomeStatementMetricSource;
+    selectedLabels: string[];
+    excludedLabels: string[];
+  };
+};
+
+export type EbitdaExplainabilityBasis =
+  | "computed"
+  | "reported_fallback"
+  | "incomplete";
+
+export type EbitdaExplainability = {
+  basis: EbitdaExplainabilityBasis;
+  basisLabel:
+    | "Computed from bottom-up inputs"
+    | "Using reported EBITDA (fallback)"
+    | "Insufficient bottom-up inputs";
+  note: string;
+  netIncome: number | null;
+  interestAddBack: number | null;
+  taxAddBack: number | null;
+  depreciationAndAmortizationAddBack: number | null;
+  computedEbitda: number | null;
+  reportedEbitda: number | null;
+  selectedLabels: string[];
+  excludedLabels: string[];
+  missingComponents: string[];
+};
+
+export type UnderwritingEbitdaBasis = "computed" | "adjusted";
 
 export type DashboardSeriesPoint = {
   label: string;
   revenue: number;
   reportedEbitda: number;
   adjustedEbitda: number;
+};
+
+export type SimilarDeal = {
+  companyId: string;
+  companyName: string;
+  ebitda: number | null;
+  adjustedEbitda: number | null;
+  decision: "approve" | "caution" | "decline";
+  primaryRisk: string | null;
+};
+
+export type CreditScenarioInputs = {
+  loanAmount: number | null;
+  annualInterestRatePercent: number | null;
+  loanTermYears: number | null;
+  amortizationYears: number | null;
+  collateralValue: number | null;
+};
+
+export type CreditScenarioMetricStatus =
+  | "strong"
+  | "moderate"
+  | "weak"
+  | "insufficient";
+
+export type CreditScenarioMetric = {
+  label: string;
+  value: number | null;
+  display: string;
+  description: string;
+  status: CreditScenarioMetricStatus;
+  statusLabel: "Strong" | "Moderate" | "Weak" | "Insufficient data";
+};
+
+export type CreditScenarioResult = {
+  annualInterestExpense: number | null;
+  annualPrincipalPayment: number | null;
+  annualDebtService: number | null;
+  balanceAtMaturity: number | null;
+  canComputeDebtService: boolean;
+  metrics: {
+    dscr: CreditScenarioMetric;
+    debtToEbitda: CreditScenarioMetric;
+    interestCoverage: CreditScenarioMetric;
+    ltv: CreditScenarioMetric;
+  };
 };
 
 export type KpiDelta = {
@@ -431,6 +562,9 @@ export type NormalizedPeriodOutput = {
   adjustedEbitdaGrowthPercent: number | null;
   reconciliation: ReconciliationReport;
   bridge: EbitdaBridge | null;
+  incomeStatementDebug?: IncomeStatementAggregationDebug;
+  incomeStatementMetricDebug?: IncomeStatementMetricDebug;
+  ebitdaExplainability?: EbitdaExplainability;
 };
 
 export type DashboardData = {
@@ -450,6 +584,7 @@ export type DashboardData = {
   driverAnalyses: PeriodDriverAnalysis[];
   recommendedActions: ActionRecommendation[];
   executiveSummary: string | null;
+  similarDeals: SimilarDeal[];
   dataQuality: DataQualityReport;
   readiness: DataReadiness;
   ebitdaBridge: EbitdaBridge | null;

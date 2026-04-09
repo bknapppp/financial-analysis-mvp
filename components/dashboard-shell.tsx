@@ -234,7 +234,7 @@ export function DashboardShell({ data }: DashboardShellProps) {
             ? ` (${formatSummaryDelta(data.snapshot.revenue, priorSnapshot.revenue)})`
             : ""
         }`,
-        `Reported EBITDA: ${formatCurrency(data.snapshot.ebitda)}${
+        `EBITDA: ${formatCurrency(data.snapshot.ebitda)}${
           priorSnapshot
             ? ` (${formatSummaryDelta(data.snapshot.ebitda, priorSnapshot.ebitda)})`
             : ""
@@ -339,7 +339,7 @@ export function DashboardShell({ data }: DashboardShellProps) {
                       {adjustedEbitdaDisplay ?? formatCurrency(data.snapshot.adjustedEbitda)}
                     </p>
                     <p className="mt-3 text-sm text-slate-300 md:text-base">
-                      Net change vs Reported EBITDA:{" "}
+                      Net change vs EBITDA:{" "}
                       <span className="font-medium text-white">
                         {formatCurrency(acceptedAddBackTotal)}
                       </span>
@@ -403,7 +403,7 @@ export function DashboardShell({ data }: DashboardShellProps) {
                   </p>
                   <div className="mt-4 space-y-0 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm">
                     <div className="flex items-center justify-between gap-4 pb-3">
-                      <span className="text-slate-600">Reported EBITDA</span>
+                      <span className="text-slate-600">EBITDA</span>
                       <span className="font-semibold text-slate-900">
                         {formatCurrency(data.snapshot.ebitda)}
                       </span>
@@ -536,9 +536,9 @@ export function DashboardShell({ data }: DashboardShellProps) {
 
                 <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                   <KpiCard
-                    label="Reported EBITDA"
+                    label="EBITDA"
                     value={data.snapshot.ebitda}
-                    helpText="Pre-adjustment operating earnings"
+                    helpText="Canonical pre-adjustment EBITDA"
                     delta={
                       priorSnapshot
                         ? calculatePercentDelta(
@@ -590,7 +590,7 @@ export function DashboardShell({ data }: DashboardShellProps) {
                         ? "Adjusted EBITDA is not reliable until blocking issues are resolved"
                         : data.readiness.status === "caution"
                           ? "Reported EBITDA plus accepted adjustments, with caution"
-                          : "Reported EBITDA plus accepted adjustments"
+                          : "EBITDA plus accepted adjustments"
                     }
                     delta={
                       priorSnapshot && data.readiness.status !== "blocked"

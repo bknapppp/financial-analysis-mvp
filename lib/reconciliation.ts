@@ -124,11 +124,15 @@ export function buildReconciliationReport(params: {
     issues,
     key: "ebitda_formula",
     section: "income_statement",
-    metric: "Reported EBITDA",
-    expected: snapshot.revenue - snapshot.cogs - snapshot.operatingExpenses,
+    metric: "EBITDA",
+    expected:
+      (snapshot.netIncome ?? 0) +
+      (snapshot.nonOperating ?? 0) +
+      (snapshot.taxExpense ?? 0) +
+      (snapshot.depreciationAndAmortization ?? 0),
     actual: snapshot.ebitda,
     message:
-      "Revenue less COGS and Operating Expenses does not reconcile to Reported EBITDA within tolerance.",
+      "Net Income plus Non-operating, Tax Expense, and Depreciation / Amortization does not reconcile to EBITDA within tolerance.",
     rule: RECONCILIATION_TOLERANCES.reportedEbitda
   });
 
@@ -140,7 +144,7 @@ export function buildReconciliationReport(params: {
     expected: snapshot.ebitda + canonicalAdjustment.acceptedAddBackTotal,
     actual: snapshot.adjustedEbitda,
     message:
-      "Reported EBITDA plus Accepted Add-Backs does not reconcile to Adjusted EBITDA within tolerance.",
+      "EBITDA plus Accepted Add-Backs does not reconcile to Adjusted EBITDA within tolerance.",
     rule: RECONCILIATION_TOLERANCES.adjustedEbitda
   });
 
@@ -192,9 +196,9 @@ export function buildReconciliationReport(params: {
       key: "low_confidence_component",
       severity: "warning",
       section: "income_statement",
-      metric: "Reported EBITDA",
+      metric: "EBITDA",
       message:
-        "Low-confidence mapped components are included in Reported EBITDA."
+        "Low-confidence mapped components are included in EBITDA."
     });
   }
 
@@ -304,6 +308,6 @@ export function buildReconciliationReport(params: {
 export function getBridgeReconciliationIssues(report: ReconciliationReport) {
   return report.issues.filter(
     (issue) =>
-      issue.section === "ebitda_bridge" || issue.metric === "Reported EBITDA"
+      issue.section === "ebitda_bridge" || issue.metric === "EBITDA"
   );
 }
