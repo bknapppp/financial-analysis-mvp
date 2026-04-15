@@ -8,7 +8,13 @@ import { buildSnapshots } from "./calculations.ts";
 import { getSourceFinancialContext } from "./financial-sources.ts";
 import { getTaxDerivedEbitdaForSourcePeriod, type TaxDerivedEbitdaResult } from "./tax-ebitda.ts";
 import { getSupabaseServerClient } from "./supabase.ts";
-import type { AddBack, FinancialEntry, ReportingPeriod } from "./types.ts";
+import type {
+  AddBack,
+  FinancialEntry,
+  PeriodSnapshot,
+  ReportingPeriod,
+  SourceFinancialContext
+} from "./types.ts";
 
 const REVENUE_DELTA_THRESHOLD_PCT = 0.1;
 const EBITDA_DELTA_THRESHOLD_PCT = 0.1;
@@ -305,17 +311,37 @@ export async function getSourceReconciliationForPeriod(params: {
     addBacks = Array.isArray(addBackQuery.data) ? addBackQuery.data : [];
   }
 
+  return getSourceReconciliationForContext({
+    companyId: params.companyId,
+    periodId: params.periodId,
+    periods,
+    entries,
+    addBacks
+  });
+}
+
+export async function getSourceReconciliationForContext(params: {
+  companyId: string;
+  periodId: string;
+  periods: ReportingPeriod[];
+  entries: FinancialEntry[];
+  addBacks: AddBack[];
+  snapshots?: PeriodSnapshot[];
+  taxContext?: SourceFinancialContext;
+}) {
+  const reportedPeriod = params.periods.find((period) => period.id === params.periodId) ?? null;
+  const snapshots = params.snapshots ?? buildSnapshots(params.periods, params.entries, params.addBacks);
   const reportedSnapshot =
     reportedPeriod !== null
-      ? buildSnapshots(periods, entries, addBacks).find(
-          (snapshot) => snapshot.periodId === reportedPeriod.id
-        ) ?? null
+      ? snapshots.find((snapshot) => snapshot.periodId === reportedPeriod.id) ?? null
       : null;
 
-  const taxContext = await getSourceFinancialContext({
-    companyId: params.companyId,
-    sourceType: "tax_return"
-  });
+  const taxContext =
+    params.taxContext ??
+    (await getSourceFinancialContext({
+      companyId: params.companyId,
+      sourceType: "tax_return"
+    }));
   const matchingTaxPeriod =
     reportedPeriod === null
       ? null

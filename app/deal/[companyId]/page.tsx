@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { FinancialsView } from "@/components/financials-view";
 import { getDashboardData } from "@/lib/data";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 60;
 
 export default async function DealWorkspacePage({
   params

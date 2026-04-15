@@ -1,7 +1,7 @@
 import { DealsScreenerTable } from "@/components/deals-screener-table";
 import { getDealScreenerRows } from "@/lib/data";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 60;
 
 export default async function DealsPage() {
   const rows = await getDealScreenerRows();
