@@ -258,11 +258,62 @@ const memoryApplied = suggestAccountMapping(
   "Common Stock",
   savedMappings,
   "balance_sheet",
-  "company-a"
+  "company-a",
+  "reported_financials"
 );
 assert.equal(memoryApplied.matchedBy, "memory");
 assert.equal(memoryApplied.category, "equity.common_stock");
 assert.equal(memoryApplied.statementType, "balance_sheet");
+assert.equal(memoryApplied.mappingSource, "company_memory");
+
+const sourceAwareSavedMappings: AccountMapping[] = [
+  {
+    id: "tax-memory-1",
+    company_id: "company-a",
+    account_name: "Gross receipts",
+    account_name_key: normalizeMappingLabel("Gross receipts"),
+    normalized_label: normalizeMappingLabel("Gross receipts"),
+    category: "Revenue",
+    statement_type: "income",
+    source_type: "tax_return",
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  },
+  {
+    id: "generic-memory-1",
+    company_id: null,
+    account_name: "Gross receipts",
+    account_name_key: normalizeMappingLabel("Gross receipts"),
+    normalized_label: normalizeMappingLabel("Gross receipts"),
+    category: "Operating Expenses",
+    statement_type: "income",
+    source_type: null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  }
+];
+
+const taxMemoryApplied = suggestAccountMapping(
+  "Gross receipts",
+  sourceAwareSavedMappings,
+  "income",
+  "company-a",
+  "tax_return"
+);
+assert.equal(taxMemoryApplied.matchedBy, "memory");
+assert.equal(taxMemoryApplied.category, "Revenue");
+assert.equal(taxMemoryApplied.memorySourceType, "tax_return");
+
+const reportedFallsBackToGenericMemory = suggestAccountMapping(
+  "Gross receipts",
+  sourceAwareSavedMappings,
+  "income",
+  "company-a",
+  "reported_financials"
+);
+assert.equal(reportedFallsBackToGenericMemory.matchedBy, "memory");
+assert.equal(reportedFallsBackToGenericMemory.category, "Operating Expenses");
+assert.equal(reportedFallsBackToGenericMemory.memorySourceType, "generic");
 
 let inMemoryLookupDbCalls = 0;
 const throwingSupabase = {
@@ -280,7 +331,8 @@ const resolvedFromPreloadedMappings = await resolveAccountMapping({
   accountName: "Common Stock",
   savedMappings,
   preferredStatementType: "balance_sheet",
-  companyId: "company-a"
+  companyId: "company-a",
+  sourceType: "reported_financials"
 });
 assert.equal(resolvedFromPreloadedMappings.matchedBy, "memory");
 assert.equal(resolvedFromPreloadedMappings.category, "equity.common_stock");
@@ -312,7 +364,8 @@ const resolvedWithoutPreload = await resolveAccountMapping({
   accountName: "Revenue",
   savedMappings: [],
   preferredStatementType: "income",
-  companyId: "company-a"
+  companyId: "company-a",
+  sourceType: "reported_financials"
 });
 assert.equal(fallbackDbCalls > 0, true);
 assert.equal(resolvedWithoutPreload.category, "Revenue");

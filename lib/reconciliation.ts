@@ -91,6 +91,10 @@ function pushFormulaIssue(params: {
   });
 }
 
+function hasValue(value: number | null | undefined): value is number {
+  return value !== null && value !== undefined && Number.isFinite(value);
+}
+
 export function buildReconciliationReport(params: {
   snapshot: PeriodSnapshot;
   entries: FinancialEntry[];
@@ -120,33 +124,37 @@ export function buildReconciliationReport(params: {
     rule: RECONCILIATION_TOLERANCES.grossProfit
   });
 
-  pushFormulaIssue({
-    issues,
-    key: "ebitda_formula",
-    section: "income_statement",
-    metric: "EBITDA",
-    expected:
-      (snapshot.netIncome ?? 0) +
-      (snapshot.nonOperating ?? 0) +
-      (snapshot.taxExpense ?? 0) +
-      (snapshot.depreciationAndAmortization ?? 0),
-    actual: snapshot.ebitda,
-    message:
-      "Net Income plus Non-operating, Tax Expense, and Depreciation / Amortization does not reconcile to EBITDA within tolerance.",
-    rule: RECONCILIATION_TOLERANCES.reportedEbitda
-  });
+  if (snapshot.incomeStatementMetricDebug?.ebitda.source === "bottom_up" && hasValue(snapshot.ebitda)) {
+    pushFormulaIssue({
+      issues,
+      key: "ebitda_formula",
+      section: "income_statement",
+      metric: "EBITDA",
+      expected:
+        (snapshot.netIncome ?? 0) +
+        (snapshot.nonOperating ?? 0) +
+        (snapshot.taxExpense ?? 0) +
+        (snapshot.depreciationAndAmortization ?? 0),
+      actual: snapshot.ebitda,
+      message:
+        "Net Income plus Non-operating, Tax Expense, and Depreciation / Amortization does not reconcile to EBITDA within tolerance.",
+      rule: RECONCILIATION_TOLERANCES.reportedEbitda
+    });
+  }
 
-  pushFormulaIssue({
-    issues,
-    key: "adjusted_ebitda_formula",
-    section: "ebitda_bridge",
-    metric: "Adjusted EBITDA",
-    expected: snapshot.ebitda + canonicalAdjustment.acceptedAddBackTotal,
-    actual: snapshot.adjustedEbitda,
-    message:
-      "EBITDA plus Accepted Add-Backs does not reconcile to Adjusted EBITDA within tolerance.",
-    rule: RECONCILIATION_TOLERANCES.adjustedEbitda
-  });
+  if (hasValue(snapshot.ebitda) && hasValue(snapshot.adjustedEbitda)) {
+    pushFormulaIssue({
+      issues,
+      key: "adjusted_ebitda_formula",
+      section: "ebitda_bridge",
+      metric: "Adjusted EBITDA",
+      expected: snapshot.ebitda + canonicalAdjustment.acceptedAddBackTotal,
+      actual: snapshot.adjustedEbitda,
+      message:
+        "EBITDA plus Accepted Add-Backs does not reconcile to Adjusted EBITDA within tolerance.",
+      rule: RECONCILIATION_TOLERANCES.adjustedEbitda
+    });
+  }
 
   pushFormulaIssue({
     issues,

@@ -1,7 +1,7 @@
 "use client";
 
 import { formatCreditScenarioCurrency } from "@/lib/credit-scenario";
-import { formatCurrency, formatPercent } from "@/lib/formatters";
+import { formatCurrency } from "@/lib/formatters";
 import type {
   CreditScenarioResult,
   PeriodSnapshot,
@@ -48,14 +48,6 @@ function formatMultiple(value: number | null) {
   }
 
   return `${value.toFixed(2)}x`;
-}
-
-function formatRatio(value: number | null) {
-  if (value === null || !Number.isFinite(value)) {
-    return "—";
-  }
-
-  return formatPercent(value * 100);
 }
 
 function valuePresenceStatus(value: number | null | undefined): SnapshotStatus {
@@ -106,22 +98,6 @@ function debtToEbitdaStatus(value: number | null): SnapshotStatus {
   return "weak";
 }
 
-function ltvStatus(value: number | null): SnapshotStatus {
-  if (value === null || !Number.isFinite(value)) {
-    return "weak";
-  }
-
-  if (value <= 0.6) {
-    return "strong";
-  }
-
-  if (value <= 0.8) {
-    return "moderate";
-  }
-
-  return "weak";
-}
-
 export function UnderwritingSnapshotPanel({
   snapshot,
   scenario,
@@ -130,7 +106,6 @@ export function UnderwritingSnapshotPanel({
 }: UnderwritingSnapshotPanelProps) {
   const selectedEbitda =
     ebitdaBasis === "adjusted" ? snapshot.adjustedEbitda : snapshot.ebitda;
-  const addBackAmount = snapshot.acceptedAddBacks ?? 0;
   const kpis: KpiConfig[] = [
     {
       label: "Revenue",
@@ -160,123 +135,69 @@ export function UnderwritingSnapshotPanel({
       helper: "EBITDA / annual debt service"
     },
     {
-      label: "Debt / EBITDA",
+      label: "Leverage",
       value: formatMultiple(scenario.metrics.debtToEbitda.value),
       status: debtToEbitdaStatus(scenario.metrics.debtToEbitda.value),
       helper: "Loan amount / EBITDA"
-    },
-    {
-      label: "LTV",
-      value: formatRatio(scenario.metrics.ltv.value),
-      status: ltvStatus(scenario.metrics.ltv.value),
-      helper: "Loan amount / collateral value"
     }
   ];
-
-  const creditSignals: string[] = [];
-
-  if (dscrStatus(scenario.metrics.dscr.value) === "weak") {
-    creditSignals.push("Insufficient cash flow coverage");
-  }
-
-  if (debtToEbitdaStatus(scenario.metrics.debtToEbitda.value) === "weak") {
-    creditSignals.push("Elevated leverage vs typical thresholds");
-  }
-
-  if (missingInputs.length > 0) {
-    creditSignals.push("Incomplete underwriting inputs");
-  }
-
-  const contextItems = [
-    `Basis: ${ebitdaBasis === "adjusted" ? "Adjusted EBITDA" : "Computed EBITDA"}`,
-    `Add-backs: ${formatCreditScenarioCurrency(addBackAmount)}`,
-    missingInputs.length > 0 ? `Missing inputs: ${missingInputs.join(", ")}` : "Missing inputs: None"
-  ];
+  const metricsReady = missingInputs.length === 0;
 
   return (
-    <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
-            Underwriting Snapshot
-          </p>
-          <h2 className="mt-2 text-xl font-semibold text-slate-900">
-            Deal viability at a glance
-          </h2>
-          <p className="mt-1 text-sm text-slate-500">
-            Summarize earnings strength, coverage, leverage, and collateral support without changing core calculations.
-          </p>
-        </div>
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
-            Selected Period
-          </p>
-          <p className="mt-1 text-sm font-semibold text-slate-900">{snapshot.label}</p>
-        </div>
-      </div>
-
-      <div className="mt-5 grid gap-3 xl:grid-cols-6 md:grid-cols-2">
-        {kpis.map((kpi) => (
-          <div
-            key={kpi.label}
-            className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <p className="text-sm font-semibold text-slate-900">{kpi.label}</p>
-              <span
-                className={`rounded-full border px-2.5 py-1 text-xs font-medium ${statusClass(
-                  kpi.status
-                )}`}
-              >
-                {statusLabel(kpi.status)}
-              </span>
-            </div>
-            <p className="mt-4 text-2xl font-semibold tracking-tight text-slate-950">
-              {kpi.value}
+    <section className="rounded-[1.9rem] border border-slate-200 bg-white px-5 py-4 shadow-panel md:px-6">
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
+              Deal Overview
             </p>
-            <p className="mt-1 text-xs text-slate-500">{kpi.helper}</p>
+            <p className="mt-1 text-sm text-slate-600 md:text-base">
+              Compact underwriting snapshot for the selected period.
+            </p>
           </div>
-        ))}
-      </div>
+          <div className="flex flex-wrap items-center gap-2.5 text-sm text-slate-600">
+            <span className="rounded-full bg-slate-100 px-3 py-1.5 font-medium text-slate-700">
+              {snapshot.label}
+            </span>
+            <span className="rounded-full bg-slate-100 px-3 py-1.5 font-medium text-slate-700">
+              {ebitdaBasis === "adjusted" ? "Basis: Adjusted EBITDA" : "Basis: Computed EBITDA"}
+            </span>
+            <span
+              className={`rounded-full px-3 py-1.5 font-medium ${
+                metricsReady
+                  ? "bg-teal-50 text-teal-700"
+                  : "bg-amber-50 text-amber-800"
+              }`}
+            >
+              {metricsReady
+                ? "All core metrics ready"
+                : `${missingInputs.length} input gap${missingInputs.length === 1 ? "" : "s"}`}
+            </span>
+          </div>
+        </div>
 
-      <div className="mt-5 grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-        <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
-            Credit Signals
-          </p>
-          <div className="mt-3 space-y-2">
-            {creditSignals.length > 0 ? (
-              creditSignals.map((signal) => (
-                <div
-                  key={signal}
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+        <div className="grid gap-x-5 gap-y-4 border-t border-slate-200 pt-4 md:grid-cols-2 xl:grid-cols-5">
+          {kpis.map((kpi) => (
+            <div key={kpi.label} className="min-w-0">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
+                  {kpi.label}
+                </p>
+                <span
+                  className={`rounded-full border px-2.5 py-1 text-[11px] font-medium ${statusClass(
+                    kpi.status
+                  )}`}
                 >
-                  {signal}
-                </div>
-              ))
-            ) : (
-              <div className="rounded-xl border border-teal-200 bg-white px-3 py-2 text-sm text-slate-700">
-                Coverage, leverage, and collateral signals are currently within target ranges.
+                  {statusLabel(kpi.status)}
+                </span>
               </div>
-            )}
-          </div>
-        </section>
-
-        <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
-            Data Context
-          </p>
-          <div className="mt-3 space-y-2">
-            {contextItems.map((item) => (
-              <div
-                key={item}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
-              >
-                {item}
-              </div>
-            ))}
-          </div>
-        </section>
+              <p className="mt-2 text-3xl font-semibold tracking-tight text-slate-950 xl:text-[2.2rem]">
+                {kpi.value}
+              </p>
+              <p className="mt-1 text-xs text-slate-500">{kpi.helper}</p>
+            </div>
+          ))}
+        </div>
       </div>
     </section>
   );

@@ -9,6 +9,7 @@ import { buildBalanceSheet, buildIncomeStatement, buildSnapshots } from "@/lib/c
 import { buildDataQualityReport } from "@/lib/data-quality";
 import { buildDataReadiness } from "@/lib/data-readiness";
 import { buildDealDecision } from "@/lib/deal-decision";
+import { getSourceFinancialContext } from "@/lib/financial-sources";
 import {
   generateDriverAnalyses,
   generateExecutiveSummary,
@@ -16,13 +17,20 @@ import {
   generateRecommendedActions
 } from "@/lib/insights";
 import { buildRiskFlags } from "@/lib/risk-flags";
+import { getSourceReconciliationForPeriod } from "@/lib/source-reconciliation";
 import {
   FINANCIAL_ENTRY_AUDIT_SELECT,
   FINANCIAL_ENTRY_BASE_SELECT,
   isFinancialEntryTraceabilitySchemaError
 } from "@/lib/financial-entry-schema";
 import { buildNormalizedPeriodOutputs } from "@/lib/normalized-outputs";
+import {
+  derivePortfolioDealState,
+  getPrimaryRiskSeverity,
+  type PortfolioDealStatus
+} from "@/lib/portfolio-deal-state";
 import { getSupabaseServerClient } from "@/lib/supabase";
+import { buildUnderwritingCompletion, countBroadClassifications } from "@/lib/underwriting/completion";
 import type {
   AccountMapping,
   AddBack,
@@ -31,7 +39,8 @@ import type {
   FinancialEntry,
   PeriodSnapshot,
   ReportingPeriod,
-  SimilarDeal
+  SimilarDeal,
+  TaxSourceStatus
 } from "@/lib/types";
 
 const EMPTY_SNAPSHOT: PeriodSnapshot = {
@@ -42,12 +51,15 @@ const EMPTY_SNAPSHOT: PeriodSnapshot = {
   cogs: 0,
   grossProfit: 0,
   operatingExpenses: 0,
-  ebitda: 0,
+  ebit: null,
+  reportedOperatingIncome: null,
+  reportedEbitda: null,
+  ebitda: null,
   acceptedAddBacks: 0,
-  adjustedEbitda: 0,
+  adjustedEbitda: null,
   grossMarginPercent: 0,
-  ebitdaMarginPercent: 0,
-  adjustedEbitdaMarginPercent: 0,
+  ebitdaMarginPercent: null,
+  adjustedEbitdaMarginPercent: null,
   currentAssets: 0,
   currentLiabilities: 0,
   workingCapital: 0,
@@ -62,16 +74,27 @@ export type DealScreenerRow = {
   companyId: string;
   companyName: string;
   industry: string | null;
+  status: PortfolioDealStatus;
+  completionPercent: number;
+  currentBlocker: string | null;
+  nextAction: string;
+  nextActionHref: string;
   revenue: number | null;
   ebitda: number | null;
   adjustedEbitda: number | null;
+  acceptedAddBacks: number | null;
   ebitdaMarginPercent: number | null;
+  addBacksPercent: number | null;
+  hasAddBacks: boolean;
+  addBacksAboveThreshold: boolean;
   dscr: number | null;
   debtToEbitda: number | null;
   ltv: number | null;
   decision: "approve" | "caution" | "decline";
   primaryRisk: string | null;
+  riskSeverity: "high" | "medium" | "low" | null;
   lastUpdated: string | null;
+  owner: string | null;
 };
 
 function buildEmptyDashboardData(companies: Company[]): DashboardData {
@@ -90,6 +113,17 @@ function buildEmptyDashboardData(companies: Company[]): DashboardData {
     withinTolerance: true,
     issues: []
   };
+  const emptyTaxSourceStatus = buildEmptyTaxSourceStatus();
+  const emptyCreditScenario = buildCreditScenario({
+    inputs: {
+      loanAmount: null,
+      annualInterestRatePercent: null,
+      loanTermYears: null,
+      amortizationYears: null,
+      collateralValue: null
+    },
+    ebitda: EMPTY_SNAPSHOT.adjustedEbitda
+  });
 
   return {
     companies,
@@ -118,10 +152,45 @@ function buildEmptyDashboardData(companies: Company[]): DashboardData {
       reconciliation: emptyReconciliation,
       dataQuality: emptyQuality
     }),
+    taxSourceStatus: emptyTaxSourceStatus,
+    completionSummary: buildUnderwritingCompletion({
+      snapshot: EMPTY_SNAPSHOT,
+      entries: [],
+      dataQuality: emptyQuality,
+      taxSourceStatus: emptyTaxSourceStatus,
+      underwritingInputs: {
+        loanAmount: null,
+        annualInterestRatePercent: null,
+        loanTermYears: null,
+        amortizationYears: null,
+        collateralValue: null
+      },
+      creditScenario: emptyCreditScenario
+    }),
     ebitdaBridge: null,
     reconciliation: emptyReconciliation,
     normalizedPeriods: [],
     normalizedOutput: null
+  };
+}
+
+function buildEmptyTaxSourceStatus(): TaxSourceStatus {
+  return {
+    documentCount: 0,
+    periodCount: 0,
+    rowCount: 0,
+    mappedLineCount: 0,
+    lowConfidenceLineCount: 0,
+    broadClassificationCount: 0,
+    hasMatchingPeriod: false,
+    matchingPeriodLabel: null,
+    comparisonStatus: "not_loaded",
+    comparisonComputable: false,
+    missingComponents: [],
+    notes: [],
+    revenueDeltaPercent: null,
+    reportedEbitdaDeltaPercent: null,
+    adjustedEbitdaDeltaPercent: null
   };
 }
 
@@ -194,7 +263,12 @@ async function fetchCompanyContext(company: Company) {
     }
   }
 
-  return { periods, entries, accountMappings, addBacks };
+  const taxContext = await getSourceFinancialContext({
+    companyId: company.id,
+    sourceType: "tax_return"
+  });
+
+  return { periods, entries, accountMappings, addBacks, taxContext };
 }
 
 function buildDashboardDataForCompany(params: {
@@ -204,8 +278,19 @@ function buildDashboardDataForCompany(params: {
   entries: FinancialEntry[];
   accountMappings: AccountMapping[];
   addBacks: AddBack[];
+  taxSourceStatus: TaxSourceStatus;
+  completionSummary: DashboardData["completionSummary"];
 }): DashboardData {
-  const { companies, company, periods, entries, accountMappings, addBacks } = params;
+  const {
+    companies,
+    company,
+    periods,
+    entries,
+    accountMappings,
+    addBacks,
+    taxSourceStatus,
+    completionSummary
+  } = params;
   const baselineSnapshots = buildSnapshots(periods, entries, []);
   const addBackSuggestions = generateAddBackSuggestions({
     companyId: company.id,
@@ -331,7 +416,7 @@ function buildDashboardDataForCompany(params: {
     series: snapshots.map((item) => ({
       label: item.label,
       revenue: item.revenue,
-      reportedEbitda: item.ebitda,
+      reportedEbitda: item.reportedEbitda ?? null,
       adjustedEbitda: item.adjustedEbitda
     })),
     incomeStatement: normalizedOutput
@@ -358,10 +443,58 @@ function buildDashboardDataForCompany(params: {
     similarDeals: [],
     dataQuality,
     readiness,
+    taxSourceStatus,
+    completionSummary,
     ebitdaBridge: reconciledBridge,
     reconciliation,
     normalizedPeriods,
     normalizedOutput
+  };
+}
+
+function buildTaxSourceStatus(params: {
+  taxContext: Awaited<ReturnType<typeof getSourceFinancialContext>>;
+  matchedPeriodLabel: string | null;
+  comparisonComputable: boolean;
+  comparisonMissingComponents: string[];
+  comparisonNotes: string[];
+  revenueDeltaPercent: number | null;
+  reportedEbitdaDeltaPercent: number | null;
+  adjustedEbitdaDeltaPercent: number | null;
+}): TaxSourceStatus {
+  const { taxContext } = params;
+  const comparisonStatus =
+    taxContext.entries.length === 0
+      ? "not_loaded"
+      : params.comparisonComputable
+        ? "ready"
+        : "partial";
+
+  return {
+    documentCount: taxContext.documents.length,
+    periodCount: taxContext.periods.length,
+    rowCount: taxContext.entries.length,
+    mappedLineCount: taxContext.entries.filter(
+      (entry) => Boolean(entry.category) && Boolean(entry.statement_type)
+    ).length,
+    lowConfidenceLineCount: taxContext.entries.filter(
+      (entry) => entry.confidence === "low"
+    ).length,
+    broadClassificationCount: countBroadClassifications(
+      taxContext.entries.map((entry) => ({
+        ...entry,
+        period_id: entry.source_period_id
+      })) as FinancialEntry[]
+    ),
+    hasMatchingPeriod: Boolean(params.matchedPeriodLabel),
+    matchingPeriodLabel: params.matchedPeriodLabel,
+    comparisonStatus,
+    comparisonComputable: params.comparisonComputable,
+    missingComponents: params.comparisonMissingComponents,
+    notes: params.comparisonNotes,
+    revenueDeltaPercent: params.revenueDeltaPercent,
+    reportedEbitdaDeltaPercent: params.reportedEbitdaDeltaPercent,
+    adjustedEbitdaDeltaPercent: params.adjustedEbitdaDeltaPercent
   };
 }
 
@@ -374,15 +507,46 @@ function buildDealScreenerRow(params: {
   addBacks: AddBack[];
 }): DealScreenerRow {
   const { companies, company, periods, entries, accountMappings, addBacks } = params;
+  const snapshots = buildSnapshots(periods, entries, addBacks);
+  const snapshot = snapshots[snapshots.length - 1] ?? EMPTY_SNAPSHOT;
+  const dataQuality = buildDataQualityReport({
+    entries,
+    savedMappings: accountMappings,
+    snapshots
+  });
+  const defaultCreditScenario = buildCreditScenario({
+    inputs: {
+      loanAmount: null,
+      annualInterestRatePercent: null,
+      loanTermYears: null,
+      amortizationYears: null,
+      collateralValue: null
+    },
+    ebitda: snapshot.adjustedEbitda
+  });
   const dashboardData = buildDashboardDataForCompany({
     companies,
     company,
     periods,
     entries,
     accountMappings,
-    addBacks
+    addBacks,
+    taxSourceStatus: buildEmptyTaxSourceStatus(),
+    completionSummary: buildUnderwritingCompletion({
+      snapshot,
+      entries,
+      dataQuality,
+      taxSourceStatus: buildEmptyTaxSourceStatus(),
+      underwritingInputs: {
+        loanAmount: null,
+        annualInterestRatePercent: null,
+        loanTermYears: null,
+        amortizationYears: null,
+        collateralValue: null
+      },
+      creditScenario: defaultCreditScenario
+    })
   });
-  const snapshot = dashboardData.snapshot;
   const creditScenario = buildCreditScenario({
     inputs: {
       loanAmount: null,
@@ -415,21 +579,42 @@ function buildDealScreenerRow(params: {
     .sort((left, right) => right.updated_at.localeCompare(left.updated_at))[0] ?? null;
   const lastUpdated =
     latestAddBack?.updated_at ?? latestPeriod?.created_at ?? company.created_at ?? null;
+  const portfolioState = derivePortfolioDealState({
+    companyId: company.id,
+    completionSummary: dashboardData.completionSummary,
+    readiness: dashboardData.readiness,
+    taxSourceStatus: dashboardData.taxSourceStatus,
+    snapshot
+  });
 
   return {
     companyId: company.id,
     companyName: company.name,
     industry: company.industry,
+    status: portfolioState.status,
+    completionPercent: dashboardData.completionSummary.completionPercent,
+    currentBlocker: portfolioState.currentBlocker,
+    nextAction: portfolioState.nextAction,
+    nextActionHref: portfolioState.nextActionHref,
     revenue: snapshot.periodId ? snapshot.revenue : null,
     ebitda: snapshot.periodId ? snapshot.ebitda : null,
     adjustedEbitda: snapshot.periodId ? snapshot.adjustedEbitda : null,
+    acceptedAddBacks: snapshot.periodId ? snapshot.acceptedAddBacks : null,
     ebitdaMarginPercent: snapshot.periodId ? snapshot.ebitdaMarginPercent : null,
+    addBacksPercent:
+      snapshot.periodId && snapshot.ebitda !== null && snapshot.ebitda !== 0
+        ? (snapshot.acceptedAddBacks / Math.abs(snapshot.ebitda)) * 100
+        : null,
+    hasAddBacks: portfolioState.hasAddBacks,
+    addBacksAboveThreshold: portfolioState.addBacksAboveThreshold,
     dscr: creditScenario.metrics.dscr.value,
     debtToEbitda: creditScenario.metrics.debtToEbitda.value,
     ltv: creditScenario.metrics.ltv.value,
     decision: decision.recommendation,
     primaryRisk: riskFlags[0]?.title ?? null,
-    lastUpdated
+    riskSeverity: getPrimaryRiskSeverity(riskFlags.map((flag) => flag.severity)),
+    lastUpdated,
+    owner: null
   };
 }
 
@@ -465,14 +650,72 @@ function buildSimilarDeals(currentRow: DealScreenerRow, rows: DealScreenerRow[])
   return filtered.slice(0, 5).map((row) => ({
     companyId: row.companyId,
     companyName: row.companyName,
+    revenue: row.revenue,
     ebitda: row.ebitda,
+    ebitdaMarginPercent: row.ebitdaMarginPercent,
     adjustedEbitda: row.adjustedEbitda,
+    acceptedAddBacks: row.acceptedAddBacks,
+    addBacksPercent: row.addBacksPercent,
     decision: row.decision,
     primaryRisk: row.primaryRisk
   }));
 }
 
-export async function getDashboardData(companyId?: string): Promise<DashboardData> {
+async function buildComparableRows(params: {
+  companies: Company[];
+  company: Company;
+  context: Awaited<ReturnType<typeof fetchCompanyContext>>;
+}) {
+  const { companies, company, context } = params;
+
+  return Promise.all(
+    companies.map(async (peerCompany) => {
+      const peerContext =
+        peerCompany.id === company.id ? context : await fetchCompanyContext(peerCompany);
+
+      return buildDealScreenerRow({
+        companies,
+        company: peerCompany,
+        ...peerContext
+      });
+    })
+  );
+}
+
+export async function getSimilarDeals(companyId: string): Promise<SimilarDeal[]> {
+  try {
+    const companies = await fetchCompanies();
+    const company = companies.find((item) => item.id === companyId) ?? null;
+
+    if (!company) {
+      return [];
+    }
+
+    const context = await fetchCompanyContext(company);
+    const comparableRows = await buildComparableRows({
+      companies,
+      company,
+      context
+    });
+
+    const currentRow =
+      comparableRows.find((row) => row.companyId === company.id) ??
+      buildDealScreenerRow({
+        companies,
+        company,
+        ...context
+      });
+
+    return buildSimilarDeals(currentRow, comparableRows);
+  } catch {
+    return [];
+  }
+}
+
+export async function getDashboardData(
+  companyId?: string,
+  options?: { includeSimilarDeals?: boolean }
+): Promise<DashboardData> {
   try {
     const companies = await fetchCompanies();
     const company =
@@ -484,36 +727,70 @@ export async function getDashboardData(companyId?: string): Promise<DashboardDat
 
     const context = await fetchCompanyContext(company);
 
+    const initialSnapshots = buildSnapshots(context.periods, context.entries, context.addBacks);
+    const currentSnapshot = initialSnapshots[initialSnapshots.length - 1] ?? EMPTY_SNAPSHOT;
+    const sourceReconciliation =
+      currentSnapshot.periodId && company.id
+        ? await getSourceReconciliationForPeriod({
+            companyId: company.id,
+            periodId: currentSnapshot.periodId
+          })
+        : null;
+    const taxSourceStatus = buildTaxSourceStatus({
+      taxContext: context.taxContext,
+      matchedPeriodLabel: sourceReconciliation?.taxPeriodLabel ?? null,
+      comparisonComputable:
+        sourceReconciliation?.coverage.hasTaxData === true &&
+        sourceReconciliation.ebitda.tax !== null,
+      comparisonMissingComponents: [],
+      comparisonNotes: [],
+      revenueDeltaPercent: sourceReconciliation?.revenue.deltaPct ?? null,
+      reportedEbitdaDeltaPercent: sourceReconciliation?.comparisons.reportedVsTax.deltaPct ?? null,
+      adjustedEbitdaDeltaPercent: sourceReconciliation?.comparisons.adjustedVsTax.deltaPct ?? null
+    });
+    const defaultCreditScenario = buildCreditScenario({
+      inputs: {
+        loanAmount: null,
+        annualInterestRatePercent: null,
+        loanTermYears: null,
+        amortizationYears: null,
+        collateralValue: null
+      },
+      ebitda: currentSnapshot.adjustedEbitda
+    });
+    const initialDataQuality = buildDataQualityReport({
+      entries: context.entries,
+      savedMappings: context.accountMappings,
+      snapshots: initialSnapshots
+    });
+    const completionSummary = buildUnderwritingCompletion({
+      snapshot: currentSnapshot,
+      entries: context.entries,
+      dataQuality: initialDataQuality,
+      taxSourceStatus,
+      underwritingInputs: {
+        loanAmount: null,
+        annualInterestRatePercent: null,
+        loanTermYears: null,
+        amortizationYears: null,
+        collateralValue: null
+      },
+      creditScenario: defaultCreditScenario
+    });
     const dashboardData = buildDashboardDataForCompany({
       companies,
       company,
-      ...context
+      ...context,
+      taxSourceStatus,
+      completionSummary
     });
-
-    const comparableRows = await Promise.all(
-      companies.map(async (peerCompany) => {
-        const peerContext =
-          peerCompany.id === company.id ? context : await fetchCompanyContext(peerCompany);
-
-        return buildDealScreenerRow({
-          companies,
-          company: peerCompany,
-          ...peerContext
-        });
-      })
-    );
-
-    const currentRow =
-      comparableRows.find((row) => row.companyId === company.id) ??
-      buildDealScreenerRow({
-        companies,
-        company,
-        ...context
-      });
 
     return {
       ...dashboardData,
-      similarDeals: buildSimilarDeals(currentRow, comparableRows)
+      similarDeals:
+        options?.includeSimilarDeals && company.id
+          ? await getSimilarDeals(company.id)
+          : []
     };
   } catch {
     return buildEmptyDashboardData([]);

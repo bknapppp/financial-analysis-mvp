@@ -1,10 +1,17 @@
-import type { AccountMapping, NormalizedCategory, StatementType } from "./types";
+import type {
+  AccountMapping,
+  FinancialSourceType,
+  NormalizedCategory,
+  StatementType
+} from "./types";
 
-export type SavedMappingScope = "company" | "global";
+export type SavedMappingScope = "company" | "shared";
+export type SavedMappingSourceMatch = "exact" | "generic";
 
 export type SavedMappingLookupResult = {
   record: AccountMapping;
   scope: SavedMappingScope;
+  sourceMatch: SavedMappingSourceMatch;
 };
 
 export type PersistedMappingMemoryRecord = AccountMapping & {
@@ -15,6 +22,11 @@ export type PersistedMappingMemoryRecord = AccountMapping & {
   usage_count?: number | null;
   use_count?: number | null;
   times_used?: number | null;
+  last_used_at?: string | null;
+  source_type?: FinancialSourceType | null;
+  mapping_method?: string | null;
+  mapping_explanation?: string | null;
+  matched_rule?: string | null;
 };
 
 export type SaveConfirmedMappingResult =
@@ -56,6 +68,12 @@ function getMappingNormalizedLabel(
     ("normalized_label" in mapping ? mapping.normalized_label : null) ??
     mapping.account_name_key
   );
+}
+
+function getMappingSourceType(
+  mapping: AccountMapping | PersistedMappingMemoryRecord
+) {
+  return ("source_type" in mapping ? mapping.source_type : null) ?? null;
 }
 
 function getMappingUsageCount(mapping: PersistedMappingMemoryRecord) {
@@ -122,24 +140,61 @@ async function fetchSavedMappingCandidates(query: {
   return [];
 }
 
+const BROAD_SHARED_MEMORY_LABELS = new Set([
+  "other",
+  "other income",
+  "other expense",
+  "other expenses",
+  "other deduction",
+  "other deductions",
+  "misc",
+  "miscellaneous"
+]);
+
+function isBroadSharedMemoryLabel(normalizedLabel: string) {
+  return BROAD_SHARED_MEMORY_LABELS.has(normalizedLabel);
+}
+
 function filterSavedMappings(params: {
   mappings: AccountMapping[];
   companyId: string | null;
   normalizedLabel: string;
   statementType: StatementType | null;
+  sourceType?: FinancialSourceType | null;
   scope: SavedMappingScope;
+  sourceMatch: SavedMappingSourceMatch;
 }) {
+  if (
+    params.scope === "shared" &&
+    isBroadSharedMemoryLabel(params.normalizedLabel)
+  ) {
+    return [];
+  }
+
   return params.mappings
     .filter((mapping) => {
       const mappingNormalizedLabel = getMappingNormalizedLabel(
         mapping as PersistedMappingMemoryRecord
       );
-    const sameScope =
-      params.scope === "company"
-        ? mapping.company_id === params.companyId
-        : mapping.company_id === null;
 
-      if (!sameScope || mappingNormalizedLabel !== params.normalizedLabel) {
+      const sameScope =
+        params.scope === "company"
+          ? mapping.company_id === params.companyId
+          : mapping.company_id === null;
+
+      const mappingSourceType = getMappingSourceType(
+        mapping as PersistedMappingMemoryRecord
+      );
+      const sameSourceType =
+        params.sourceMatch === "exact"
+          ? Boolean(params.sourceType) && mappingSourceType === params.sourceType
+          : mappingSourceType === null;
+
+      if (
+        !sameScope ||
+        !sameSourceType ||
+        mappingNormalizedLabel !== params.normalizedLabel
+      ) {
         return false;
       }
 
@@ -162,6 +217,7 @@ export function findSavedMapping(params: {
   companyId: string | null;
   accountName: string;
   statementType: StatementType | null;
+  sourceType?: FinancialSourceType | null;
 }): SavedMappingLookupResult | null {
   const normalizedLabel = normalizeMappingLabel(params.accountName);
 
@@ -169,34 +225,34 @@ export function findSavedMapping(params: {
     return null;
   }
 
-  const companyMatch = filterSavedMappings({
-    mappings: params.mappings,
-    companyId: params.companyId,
-    normalizedLabel,
-    statementType: params.statementType,
-    scope: "company"
-  })[0];
+  const lookupOrder: Array<{
+    scope: SavedMappingScope;
+    sourceMatch: SavedMappingSourceMatch;
+  }> = [
+    { scope: "company", sourceMatch: "exact" },
+    { scope: "company", sourceMatch: "generic" },
+    { scope: "shared", sourceMatch: "exact" },
+    { scope: "shared", sourceMatch: "generic" }
+  ];
 
-  if (companyMatch) {
-    return {
-      record: companyMatch,
-      scope: "company"
-    };
-  }
+  for (const candidate of lookupOrder) {
+    const match = filterSavedMappings({
+      mappings: params.mappings,
+      companyId: params.companyId,
+      normalizedLabel,
+      statementType: params.statementType,
+      sourceType: params.sourceType ?? null,
+      scope: candidate.scope,
+      sourceMatch: candidate.sourceMatch
+    })[0];
 
-  const globalMatch = filterSavedMappings({
-    mappings: params.mappings,
-    companyId: params.companyId,
-    normalizedLabel,
-    statementType: params.statementType,
-    scope: "global"
-  })[0];
-
-  if (globalMatch) {
-    return {
-      record: globalMatch,
-      scope: "global"
-    };
+    if (match) {
+      return {
+        record: match,
+        scope: candidate.scope,
+        sourceMatch: candidate.sourceMatch
+      };
+    }
   }
 
   return null;
@@ -207,6 +263,7 @@ export async function getSavedMapping(params: {
   companyId: string | null;
   accountName: string;
   statementType: StatementType;
+  sourceType?: FinancialSourceType | null;
 }): Promise<SavedMappingLookupResult | null> {
   const normalizedLabel = normalizeMappingLabel(params.accountName);
 
@@ -214,41 +271,77 @@ export async function getSavedMapping(params: {
     return null;
   }
 
-  if (params.companyId) {
-    const companyMatches = await fetchSavedMappingCandidates(
-      params.supabase
-      .from("account_mappings")
-      .select("*")
-      .eq("company_id", params.companyId)
-      .eq("normalized_label", normalizedLabel)
-      .eq("statement_type", params.statementType)
-    );
+  const companyMappings = params.companyId
+    ? await fetchSavedMappingCandidates(
+        params.supabase
+          .from("account_mappings")
+          .select("*")
+          .eq("company_id", params.companyId)
+          .eq("normalized_label", normalizedLabel)
+          .eq("statement_type", params.statementType)
+      )
+    : [];
 
-    if (companyMatches[0]) {
-      return {
-        record: companyMatches[0],
-        scope: "company"
-      };
-    }
-  }
+  const sharedMappings = isBroadSharedMemoryLabel(normalizedLabel)
+    ? []
+    : await fetchSavedMappingCandidates(
+        params.supabase
+          .from("account_mappings")
+          .select("*")
+          .is("company_id", null)
+          .eq("normalized_label", normalizedLabel)
+          .eq("statement_type", params.statementType)
+      );
 
-  const globalMatches = await fetchSavedMappingCandidates(
-    params.supabase
+  return findSavedMapping({
+    mappings: [
+      ...(companyMappings as AccountMapping[]),
+      ...(sharedMappings as AccountMapping[])
+    ],
+    companyId: params.companyId,
+    accountName: params.accountName,
+    statementType: params.statementType,
+    sourceType: params.sourceType ?? null
+  });
+}
+
+export async function loadSavedMappings(params: {
+  supabase: any;
+  companyId: string | null;
+}): Promise<AccountMapping[]> {
+  const companyMappingsPromise = params.companyId
+    ? params.supabase
+        .from("account_mappings")
+        .select("*")
+        .eq("company_id", params.companyId)
+        .returns()
+    : Promise.resolve({ data: [], error: null });
+
+  const sharedMappingsPromise = params.supabase
     .from("account_mappings")
     .select("*")
     .is("company_id", null)
-    .eq("normalized_label", normalizedLabel)
-    .eq("statement_type", params.statementType)
-  );
+    .returns();
 
-  if (globalMatches[0]) {
-    return {
-      record: globalMatches[0],
-      scope: "global"
-    };
+  const [companyMappingsResult, sharedMappingsResult] = await Promise.all([
+    companyMappingsPromise,
+    sharedMappingsPromise
+  ]);
+
+  const error = companyMappingsResult.error ?? sharedMappingsResult.error;
+
+  if (error) {
+    throw error;
   }
 
-  return null;
+  return [
+    ...(Array.isArray(companyMappingsResult.data)
+      ? companyMappingsResult.data
+      : []),
+    ...(Array.isArray(sharedMappingsResult.data)
+      ? sharedMappingsResult.data
+      : [])
+  ];
 }
 
 export async function saveConfirmedMappingToMemory(params: {
@@ -256,10 +349,15 @@ export async function saveConfirmedMappingToMemory(params: {
   companyId: string | null;
   accountName: string;
   statementType: StatementType;
+  sourceType?: FinancialSourceType | null;
   concept: string;
   category: NormalizedCategory;
   allowOverwrite?: boolean;
   source?: string;
+  confidence?: "high" | "medium" | "low";
+  mappingMethod?: string | null;
+  mappingExplanation?: string | null;
+  matchedRule?: string | null;
 }): Promise<SaveConfirmedMappingResult> {
   const normalizedLabel = normalizeMappingLabel(params.accountName);
 
@@ -267,14 +365,19 @@ export async function saveConfirmedMappingToMemory(params: {
     throw new Error("A normalized mapping label is required to save mapping memory.");
   }
 
+  const now = new Date().toISOString();
   const existingQuery = params.supabase
     .from("account_mappings")
     .select("*")
     .eq("normalized_label", normalizedLabel)
     .eq("statement_type", params.statementType);
-  const existingResult = params.companyId
-    ? await existingQuery.eq("company_id", params.companyId).maybeSingle()
-    : await existingQuery.is("company_id", null).maybeSingle();
+  const scopedQuery = params.companyId
+    ? existingQuery.eq("company_id", params.companyId)
+    : existingQuery.is("company_id", null);
+  const existingResult =
+    params.sourceType != null
+      ? await scopedQuery.eq("source_type", params.sourceType).maybeSingle()
+      : await scopedQuery.is("source_type", null).maybeSingle();
 
   const existingRecord = (existingResult.data ?? null) as PersistedMappingMemoryRecord | null;
 
@@ -283,9 +386,38 @@ export async function saveConfirmedMappingToMemory(params: {
     const sameCategory = existingRecord.category === params.category;
 
     if (sameConcept && sameCategory) {
+      const nextUsageCount = getMappingUsageCount(existingRecord) + 1;
+      const { data, error } = await params.supabase
+        .from("account_mappings")
+        .update({
+          account_name: params.accountName,
+          account_name_key: normalizedLabel,
+          normalized_label: normalizedLabel,
+          source_type: params.sourceType ?? null,
+          confidence: params.confidence ?? existingRecord.confidence ?? "high",
+          source: params.source ?? existingRecord.source ?? "manual_override",
+          usage_count: nextUsageCount,
+          last_used_at: now,
+          mapping_method:
+            params.mappingMethod ?? existingRecord.mapping_method ?? null,
+          mapping_explanation:
+            params.mappingExplanation ??
+            existingRecord.mapping_explanation ??
+            null,
+          matched_rule: params.matchedRule ?? existingRecord.matched_rule ?? null,
+          updated_at: now
+        })
+        .eq("id", existingRecord.id)
+        .select("*")
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
       return {
         status: "unchanged",
-        record: existingRecord
+        record: data as PersistedMappingMemoryRecord | null
       };
     }
 
@@ -305,9 +437,15 @@ export async function saveConfirmedMappingToMemory(params: {
         concept: params.concept,
         category: params.category,
         statement_type: params.statementType,
-        confidence: "high",
+        source_type: params.sourceType ?? null,
+        confidence: params.confidence ?? "high",
         source: params.source ?? "manual_override",
-        updated_at: new Date().toISOString()
+        usage_count: getMappingUsageCount(existingRecord) + 1,
+        last_used_at: now,
+        mapping_method: params.mappingMethod ?? null,
+        mapping_explanation: params.mappingExplanation ?? null,
+        matched_rule: params.matchedRule ?? null,
+        updated_at: now
       })
       .eq("id", existingRecord.id)
       .select("*")
@@ -333,8 +471,14 @@ export async function saveConfirmedMappingToMemory(params: {
       concept: params.concept,
       category: params.category,
       statement_type: params.statementType,
-      confidence: "high",
-      source: params.source ?? "manual_override"
+      source_type: params.sourceType ?? null,
+      confidence: params.confidence ?? "high",
+      source: params.source ?? "manual_override",
+      usage_count: 1,
+      last_used_at: now,
+      mapping_method: params.mappingMethod ?? null,
+      mapping_explanation: params.mappingExplanation ?? null,
+      matched_rule: params.matchedRule ?? null
     })
     .select("*")
     .single();

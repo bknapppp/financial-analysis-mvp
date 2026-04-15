@@ -5,6 +5,7 @@ import type { PeriodDriverAnalysis } from "@/lib/types";
 
 type PerformanceDriversProps = {
   analyses: PeriodDriverAnalysis[];
+  showOuterCard?: boolean;
 };
 
 type SummaryMetric = {
@@ -113,11 +114,14 @@ function buildDriverHighlights(analysis: PeriodDriverAnalysis) {
     .map((highlight) => highlight.text);
 }
 
-export function PerformanceDrivers({ analyses }: PerformanceDriversProps) {
+export function PerformanceDrivers({
+  analyses,
+  showOuterCard = true
+}: PerformanceDriversProps) {
   const latestAnalysis = analyses[analyses.length - 1] ?? null;
 
-  return (
-    <section className="rounded-[1.75rem] bg-white p-5 shadow-panel">
+  const content = (
+    <>
       <div className="mb-4">
         <h2 className="text-lg font-semibold text-slate-900">
           Key Performance Drivers
@@ -222,6 +226,12 @@ export function PerformanceDrivers({ analyses }: PerformanceDriversProps) {
           Add at least two reporting periods to review performance drivers.
         </div>
       )}
-    </section>
+    </>
   );
+
+  if (!showOuterCard) {
+    return <section>{content}</section>;
+  }
+
+  return <section className="rounded-[1.75rem] bg-white p-5 shadow-panel">{content}</section>;
 }

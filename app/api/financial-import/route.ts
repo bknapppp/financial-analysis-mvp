@@ -10,11 +10,13 @@ import {
   resolveMappingSelection
 } from "@/lib/auto-mapping";
 import { isAccountMappingsSchemaError } from "@/lib/account-mapping-schema";
+import { devLog, devWarn } from "@/lib/debug";
 import { isFinancialEntryTraceabilitySchemaError } from "@/lib/financial-entry-schema";
 import {
   normalizeImportedPeriod,
   normalizeStoredReportingPeriod
 } from "@/lib/import-periods";
+import { saveConfirmedMappingToMemory } from "@/lib/mapping-memory";
 import { getSupabaseServerClient } from "@/lib/supabase";
 import type {
   AccountMapping,
@@ -438,6 +440,16 @@ export async function POST(request: NextRequest) {
       confidence: string;
       mapping_explanation: string;
     }> = [];
+    const memoryWritebacks: Array<{
+      accountName: string;
+      statementType: StatementType;
+      category: NormalizedCategory;
+      confidence: "high" | "medium" | "low";
+      matchedBy: string;
+      explanation: string;
+      concept: string;
+      matchedRule: string | null;
+    }> = [];
     const mappingResolutionCache = new Map<
       string,
       ReturnType<typeof resolveMappingSelection>
@@ -463,6 +475,7 @@ export async function POST(request: NextRequest) {
           accountName,
           companyId,
           savedMappings,
+          sourceType: "reported_financials",
           preferredStatementType: providedStatementType,
           csvCategory: providedCategory,
           csvStatementType: providedStatementType
@@ -479,7 +492,7 @@ export async function POST(request: NextRequest) {
       const providedExplanation = row.mappingExplanation?.trim();
 
       if (statementType === "balance_sheet") {
-        console.log("BALANCE SHEET CATEGORY VALIDATION", {
+        devLog("BALANCE SHEET CATEGORY VALIDATION", {
           account_name: accountName,
           incomingCategory: row.category ?? null,
           parsedCategory: providedCategory,
@@ -576,6 +589,21 @@ export async function POST(request: NextRequest) {
           providedExplanation ||
           selectedMapping.explanation
       });
+      memoryWritebacks.push({
+        accountName,
+        statementType,
+        category,
+        confidence:
+          ((providedConfidence || selectedMapping.confidence) as "high" | "medium" | "low"),
+        matchedBy:
+          providedMatchedBy ||
+          (selectedMapping.matchedBy === "keyword_rule"
+            ? "keyword"
+            : selectedMapping.matchedBy),
+        explanation: providedExplanation || selectedMapping.explanation,
+        concept: selectedMapping.concept ?? category,
+        matchedRule: selectedMapping.matchedRule ?? null
+      });
     }
 
     if (rowsToInsert.length === 0) {
@@ -623,6 +651,39 @@ export async function POST(request: NextRequest) {
       });
 
       return NextResponse.json({ error: insertError.message }, { status: 500 });
+    }
+
+    for (const memoryWriteback of memoryWritebacks) {
+      try {
+        await saveConfirmedMappingToMemory({
+          supabase,
+          companyId,
+          accountName: memoryWriteback.accountName,
+          statementType: memoryWriteback.statementType,
+          sourceType: "reported_financials",
+          concept: memoryWriteback.concept,
+          category: memoryWriteback.category,
+          source: "reported_financials_import",
+          confidence: memoryWriteback.confidence,
+          mappingMethod: memoryWriteback.matchedBy,
+          mappingExplanation: memoryWriteback.explanation,
+          matchedRule: memoryWriteback.matchedRule
+        });
+      } catch (error) {
+        if (
+          isAccountMappingsSchemaError(
+            error as { code?: string | null; message?: string | null } | null | undefined
+          )
+        ) {
+          devWarn("Skipping reported-financials mapping memory writeback because account mappings schema is unavailable.", {
+            companyId,
+            accountName: memoryWriteback.accountName
+          });
+          continue;
+        }
+
+        throw error;
+      }
     }
 
     return NextResponse.json({

@@ -38,8 +38,15 @@ function percentCell(value: number | null | undefined): ReportCell {
   };
 }
 
-function calculateUpliftPercent(reportedEbitda: number, adjustedEbitda: number) {
-  if (reportedEbitda === 0) {
+function calculateUpliftPercent(
+  reportedEbitda: number | null,
+  adjustedEbitda: number | null
+) {
+  if (
+    reportedEbitda === null ||
+    adjustedEbitda === null ||
+    reportedEbitda === 0
+  ) {
     return null;
   }
 
@@ -198,9 +205,9 @@ export function buildReportSections(data: DashboardData): ReportSection[] {
   const acceptedAddBackTotal =
     data.normalizedOutput?.acceptedAddBacks ??
     data.ebitdaBridge?.addBackTotal ??
-    Math.max(0, data.snapshot.adjustedEbitda - data.snapshot.ebitda);
+    data.snapshot.acceptedAddBacks;
   const upliftPercent = calculateUpliftPercent(
-    data.normalizedOutput?.reportedEbitda ?? data.snapshot.ebitda,
+    data.normalizedOutput?.reportedEbitda ?? data.snapshot.reportedEbitda ?? null,
     data.normalizedOutput?.adjustedEbitda ?? data.snapshot.adjustedEbitda
   );
   const criticalWarnings = data.dataQuality.issueGroups.flatMap((group) =>
@@ -242,7 +249,9 @@ export function buildReportSections(data: DashboardData): ReportSection[] {
         ],
         [
           textCell("Reported EBITDA"),
-          numberCell(data.normalizedOutput?.reportedEbitda ?? data.snapshot.ebitda)
+          numberCell(
+            data.normalizedOutput?.reportedEbitda ?? data.snapshot.reportedEbitda ?? null
+          )
         ],
         [textCell("Accepted Add-Backs"), numberCell(acceptedAddBackTotal)],
         [
@@ -251,7 +260,10 @@ export function buildReportSections(data: DashboardData): ReportSection[] {
         ],
         [textCell("Uplift Percent"), percentCell(upliftPercent)],
         [textCell("Gross Margin"), percentCell(data.snapshot.grossMarginPercent)],
-        [textCell("Reported EBITDA Margin"), percentCell(data.snapshot.ebitdaMarginPercent)],
+        [
+          textCell("Reported EBITDA Margin"),
+          percentCell(data.normalizedOutput?.reportedEbitdaMarginPercent ?? null)
+        ],
         [
           textCell("Adjusted EBITDA Margin"),
           percentCell(data.snapshot.adjustedEbitdaMarginPercent)

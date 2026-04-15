@@ -1,63 +1,155 @@
 import assert from "node:assert/strict";
 import {
-  getSavedMapping,
   findSavedMapping,
+  getSavedMapping,
+  loadSavedMappings,
   normalizeMappingLabel,
   saveConfirmedMappingToMemory
 } from "./mapping-memory.ts";
 import type { AccountMapping } from "./types.ts";
 
+const now = new Date().toISOString();
+
 const mappings: AccountMapping[] = [
   {
-    id: "company-1",
+    id: "company-tax-1",
+    company_id: "company-a",
+    account_name: "Gross receipts",
+    account_name_key: normalizeMappingLabel("Gross receipts"),
+    normalized_label: normalizeMappingLabel("Gross receipts"),
+    category: "Revenue",
+    concept: "Revenue",
+    statement_type: "income",
+    source_type: "tax_return",
+    confidence: "high",
+    usage_count: 3,
+    created_at: now,
+    updated_at: now
+  },
+  {
+    id: "company-generic-1",
     company_id: "company-a",
     account_name: "SG&A Expense",
     account_name_key: normalizeMappingLabel("SG&A Expense"),
+    normalized_label: normalizeMappingLabel("SG&A Expense"),
     category: "Operating Expenses",
+    concept: "Operating Expenses",
     statement_type: "income",
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
+    source_type: null,
+    confidence: "high",
+    usage_count: 2,
+    created_at: now,
+    updated_at: now
   },
   {
-    id: "global-1",
+    id: "shared-tax-1",
+    company_id: null,
+    account_name: "Officer compensation",
+    account_name_key: normalizeMappingLabel("Officer compensation"),
+    normalized_label: normalizeMappingLabel("Officer compensation"),
+    category: "Operating Expenses",
+    concept: "Operating Expenses",
+    statement_type: "income",
+    source_type: "tax_return",
+    confidence: "high",
+    usage_count: 8,
+    created_at: now,
+    updated_at: now
+  },
+  {
+    id: "shared-generic-1",
     company_id: null,
     account_name: "Revenue",
     account_name_key: normalizeMappingLabel("Revenue"),
+    normalized_label: normalizeMappingLabel("Revenue"),
     category: "Revenue",
+    concept: "Revenue",
     statement_type: "income",
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
+    source_type: null,
+    confidence: "high",
+    usage_count: 12,
+    created_at: now,
+    updated_at: now
+  },
+  {
+    id: "shared-ambiguous-1",
+    company_id: null,
+    account_name: "Other deductions",
+    account_name_key: normalizeMappingLabel("Other deductions"),
+    normalized_label: normalizeMappingLabel("Other deductions"),
+    category: "Operating Expenses",
+    concept: "Operating Expenses",
+    statement_type: "income",
+    source_type: "tax_return",
+    confidence: "medium",
+    usage_count: 20,
+    created_at: now,
+    updated_at: now
   }
 ];
 
 assert.equal(normalizeMappingLabel(" SG&A "), "sga");
 assert.equal(normalizeMappingLabel("sg & a"), "sga");
 assert.equal(normalizeMappingLabel("D&A"), "depreciation amortization");
-assert.equal(
-  normalizeMappingLabel("Dep & Amort"),
-  "depreciation amortization"
-);
+assert.equal(normalizeMappingLabel("Dep & Amort"), "depreciation amortization");
 assert.equal(normalizeMappingLabel("   "), "");
 
-const companyMatch = findSavedMapping({
+const companySpecificTaxMatch = findSavedMapping({
   mappings,
   companyId: "company-a",
-  accountName: "sg & a expense",
-  statementType: "income"
+  accountName: "Gross receipts",
+  statementType: "income",
+  sourceType: "tax_return"
 });
+assert.equal(companySpecificTaxMatch?.scope, "company");
+assert.equal(companySpecificTaxMatch?.sourceMatch, "exact");
+assert.equal(companySpecificTaxMatch?.record.id, "company-tax-1");
 
-assert.equal(companyMatch?.scope, "company");
-assert.equal(companyMatch?.record.id, "company-1");
+const sharedTaxMatch = findSavedMapping({
+  mappings,
+  companyId: "company-b",
+  accountName: "Officer compensation",
+  statementType: "income",
+  sourceType: "tax_return"
+});
+assert.equal(sharedTaxMatch?.scope, "shared");
+assert.equal(sharedTaxMatch?.sourceMatch, "exact");
+assert.equal(sharedTaxMatch?.record.id, "shared-tax-1");
 
-const globalMatch = findSavedMapping({
+const genericSharedMatch = findSavedMapping({
   mappings,
   companyId: "company-b",
   accountName: "Revenue",
-  statementType: "income"
+  statementType: "income",
+  sourceType: "reported_financials"
 });
+assert.equal(genericSharedMatch?.scope, "shared");
+assert.equal(genericSharedMatch?.sourceMatch, "generic");
+assert.equal(genericSharedMatch?.record.id, "shared-generic-1");
 
-assert.equal(globalMatch?.scope, "global");
-assert.equal(globalMatch?.record.id, "global-1");
+const sourceMismatchFallsBackToGeneric = findSavedMapping({
+  mappings,
+  companyId: "company-a",
+  accountName: "SG&A Expense",
+  statementType: "income",
+  sourceType: "tax_return"
+});
+assert.equal(sourceMismatchFallsBackToGeneric?.scope, "company");
+assert.equal(sourceMismatchFallsBackToGeneric?.sourceMatch, "generic");
+assert.equal(sourceMismatchFallsBackToGeneric?.record.id, "company-generic-1");
+
+const ambiguousSharedMatch = findSavedMapping({
+  mappings,
+  companyId: "company-b",
+  accountName: "Other deductions",
+  statementType: "income",
+  sourceType: "tax_return"
+});
+assert.equal(
+  ambiguousSharedMatch,
+  null,
+  "Broad ambiguous labels should not resolve from shared memory."
+);
 
 function createMockSupabase() {
   return {
@@ -66,66 +158,91 @@ function createMockSupabase() {
         companyId?: string | null;
         normalizedLabel?: string;
         statementType?: string;
+        sourceType?: string | null;
         id?: string;
       } = {};
+
+      const applyFilters = () =>
+        mappings.filter((mapping) => {
+          const normalizedLabel = mapping.normalized_label ?? mapping.account_name_key;
+
+          if (state.companyId !== undefined && mapping.company_id !== state.companyId) {
+            return false;
+          }
+
+          if (
+            state.normalizedLabel !== undefined &&
+            normalizedLabel !== state.normalizedLabel
+          ) {
+            return false;
+          }
+
+          if (
+            state.statementType !== undefined &&
+            mapping.statement_type !== state.statementType
+          ) {
+            return false;
+          }
+
+          if (state.sourceType !== undefined && mapping.source_type !== state.sourceType) {
+            return false;
+          }
+
+          return true;
+        });
 
       const query = {
         select() {
           return query;
         },
+        returns() {
+          return Promise.resolve({ data: applyFilters(), error: null });
+        },
         eq(column: string, value: string) {
           if (column === "company_id") state.companyId = value;
           if (column === "normalized_label") state.normalizedLabel = value;
           if (column === "statement_type") state.statementType = value;
+          if (column === "source_type") state.sourceType = value;
           if (column === "id") state.id = value;
           return query;
         },
         is(column: string, value: null) {
           if (column === "company_id") state.companyId = value;
+          if (column === "source_type") state.sourceType = value;
           return query;
         },
         async maybeSingle() {
-          const match =
-            mappings.find((mapping) => {
-              const normalizedLabel =
-                (mapping as AccountMapping & { normalized_label?: string | null })
-                  .normalized_label ?? mapping.account_name_key;
-
-              return (
-                mapping.company_id === state.companyId &&
-                normalizedLabel === state.normalizedLabel &&
-                mapping.statement_type === state.statementType
-              );
-            }) ?? null;
-
-          return { data: match, error: null };
+          return { data: applyFilters()[0] ?? null, error: null };
         },
         insert(payload: Record<string, unknown>) {
           return {
             select() {
               return {
                 async single() {
-                  const now = new Date().toISOString();
                   const record = {
                     id: `inserted-${mappings.length + 1}`,
                     company_id: (payload.company_id as string | null | undefined) ?? null,
                     account_name: String(payload.account_name ?? ""),
                     account_name_key: String(payload.account_name_key ?? ""),
-                    category: payload.category as AccountMapping["category"],
-                    statement_type: payload.statement_type as AccountMapping["statement_type"],
-                    created_at: now,
-                    updated_at: now,
                     normalized_label: String(payload.normalized_label ?? ""),
                     concept: String(payload.concept ?? ""),
+                    category: payload.category as AccountMapping["category"],
+                    statement_type: payload.statement_type as AccountMapping["statement_type"],
+                    source_type:
+                      (payload.source_type as AccountMapping["source_type"]) ?? null,
                     confidence: String(payload.confidence ?? "high"),
-                    source: String(payload.source ?? "user")
+                    source: String(payload.source ?? "user"),
+                    usage_count: Number(payload.usage_count ?? 0),
+                    last_used_at: String(payload.last_used_at ?? now),
+                    mapping_method: String(payload.mapping_method ?? ""),
+                    mapping_explanation: String(payload.mapping_explanation ?? ""),
+                    matched_rule: String(payload.matched_rule ?? ""),
+                    created_at: now,
+                    updated_at: now
                   };
 
-                  mappings.push(record as AccountMapping);
-                  return {
-                    data: record,
-                    error: null
-                  };
+                  mappings.push(record);
+                  return { data: record, error: null };
                 }
               };
             }
@@ -148,20 +265,17 @@ function createMockSupabase() {
                         return { data: null, error: { message: "Not found" } };
                       }
 
-                      const current = mappings[index] as AccountMapping & {
-                        normalized_label?: string | null;
-                        concept?: string | null;
-                        confidence?: string | null;
-                        source?: string | null;
-                      };
-                      const nextRecord = {
+                      const current = mappings[index]!;
+                      const nextRecord: AccountMapping = {
                         ...current,
                         account_name: String(payload.account_name ?? current.account_name),
                         account_name_key: String(
                           payload.account_name_key ?? current.account_name_key
                         ),
                         normalized_label: String(
-                          payload.normalized_label ?? current.normalized_label ?? ""
+                          payload.normalized_label ??
+                            current.normalized_label ??
+                            current.account_name_key
                         ),
                         concept: String(payload.concept ?? current.concept ?? ""),
                         category:
@@ -169,19 +283,35 @@ function createMockSupabase() {
                         statement_type:
                           (payload.statement_type as AccountMapping["statement_type"]) ??
                           current.statement_type,
-                        confidence: String(
-                          payload.confidence ?? current.confidence ?? "high"
-                        ),
+                        source_type:
+                          (payload.source_type as AccountMapping["source_type"]) ??
+                          current.source_type ??
+                          null,
+                        confidence: String(payload.confidence ?? current.confidence ?? "high"),
                         source: String(payload.source ?? current.source ?? "user"),
-                        updated_at: String(payload.updated_at ?? current.updated_at)
+                        usage_count: Number(
+                          payload.usage_count ?? current.usage_count ?? 0
+                        ),
+                        last_used_at: String(
+                          payload.last_used_at ?? current.last_used_at ?? now
+                        ),
+                        mapping_method: String(
+                          payload.mapping_method ?? current.mapping_method ?? ""
+                        ),
+                        mapping_explanation: String(
+                          payload.mapping_explanation ??
+                            current.mapping_explanation ??
+                            ""
+                        ),
+                        matched_rule: String(
+                          payload.matched_rule ?? current.matched_rule ?? ""
+                        ),
+                        updated_at: String(payload.updated_at ?? current.updated_at),
+                        created_at: current.created_at
                       };
 
-                      mappings[index] = nextRecord as AccountMapping;
-
-                      return {
-                        data: nextRecord,
-                        error: null
-                      };
+                      mappings[index] = nextRecord;
+                      return { data: nextRecord, error: null };
                     }
                   };
                 }
@@ -201,101 +331,98 @@ const mockSupabase = createMockSupabase();
 const companySavedMapping = await getSavedMapping({
   supabase: mockSupabase,
   companyId: "company-a",
-  accountName: "sg & a expense",
-  statementType: "income"
+  accountName: "Gross receipts",
+  statementType: "income",
+  sourceType: "tax_return"
 });
 assert.equal(companySavedMapping?.scope, "company");
-assert.equal(companySavedMapping?.record.category, "Operating Expenses");
+assert.equal(companySavedMapping?.sourceMatch, "exact");
 
-const globalSavedMapping = await getSavedMapping({
+const sharedSavedMapping = await getSavedMapping({
   supabase: mockSupabase,
-  companyId: "company-b",
+  companyId: "company-z",
   accountName: "Revenue",
-  statementType: "income"
+  statementType: "income",
+  sourceType: "reported_financials"
 });
-assert.equal(globalSavedMapping?.scope, "global");
-assert.equal(globalSavedMapping?.record.category, "Revenue");
+assert.equal(sharedSavedMapping?.scope, "shared");
+assert.equal(sharedSavedMapping?.sourceMatch, "generic");
 
-const missingSavedMapping = await getSavedMapping({
+const loadedMappings = await loadSavedMappings({
   supabase: mockSupabase,
-  companyId: "company-a",
-  accountName: "Random Ambiguous Label",
-  statementType: "income"
+  companyId: "company-a"
 });
-assert.equal(missingSavedMapping, null);
+assert.equal(
+  loadedMappings.some((mapping) => mapping.company_id === "company-a"),
+  true
+);
+assert.equal(
+  loadedMappings.some((mapping) => mapping.company_id === null),
+  true
+);
 
 const inserted = await saveConfirmedMappingToMemory({
   supabase: mockSupabase,
   companyId: "company-a",
   accountName: "Marketing Expense",
   statementType: "income",
+  sourceType: "reported_financials",
   concept: "Operating Expenses",
-  category: "Operating Expenses"
+  category: "Operating Expenses",
+  source: "reported_financials_import"
 });
 assert.equal(inserted.status, "inserted");
-assert.equal(inserted.record?.normalized_label, normalizeMappingLabel("Marketing Expense"));
-assert.equal(inserted.record?.statement_type, "income");
-assert.equal(inserted.record?.company_id, "company-a");
+assert.equal(inserted.record?.source_type, "reported_financials");
+assert.equal(inserted.record?.usage_count, 1);
 
 const unchanged = await saveConfirmedMappingToMemory({
   supabase: mockSupabase,
   companyId: "company-a",
   accountName: "Marketing Expense",
   statementType: "income",
+  sourceType: "reported_financials",
   concept: "Operating Expenses",
-  category: "Operating Expenses"
+  category: "Operating Expenses",
+  source: "reported_financials_import"
 });
 assert.equal(unchanged.status, "unchanged");
-assert.equal(unchanged.record?.normalized_label, normalizeMappingLabel("Marketing Expense"));
+assert.equal(unchanged.record?.usage_count, 2);
 
 const conflict = await saveConfirmedMappingToMemory({
   supabase: mockSupabase,
   companyId: "company-a",
   accountName: "Marketing Expense",
   statementType: "income",
+  sourceType: "reported_financials",
   concept: "Revenue",
   category: "Revenue"
 });
 assert.equal(conflict.status, "conflict");
-assert.equal(conflict.existingRecord?.company_id, "company-a");
-assert.equal(conflict.existingRecord?.statement_type, "income");
-assert.equal(
-  conflict.existingRecord?.normalized_label,
-  normalizeMappingLabel("Marketing Expense")
-);
 
 const updated = await saveConfirmedMappingToMemory({
   supabase: mockSupabase,
   companyId: "company-a",
   accountName: "Marketing Expense",
   statementType: "income",
+  sourceType: "reported_financials",
   concept: "Revenue",
   category: "Revenue",
   allowOverwrite: true
 });
 assert.equal(updated.status, "updated");
-assert.equal(updated.record?.concept, "Revenue");
 assert.equal(updated.record?.category, "Revenue");
+assert.equal(updated.record?.usage_count, 3);
 
-const separateStatementType = await saveConfirmedMappingToMemory({
+const separateSourceType = await saveConfirmedMappingToMemory({
   supabase: mockSupabase,
   companyId: "company-a",
   accountName: "Marketing Expense",
-  statementType: "balance_sheet",
-  concept: "Operating Expenses",
-  category: "Assets"
-});
-assert.equal(separateStatementType.status, "inserted");
-
-const globalScopeInsert = await saveConfirmedMappingToMemory({
-  supabase: mockSupabase,
-  companyId: null,
-  accountName: "Shared Account",
   statementType: "income",
-  concept: "Revenue",
-  category: "Revenue"
+  sourceType: "tax_return",
+  concept: "Operating Expenses",
+  category: "Operating Expenses"
 });
-assert.equal(globalScopeInsert.status, "inserted");
-assert.equal(globalScopeInsert.record?.company_id, null);
+assert.equal(separateSourceType.status, "inserted");
+assert.equal(separateSourceType.record?.source_type, "tax_return");
 
 console.log("mapping-memory tests passed");

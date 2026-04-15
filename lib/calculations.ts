@@ -41,6 +41,22 @@ function mergeLabels(...groups: Array<Array<string> | undefined>) {
   return Array.from(new Set(groups.flatMap((group) => group ?? [])));
 }
 
+function hasValue(value: number | null | undefined): value is number {
+  return value !== null && value !== undefined && Number.isFinite(value);
+}
+
+function calculateMarginPercent(value: number | null, revenue: number) {
+  if (!hasValue(value)) {
+    return null;
+  }
+
+  if (revenue === 0) {
+    return value === 0 ? 0 : null;
+  }
+
+  return (value / revenue) * 100;
+}
+
 function computeOperatingExpensesExcludingDa(params: {
   operatingExpenses: number;
   operatingExpensesSource?: PeriodSnapshot["incomeStatementDebug"] extends infer T
@@ -193,7 +209,7 @@ function calculateSnapshotForPeriod(
     ? computedEbit
     : incomeStatementDebug.operatingIncome.source !== "none"
       ? reportedOperatingIncome
-      : 0;
+      : null;
   const ebitSource: IncomeStatementMetricDebug["ebit"]["source"] = canComputeEbit
     ? "computed_operations"
     : incomeStatementDebug.operatingIncome.source !== "none"
@@ -210,7 +226,7 @@ function calculateSnapshotForPeriod(
     ? computedEbitda
     : incomeStatementDebug.ebitda.source !== "none"
       ? reportedEbitda
-      : 0;
+      : null;
   const ebitdaSource: IncomeStatementMetricDebug["ebitda"]["source"] =
     canComputeEbitdaBottomUp
       ? "bottom_up"
@@ -281,9 +297,8 @@ function calculateSnapshotForPeriod(
   const adjustedEbitda = adjustment.adjustedEbitda;
   const workingCapital = currentAssets - currentLiabilities;
   const grossMarginPercent = revenue === 0 ? 0 : (grossProfit / revenue) * 100;
-  const ebitdaMarginPercent = revenue === 0 ? 0 : (ebitda / revenue) * 100;
-  const adjustedEbitdaMarginPercent =
-    revenue === 0 ? 0 : (adjustedEbitda / revenue) * 100;
+  const ebitdaMarginPercent = calculateMarginPercent(ebitda, revenue);
+  const adjustedEbitdaMarginPercent = calculateMarginPercent(adjustedEbitda, revenue);
   const ebitdaExplainability = buildEbitdaExplainability({
     netIncome,
     nonOperating,
@@ -329,7 +344,11 @@ function calculateSnapshotForPeriod(
   };
 }
 
-function percentChange(current: number, previous: number) {
+function percentChange(current: number | null, previous: number | null) {
+  if (!hasValue(current) || !hasValue(previous)) {
+    return null;
+  }
+
   if (previous === 0) {
     return current === 0 ? 0 : null;
   }
@@ -364,7 +383,9 @@ export function buildSnapshots(
       grossMarginChange:
         snapshot.grossMarginPercent - previous.grossMarginPercent,
       ebitdaMarginChange:
-        snapshot.ebitdaMarginPercent - previous.ebitdaMarginPercent
+        hasValue(snapshot.ebitdaMarginPercent) && hasValue(previous.ebitdaMarginPercent)
+          ? snapshot.ebitdaMarginPercent - previous.ebitdaMarginPercent
+          : null
     };
   });
 }
@@ -379,11 +400,11 @@ export function buildIncomeStatement(snapshot: PeriodSnapshot): StatementRow[] {
       label: "Depreciation / Amortization",
       value: snapshot.depreciationAndAmortization ?? 0
     },
-    { label: "EBIT", value: snapshot.ebit ?? 0 },
+    { label: "EBIT", value: snapshot.ebit ?? null },
     { label: "Non-operating", value: snapshot.nonOperating ?? 0 },
     { label: "Tax Expense", value: snapshot.taxExpense ?? 0 },
     { label: "Net Income", value: snapshot.netIncome ?? 0 },
-    { label: "Computed EBITDA", value: snapshot.ebitda },
+    { label: "EBITDA", value: snapshot.ebitda },
     {
       label: "Approved Add-Backs",
       value: snapshot.acceptedAddBacks
@@ -391,17 +412,17 @@ export function buildIncomeStatement(snapshot: PeriodSnapshot): StatementRow[] {
     { label: "Adjusted EBITDA", value: snapshot.adjustedEbitda }
   ];
 
-  if ((snapshot.reportedOperatingIncome ?? 0) !== 0) {
+  if (snapshot.reportedOperatingIncome !== null && snapshot.reportedOperatingIncome !== undefined) {
     rows.splice(6, 0, {
       label: "Reported Operating Income (Reference)",
-      value: snapshot.reportedOperatingIncome ?? 0
+      value: snapshot.reportedOperatingIncome
     });
   }
 
-  if ((snapshot.reportedEbitda ?? 0) !== 0) {
+  if (snapshot.reportedEbitda !== null && snapshot.reportedEbitda !== undefined) {
     rows.splice(rows.length - 2, 0, {
       label: "Reported EBITDA (Reference)",
-      value: snapshot.reportedEbitda ?? 0
+      value: snapshot.reportedEbitda
     });
   }
 

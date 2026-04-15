@@ -11,6 +11,34 @@ import type {
   ReportingPeriod
 } from "@/lib/types";
 
+function hasValue(value: number | null | undefined): value is number {
+  return value !== null && value !== undefined && Number.isFinite(value);
+}
+
+function calculateMarginPercent(value: number | null, revenue: number) {
+  if (!hasValue(value)) {
+    return null;
+  }
+
+  if (revenue === 0) {
+    return value === 0 ? 0 : null;
+  }
+
+  return (value / revenue) * 100;
+}
+
+function percentChange(current: number | null, previous: number | null) {
+  if (!hasValue(current) || !hasValue(previous)) {
+    return null;
+  }
+
+  if (previous === 0) {
+    return current === 0 ? 0 : null;
+  }
+
+  return ((current - previous) / Math.abs(previous)) * 100;
+}
+
 function mapProvenance(entry: FinancialEntry, mappings: AccountMapping[]) {
   const meta = getEntryMappingMeta(entry, mappings);
 
@@ -93,17 +121,17 @@ function buildIncomeStatement(snapshot: PeriodSnapshot): Extract<
     {
       key: "ebit",
       label: "EBIT",
-      value: snapshot.ebit ?? 0,
+      value: snapshot.ebit ?? null,
       kind: "subtotal",
       rollupKey: "ebit"
     }
   ];
 
-  if ((snapshot.reportedOperatingIncome ?? 0) !== 0) {
+  if (snapshot.reportedOperatingIncome !== null && snapshot.reportedOperatingIncome !== undefined) {
     rows.push({
       key: "reported_operating_income_reference",
       label: "Reported Operating Income (Reference)",
-      value: snapshot.reportedOperatingIncome ?? 0,
+      value: snapshot.reportedOperatingIncome,
       kind: "metric",
       rollupKey: "reported_operating_income_reference"
     });
@@ -130,19 +158,19 @@ function buildIncomeStatement(snapshot: PeriodSnapshot): Extract<
       rollupKey: "net_income"
     },
     {
-      key: "computed_ebitda",
-      label: "Computed EBITDA",
+      key: "ebitda",
+      label: "EBITDA",
       value: snapshot.ebitda,
       kind: "subtotal",
-      rollupKey: "computed_ebitda"
+      rollupKey: "ebitda"
     }
   );
 
-  if ((snapshot.reportedEbitda ?? 0) !== 0) {
+  if (snapshot.reportedEbitda !== null && snapshot.reportedEbitda !== undefined) {
     rows.push({
       key: "reported_ebitda_reference",
       label: "Reported EBITDA (Reference)",
-      value: snapshot.reportedEbitda ?? 0,
+      value: snapshot.reportedEbitda,
       kind: "metric",
       rollupKey: "reported_ebitda_reference"
     });
@@ -218,7 +246,8 @@ export function buildNormalizedPeriodOutputs(params: {
   const { periods, snapshots, entries, accountMappings, bridgesByPeriodId, addBacks } =
     params;
 
-  return snapshots.map<NormalizedPeriodOutput>((snapshot) => {
+  return snapshots.map<NormalizedPeriodOutput>((snapshot, index) => {
+    const previousSnapshot = index > 0 ? snapshots[index - 1] ?? null : null;
     const mappedLines = buildMappedLinesForPeriod(
       snapshot.periodId,
       entries,
@@ -240,13 +269,19 @@ export function buildNormalizedPeriodOutputs(params: {
       mappedLines,
       incomeStatement,
       balanceSheet,
-      reportedEbitda: snapshot.ebitda,
+      reportedEbitda: snapshot.reportedEbitda ?? null,
       acceptedAddBacks: snapshot.acceptedAddBacks,
       adjustedEbitda: snapshot.adjustedEbitda,
       grossMarginPercent: snapshot.grossMarginPercent,
-      reportedEbitdaMarginPercent: snapshot.ebitdaMarginPercent,
+      reportedEbitdaMarginPercent: calculateMarginPercent(
+        snapshot.reportedEbitda ?? null,
+        snapshot.revenue
+      ),
       adjustedEbitdaMarginPercent: snapshot.adjustedEbitdaMarginPercent,
-      reportedEbitdaGrowthPercent: snapshot.ebitdaGrowthPercent,
+      reportedEbitdaGrowthPercent: percentChange(
+        snapshot.reportedEbitda ?? null,
+        previousSnapshot?.reportedEbitda ?? null
+      ),
       adjustedEbitdaGrowthPercent: snapshot.adjustedEbitdaGrowthPercent,
       reconciliation,
       bridge: bridgesByPeriodId.get(snapshot.periodId) ?? null,

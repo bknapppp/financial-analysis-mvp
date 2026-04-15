@@ -13,6 +13,26 @@ $$;
 do $$
 begin
   if not exists (
+    select 1 from pg_type where typname = 'financial_source_type'
+  ) then
+    create type financial_source_type as enum ('reported_financials', 'tax_return');
+  end if;
+end
+$$;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_type where typname = 'financial_source_confidence'
+  ) then
+    create type financial_source_confidence as enum ('high', 'medium', 'low', 'unknown');
+  end if;
+end
+$$;
+
+do $$
+begin
+  if not exists (
     select 1 from pg_type where typname = 'normalized_category'
   ) then
     create type normalized_category as enum (
@@ -77,14 +97,99 @@ alter table public.financial_entries
 
 create table if not exists public.account_mappings (
   id uuid primary key default gen_random_uuid(),
-  company_id uuid not null references public.companies(id) on delete cascade,
+  company_id uuid references public.companies(id) on delete cascade,
   account_name text not null,
   account_name_key text not null,
+  normalized_label text,
+  concept text,
   category normalized_category not null,
   statement_type statement_type not null,
+  source_type financial_source_type,
+  confidence text,
+  source text,
+  usage_count integer not null default 0,
+  last_used_at timestamptz,
+  mapping_method text,
+  mapping_explanation text,
+  matched_rule text,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  unique (company_id, account_name_key)
+  updated_at timestamptz not null default now()
+);
+
+alter table public.account_mappings
+  alter column company_id drop not null;
+
+alter table public.account_mappings
+  add column if not exists normalized_label text;
+
+alter table public.account_mappings
+  add column if not exists concept text;
+
+alter table public.account_mappings
+  add column if not exists source_type financial_source_type;
+
+alter table public.account_mappings
+  add column if not exists confidence text;
+
+alter table public.account_mappings
+  add column if not exists source text;
+
+alter table public.account_mappings
+  add column if not exists usage_count integer not null default 0;
+
+alter table public.account_mappings
+  add column if not exists last_used_at timestamptz;
+
+alter table public.account_mappings
+  add column if not exists mapping_method text;
+
+alter table public.account_mappings
+  add column if not exists mapping_explanation text;
+
+alter table public.account_mappings
+  add column if not exists matched_rule text;
+
+update public.account_mappings
+set normalized_label = coalesce(normalized_label, account_name_key)
+where normalized_label is null;
+
+alter table public.account_mappings
+  alter column normalized_label set not null;
+
+create table if not exists public.source_documents (
+  id uuid primary key default gen_random_uuid(),
+  company_id uuid not null references public.companies(id) on delete cascade,
+  source_type financial_source_type not null,
+  source_file_name text,
+  upload_id text,
+  source_currency text,
+  source_confidence financial_source_confidence,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.source_reporting_periods (
+  id uuid primary key default gen_random_uuid(),
+  source_document_id uuid not null references public.source_documents(id) on delete cascade,
+  label text not null,
+  period_date date not null,
+  source_period_label text,
+  source_year integer,
+  created_at timestamptz not null default now(),
+  unique (source_document_id, period_date, label)
+);
+
+create table if not exists public.source_financial_entries (
+  id uuid primary key default gen_random_uuid(),
+  source_period_id uuid not null references public.source_reporting_periods(id) on delete cascade,
+  account_name text not null,
+  statement_type statement_type not null,
+  amount numeric(14, 2) not null,
+  category normalized_category not null,
+  addback_flag boolean not null default false,
+  matched_by text,
+  confidence text,
+  mapping_explanation text,
+  created_at timestamptz not null default now()
 );
 
 create table if not exists public.add_backs (
@@ -137,6 +242,55 @@ create unique index if not exists idx_financial_entries_period_row_unique
 create index if not exists idx_account_mappings_company_id
   on public.account_mappings(company_id);
 
+create index if not exists idx_account_mappings_company_lookup
+  on public.account_mappings(company_id, normalized_label, statement_type, source_type);
+
+create index if not exists idx_account_mappings_shared_lookup
+  on public.account_mappings(normalized_label, statement_type, source_type)
+  where company_id is null;
+
+create unique index if not exists idx_account_mappings_company_generic_unique
+  on public.account_mappings(company_id, normalized_label, statement_type)
+  where company_id is not null and source_type is null;
+
+create unique index if not exists idx_account_mappings_company_source_unique
+  on public.account_mappings(company_id, normalized_label, statement_type, source_type)
+  where company_id is not null and source_type is not null;
+
+create unique index if not exists idx_account_mappings_shared_generic_unique
+  on public.account_mappings(normalized_label, statement_type)
+  where company_id is null and source_type is null;
+
+create unique index if not exists idx_account_mappings_shared_source_unique
+  on public.account_mappings(normalized_label, statement_type, source_type)
+  where company_id is null and source_type is not null;
+
+create index if not exists idx_source_documents_company_source
+  on public.source_documents(company_id, source_type, created_at);
+
+create unique index if not exists idx_source_documents_company_upload
+  on public.source_documents(company_id, source_type, upload_id)
+  where upload_id is not null;
+
+create index if not exists idx_source_reporting_periods_document_id
+  on public.source_reporting_periods(source_document_id);
+
+create index if not exists idx_source_reporting_periods_period_date
+  on public.source_reporting_periods(period_date);
+
+create index if not exists idx_source_financial_entries_source_period_id
+  on public.source_financial_entries(source_period_id);
+
+create index if not exists idx_source_financial_entries_category
+  on public.source_financial_entries(category);
+
+create unique index if not exists idx_source_financial_entries_period_row_unique
+  on public.source_financial_entries(
+    source_period_id,
+    account_name,
+    statement_type
+  );
+
 create index if not exists idx_add_backs_company_id
   on public.add_backs(company_id);
 
@@ -151,6 +305,9 @@ alter table public.reporting_periods enable row level security;
 alter table public.financial_entries enable row level security;
 alter table public.account_mappings enable row level security;
 alter table public.add_backs enable row level security;
+alter table public.source_documents enable row level security;
+alter table public.source_reporting_periods enable row level security;
+alter table public.source_financial_entries enable row level security;
 
 drop policy if exists "Allow authenticated users to manage companies"
   on public.companies;
@@ -197,6 +354,36 @@ drop policy if exists "Allow authenticated users to manage add-backs"
 
 create policy "Allow authenticated users to manage add-backs"
   on public.add_backs
+  for all
+  to authenticated
+  using (true)
+  with check (true);
+
+drop policy if exists "Allow authenticated users to manage source documents"
+  on public.source_documents;
+
+create policy "Allow authenticated users to manage source documents"
+  on public.source_documents
+  for all
+  to authenticated
+  using (true)
+  with check (true);
+
+drop policy if exists "Allow authenticated users to manage source reporting periods"
+  on public.source_reporting_periods;
+
+create policy "Allow authenticated users to manage source reporting periods"
+  on public.source_reporting_periods
+  for all
+  to authenticated
+  using (true)
+  with check (true);
+
+drop policy if exists "Allow authenticated users to manage source financial entries"
+  on public.source_financial_entries;
+
+create policy "Allow authenticated users to manage source financial entries"
+  on public.source_financial_entries
   for all
   to authenticated
   using (true)

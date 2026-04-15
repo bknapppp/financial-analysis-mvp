@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAccountMappingsSchemaError } from "@/lib/account-mapping-schema";
 import { parseCategory, parseStatementType } from "@/lib/auto-mapping";
+import { devWarn } from "@/lib/debug";
 import { saveConfirmedMappingToMemory } from "@/lib/mapping-memory";
 import { getSupabaseServerClient } from "@/lib/supabase";
-import type { AccountMapping } from "@/lib/types";
+import type { AccountMapping, FinancialSourceType } from "@/lib/types";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -33,7 +34,7 @@ export async function GET(request: NextRequest) {
   const error = companyError ?? globalError;
 
   if (error) {
-    console.warn("Account mappings unavailable for GET request.", {
+    devWarn("Account mappings unavailable for GET request.", {
       companyId,
       error
     });
@@ -56,6 +57,7 @@ export async function POST(request: NextRequest) {
     concept?: string;
     category?: string;
     statementType?: string;
+    sourceType?: FinancialSourceType | null;
     allowOverwrite?: boolean;
   };
 
@@ -64,6 +66,10 @@ export async function POST(request: NextRequest) {
   const concept = body.concept?.trim();
   const category = parseCategory(body.category);
   const statementType = parseStatementType(body.statementType);
+  const sourceType =
+    body.sourceType === "reported_financials" || body.sourceType === "tax_return"
+      ? body.sourceType
+      : null;
   const allowOverwrite = body.allowOverwrite === true;
 
   if (!companyId || !accountName || !category || !statementType) {
@@ -80,6 +86,7 @@ export async function POST(request: NextRequest) {
       companyId,
       accountName,
       statementType,
+      sourceType,
       concept: concept || category,
       category,
       allowOverwrite

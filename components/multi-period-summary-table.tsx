@@ -3,11 +3,12 @@ import type { PeriodSnapshot } from "@/lib/types";
 
 type MultiPeriodSummaryTableProps = {
   snapshots: PeriodSnapshot[];
+  showOuterCard?: boolean;
 };
 
 type MetricRow = {
   label: string;
-  value: (snapshot: PeriodSnapshot) => number;
+  value: (snapshot: PeriodSnapshot) => number | null;
   format: "currency" | "percent";
   highlightExtremes?: boolean;
 };
@@ -41,15 +42,16 @@ const METRIC_ROWS: MetricRow[] = [
   }
 ];
 
-function formatMetricValue(value: number, format: MetricRow["format"]) {
+function formatMetricValue(value: number | null, format: MetricRow["format"]) {
   return format === "currency" ? formatCurrency(value) : formatPercent(value);
 }
 
 export function MultiPeriodSummaryTable({
-  snapshots
+  snapshots,
+  showOuterCard = true
 }: MultiPeriodSummaryTableProps) {
-  return (
-    <section className="rounded-[1.75rem] bg-white p-5 shadow-panel">
+  const content = (
+    <>
       <div className="mb-4">
         <h2 className="text-lg font-semibold text-slate-900">
           Multi-period summary
@@ -85,12 +87,18 @@ export function MultiPeriodSummaryTable({
           <tbody className="divide-y divide-slate-100 bg-white">
             {snapshots.length > 0 ? (
               METRIC_ROWS.map((metric) => {
-                const values = snapshots.map((snapshot) => metric.value(snapshot));
+                const values = snapshots
+                  .map((snapshot) => metric.value(snapshot))
+                  .filter((value): value is number => value !== null && Number.isFinite(value));
                 const highestValue = metric.highlightExtremes
-                  ? Math.max(...values)
+                  ? values.length > 0
+                    ? Math.max(...values)
+                    : null
                   : null;
                 const lowestValue = metric.highlightExtremes
-                  ? Math.min(...values)
+                  ? values.length > 0
+                    ? Math.min(...values)
+                    : null
                   : null;
 
                 return (
@@ -133,6 +141,12 @@ export function MultiPeriodSummaryTable({
           </tbody>
         </table>
       </div>
-    </section>
+    </>
   );
+
+  if (!showOuterCard) {
+    return <section>{content}</section>;
+  }
+
+  return <section className="rounded-[1.75rem] bg-white p-5 shadow-panel">{content}</section>;
 }

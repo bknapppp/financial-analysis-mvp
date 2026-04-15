@@ -9,18 +9,25 @@ import {
   type ReactNode,
   type SetStateAction
 } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   getMappingCategoryOptions,
   isBalanceSheetLeafCategory,
   isBalanceSheetParentCategory
 } from "@/lib/auto-mapping";
+import { focusFixItTarget } from "@/components/fix-it-focus";
 import { normalizeImportedPeriod } from "@/lib/import-periods";
+import {
+  SOURCE_DATA_FILE_FIELD_ID,
+  SOURCE_DATA_UPLOAD_SECTION_ID
+} from "@/lib/fix-it";
 import type {
   Company,
   NormalizedCategory,
   ReportingPeriod,
   StatementType
 } from "@/lib/types";
+import { devLog } from "@/lib/debug";
 import { SaveMappingButton } from "@/components/save-mapping-button";
 
 type PreviewFilter =
@@ -237,6 +244,10 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
   } = props;
   const [focusedReviewOpen, setFocusedReviewOpen] = useState(false);
   const [focusedReviewAccountKey, setFocusedReviewAccountKey] = useState<string | null>(null);
+  const searchParams = useSearchParams();
+  const requestedFixSection = searchParams.get("fixSection");
+  const requestedFixField = searchParams.get("fixField");
+  const requestedFixStep = searchParams.get("fixStep");
 
   const totalAccounts = groupedPreviewRows.length;
   const unmappedCount = groupedPreviewRows.filter(
@@ -263,7 +274,7 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
   );
 
   useEffect(() => {
-    console.log("FOCUSED REVIEW ROW COUNT", focusedReviewRows.length);
+    devLog("FOCUSED REVIEW ROW COUNT", focusedReviewRows.length);
   }, [focusedReviewRows.length]);
 
   useEffect(() => {
@@ -276,15 +287,41 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
     );
 
     if (!stillNeedsReview) {
-      console.log("ROW RETURNED TO RESOLVED MAIN STATE", {
+      devLog("ROW RETURNED TO RESOLVED MAIN STATE", {
         accountKey: focusedReviewAccountKey
       });
       setFocusedReviewAccountKey(null);
     }
   }, [focusedReviewAccountKey, focusedReviewRows]);
 
+  useEffect(() => {
+    if (!requestedFixStep) {
+      return;
+    }
+
+    if (requestedFixStep === "1") {
+      setActiveStep(1);
+    }
+  }, [requestedFixStep, setActiveStep]);
+
+  useEffect(() => {
+    if (requestedFixSection !== SOURCE_DATA_UPLOAD_SECTION_ID) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      focusFixItTarget(requestedFixSection, requestedFixField);
+    }, 150);
+
+    return () => window.clearTimeout(timer);
+  }, [activeStep, requestedFixField, requestedFixSection]);
+
   return (
-    <section className="rounded-[1.75rem] bg-white p-5 shadow-panel">
+    <section
+      id={SOURCE_DATA_UPLOAD_SECTION_ID}
+      data-fix-section={SOURCE_DATA_UPLOAD_SECTION_ID}
+      className="rounded-[1.75rem] bg-white p-5 shadow-panel"
+    >
       <div className="mb-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -352,6 +389,7 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
           <div className="mt-4">
             <label className="mb-1 block text-sm font-medium text-slate-700">Company</label>
             <select
+              id="source-data-company"
               value={selectedCompanyId}
               onChange={(event) => setSelectedCompanyId(event.target.value)}
             >
@@ -371,6 +409,8 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
                   Financial file
                 </label>
                 <input
+                  id={SOURCE_DATA_FILE_FIELD_ID}
+                  data-fix-field={SOURCE_DATA_FILE_FIELD_ID}
                   type="file"
                   accept=".csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                   onChange={handleFileUpload}
@@ -820,11 +860,11 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    console.log("ROW MOVED TO FOCUSED REVIEW", {
+                                    devLog("ROW MOVED TO FOCUSED REVIEW", {
                                       accountKey: row.accountKey,
                                       accountName: row.accountName
                                     });
-                                    console.log("MAPPING EDITOR OPENED", {
+                                    devLog("MAPPING EDITOR OPENED", {
                                       accountKey: row.accountKey,
                                       accountName: row.accountName
                                     });
@@ -909,7 +949,7 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
                           value={row.category}
                           onChange={(event) => {
                             const selectedValue = event.target.value;
-                            console.log("FOCUSED REVIEW MAPPING APPLIED", {
+                            devLog("FOCUSED REVIEW MAPPING APPLIED", {
                               accountKey: row.accountKey,
                               accountName: row.accountName,
                               field: "category",
@@ -965,7 +1005,7 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
                                       row.category as NormalizedCategory | null
                                     )
                                   : false;
-                            console.log("FOCUSED REVIEW MAPPING APPLIED", {
+                            devLog("FOCUSED REVIEW MAPPING APPLIED", {
                               accountKey: row.accountKey,
                               accountName: row.accountName,
                               field: "statementType",

@@ -3,7 +3,7 @@ import type { KpiTraceabilityBadge } from "@/lib/types";
 
 type KpiCardProps = {
   label: string;
-  value: number;
+  value: number | null;
   valueDisplay?: string | null;
   helpText: string;
   format?: "currency" | "percent";

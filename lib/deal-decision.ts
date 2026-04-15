@@ -86,11 +86,13 @@ export function buildDealDecision(params: {
   const debtToEbitda = creditScenario.metrics.debtToEbitda.value;
   const ltv = creditScenario.metrics.ltv.value;
   const addBackShare =
-    snapshot.ebitda > 0 ? acceptedAddBackTotal / snapshot.ebitda : null;
+    snapshot.ebitda !== null && snapshot.ebitda > 0
+      ? acceptedAddBackTotal / snapshot.ebitda
+      : null;
   const missingMetricLabels = getMissingMetricLabels(creditScenario);
 
   const shouldDecline =
-    snapshot.ebitda < 0 ||
+    (snapshot.ebitda !== null && snapshot.ebitda < 0) ||
     highFlags.length >= 2 ||
     creditScenario.metrics.dscr.status === "weak" ||
     creditScenario.metrics.debtToEbitda.status === "weak" ||
@@ -119,7 +121,7 @@ export function buildDealDecision(params: {
   if (recommendation === "decline") {
     appendReason(
       primaryReasons,
-      snapshot.ebitda < 0
+      snapshot.ebitda !== null && snapshot.ebitda < 0
         ? {
             label: "Operating earnings are negative",
             detail: `EBITDA is ${snapshot.ebitda.toLocaleString("en-US", {

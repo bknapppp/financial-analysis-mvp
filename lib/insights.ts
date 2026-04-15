@@ -6,7 +6,16 @@ import type {
   PeriodSnapshot
 } from "@/lib/types";
 
-function percentChange(current: number, previous: number) {
+function percentChange(current: number | null, previous: number | null) {
+  if (
+    current === null ||
+    previous === null ||
+    !Number.isFinite(current) ||
+    !Number.isFinite(previous)
+  ) {
+    return null;
+  }
+
   if (previous === 0) {
     return current === 0 ? 0 : 100;
   }
@@ -39,16 +48,35 @@ function pushUnique(items: string[], message: string) {
 }
 
 export function generateInsights(snapshots: PeriodSnapshot[]): Insight[] {
-  if (snapshots.length < 2) {
+  if (snapshots.length === 0) {
     return [];
   }
 
   const current = snapshots[snapshots.length - 1];
-  const previous = snapshots[snapshots.length - 2];
   const insights: Insight[] = [];
+  const addBackShare =
+    current.ebitda !== null && current.ebitda !== 0
+      ? current.acceptedAddBacks / Math.abs(current.ebitda)
+      : null;
+
+  if (current.acceptedAddBacks > 0) {
+    insights.push({
+      type: "expense_spike",
+      message:
+        addBackShare !== null
+          ? `Accepted add-backs are ${signedPercentText(addBackShare * 100)} of EBITDA`
+          : "Accepted add-backs are in use for the current period"
+    });
+  }
+
+  if (snapshots.length < 2) {
+    return insights;
+  }
+
+  const previous = snapshots[snapshots.length - 2];
 
   const revenueDelta = percentChange(current.revenue, previous.revenue);
-  if (Math.abs(revenueDelta) > 10) {
+  if (revenueDelta !== null && Math.abs(revenueDelta) > 10) {
     insights.push({
       type: "revenue_change",
       message: `Revenue ${signedPercentText(revenueDelta)} vs prior period`
@@ -67,7 +95,7 @@ export function generateInsights(snapshots: PeriodSnapshot[]): Insight[] {
     current.operatingExpenses,
     previous.operatingExpenses
   );
-  if (expenseDelta > 10) {
+  if (expenseDelta !== null && expenseDelta > 10) {
     insights.push({
       type: "expense_spike",
       message: `OpEx ${signedPercentText(expenseDelta)} vs prior period`
@@ -125,7 +153,10 @@ export function generateDriverAnalyses(
       )
     };
     const ebitdaVariance = {
-      absolute: current.ebitda - previous.ebitda,
+      absolute:
+        current.ebitda !== null && previous.ebitda !== null
+          ? current.ebitda - previous.ebitda
+          : 0,
       percent: current.ebitdaGrowthPercent
     };
 
@@ -441,7 +472,9 @@ export function generateExecutiveSummary({
 
   if (sentences.length < 5) {
     sentences.push(
-      `Overall, current performance reflects ${current.ebitda >= 0 ? "positive" : "mixed"} operating momentum with ${
+      `Overall, current performance reflects ${
+        current.ebitda !== null && current.ebitda >= 0 ? "positive" : "mixed"
+      } operating momentum with ${
         (current.ebitdaMarginChange ?? 0) >= 0 ? "stable to improving" : "weaker"
       } profitability.`
     );

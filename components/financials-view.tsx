@@ -1,7 +1,6 @@
 "use client";
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { buildBalanceSheet as buildSnapshotBalanceSheet, buildIncomeStatement as buildSnapshotIncomeStatement } from "@/lib/calculations";
 import { AddBackReviewPanel } from "@/components/add-back-review-panel";
@@ -18,20 +17,25 @@ import {
   canonicalizeCategoryPath
 } from "@/components/financials-view-rollup";
 import { DashboardCharts } from "@/components/dashboard-charts";
-import { DealDecisionPanel } from "@/components/deal-decision-panel";
-import { EbitdaBridge } from "@/components/ebitda-bridge";
-import { EbitdaExplainabilityPanel } from "@/components/ebitda-explainability-panel";
+import { DealPageNavigation } from "@/components/deal-page-navigation";
+import { InvestmentOverviewPanel } from "@/components/investment-overview-panel";
 import { MultiPeriodSummaryTable } from "@/components/multi-period-summary-table";
 import { PerformanceDrivers } from "@/components/performance-drivers";
 import { RiskFlagsPanel } from "@/components/risk-flags-panel";
 import { StatementTable } from "@/components/statement-table";
+import { UnderwritingCompletionPanel } from "@/components/underwriting-completion-panel";
 import { UnderwritingSnapshotPanel } from "@/components/underwriting-snapshot-panel";
 import { buildCreditScenario } from "@/lib/credit-scenario";
-import { formatCurrency } from "@/lib/formatters";
-import { buildRiskFlags } from "@/lib/risk-flags";
+import { devLog, isDevelopment } from "@/lib/debug";
+import {
+  ADD_BACK_LAYER_SECTION_ID,
+  UNDERWRITING_WORKBENCH_SECTION_ID
+} from "@/lib/fix-it";
+import { formatCurrency, formatPercent } from "@/lib/formatters";
+import { buildUnderwritingCompletion, getMissingCreditScenarioInputs } from "@/lib/underwriting/completion";
+import { buildInvestmentOverview } from "@/lib/underwriting/investment-overview";
 import type {
   DashboardData,
-  FinancialEntry,
   NormalizedPeriodOutput,
   NormalizedStatement,
   PeriodSnapshot,
@@ -45,13 +49,8 @@ type FinancialsViewProps = {
 type FinancialsMode = "reported" | "adjusted";
 type WorkspaceTab = "overview" | "financials" | "adjustments";
 
-const WORKSPACE_TABS: Array<{ id: WorkspaceTab; label: string }> = [
-  { id: "overview", label: "Overview" },
-  { id: "financials", label: "Financials" },
-  { id: "adjustments", label: "Adjustments" }
-];
 function toNormalizedStatementRows(
-  rows: Array<{ label: string; value: number }>,
+  rows: Array<{ label: string; value: number | null }>,
   subtotalLabels: string[]
 ) {
   return rows.map((row) => ({
@@ -123,11 +122,10 @@ function buildAdjustedIncomeStatement(params: {
 }
 
 function buildBalanceSheet(params: {
-  entries: FinancialEntry[];
   snapshot: PeriodSnapshot;
+  rollup: ReturnType<typeof buildBalanceSheetRollup>;
 }): NormalizedStatement {
-  const { entries, snapshot } = params;
-  const balanceSheetRollup = buildBalanceSheetRollup(entries, snapshot.periodId);
+  const { snapshot, rollup: balanceSheetRollup } = params;
   const balanceSheetLines = balanceSheetRollup.selectedPeriodRows;
 
   if (balanceSheetLines.length > 0) {
@@ -237,7 +235,28 @@ function buildBalanceSheet(params: {
 
 export function FinancialsView({ data }: FinancialsViewProps) {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<WorkspaceTab>("overview");
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const isDevelopment = process.env.NODE_ENV !== "production";
+  const requestedTab = searchParams.get("tab");
+  const requestedFixSection = searchParams.get("fixSection");
+  const requestedFixField = searchParams.get("fixField");
+  const shouldOpenOverviewForFix =
+    requestedFixSection === UNDERWRITING_WORKBENCH_SECTION_ID || Boolean(requestedFixField);
+  const shouldOpenFinancialsForFix = requestedFixSection === ADD_BACK_LAYER_SECTION_ID;
+  const initialTab: WorkspaceTab =
+    shouldOpenOverviewForFix
+      ? "overview"
+      : shouldOpenFinancialsForFix || requestedTab === "financials"
+      ? "financials"
+      : requestedTab === "adjustments"
+      ? "adjustments"
+      : pathname === "/financials"
+        ? "financials"
+        : "overview";
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>(
+    initialTab
+  );
   const [mode, setMode] = useState<FinancialsMode>("reported");
   const [showValidationDetails, setShowValidationDetails] = useState(false);
   const [underwritingInputValues, setUnderwritingInputValues] =
@@ -308,8 +327,17 @@ export function FinancialsView({ data }: FinancialsViewProps) {
     (period) => period.periodId === effectiveSnapshot.periodId
   );
 
+  const balanceSheetRollup = useMemo(
+    () => buildBalanceSheetRollup(data.entries, effectiveSnapshot.periodId),
+    [data.entries, effectiveSnapshot.periodId]
+  );
+
   useEffect(() => {
-    console.log("FINANCIAL STATEMENTS PERIOD SELECTION", {
+    if (!isDevelopment) {
+      return;
+    }
+
+    devLog("FINANCIAL STATEMENTS PERIOD SELECTION", {
       availablePeriods,
       selectedPeriodBeforeFallback,
       selectedPeriodAfterFallback,
@@ -318,6 +346,7 @@ export function FinancialsView({ data }: FinancialsViewProps) {
   }, [
     availablePeriods,
     chosenPeriodHasData,
+    isDevelopment,
     selectedPeriodAfterFallback,
     selectedPeriodBeforeFallback
   ]);
@@ -339,23 +368,25 @@ export function FinancialsView({ data }: FinancialsViewProps) {
   const balanceSheet = useMemo(
     () =>
       buildBalanceSheet({
-        entries: data.entries,
-        snapshot: effectiveSnapshot
+        snapshot: effectiveSnapshot,
+        rollup: balanceSheetRollup
       }),
-    [data.entries, effectiveSnapshot]
+    [balanceSheetRollup, effectiveSnapshot]
   );
   const balanceSheetValidation = useMemo(() => {
-    const rollup = buildBalanceSheetRollup(data.entries, effectiveSnapshot.periodId);
-
     return buildBalanceSheetValidation({
       entries: data.entries,
       snapshot: effectiveSnapshot,
-      rollup
+      rollup: balanceSheetRollup
     });
-  }, [data.entries, effectiveSnapshot]);
+  }, [balanceSheetRollup, data.entries, effectiveSnapshot]);
 
   useEffect(() => {
-    console.log("INCOME STATEMENT AGGREGATION", {
+    if (!isDevelopment) {
+      return;
+    }
+
+    devLog("INCOME STATEMENT AGGREGATION", {
       selectedPeriod: {
         periodId: effectiveSnapshot.periodId,
         label: effectiveSnapshot.label,
@@ -370,13 +401,13 @@ export function FinancialsView({ data }: FinancialsViewProps) {
         effectiveSnapshot.incomeStatementMetricDebug ??
         null
     });
-  }, [effectiveNormalizedOutput, effectiveSnapshot]);
+  }, [effectiveNormalizedOutput, effectiveSnapshot, isDevelopment]);
 
   useEffect(() => {
-    const balanceSheetRollup = buildBalanceSheetRollup(
-      data.entries,
-      effectiveSnapshot.periodId
-    );
+    if (!isDevelopment) {
+      return;
+    }
+
     const groupedSums = balanceSheetRollup.selectedPeriodRows.reduce<Record<string, number>>(
       (acc, line) => {
         const normalizedCategory = canonicalizeCategoryPath(line.normalizedCategory);
@@ -386,7 +417,7 @@ export function FinancialsView({ data }: FinancialsViewProps) {
       {}
     );
 
-    console.log("BALANCE SHEET AGGREGATION", {
+    devLog("BALANCE SHEET AGGREGATION", {
       selectedPeriod: {
         periodId: effectiveSnapshot.periodId,
         label: effectiveSnapshot.label,
@@ -422,15 +453,46 @@ export function FinancialsView({ data }: FinancialsViewProps) {
           balanceSheetRollup.finalTotals.totalLiabilitiesAndEquity
       }
     });
-  }, [data.entries, effectiveSnapshot]);
+  }, [balanceSheetRollup, effectiveSnapshot, isDevelopment]);
 
   useEffect(() => {
-    console.log("BALANCE SHEET VALIDATION RESULT", {
+    if (!isDevelopment) {
+      return;
+    }
+
+    devLog("BALANCE SHEET VALIDATION RESULT", {
       computedTotals: balanceSheetValidation.computedTotals,
       sourceTotalRowsFound: balanceSheetValidation.sourceTotals,
       validationChecks: balanceSheetValidation.checks
     });
-  }, [balanceSheetValidation]);
+  }, [balanceSheetValidation, isDevelopment]);
+
+  useEffect(() => {
+    setActiveTab(
+      shouldOpenOverviewForFix
+        ? "overview"
+        : shouldOpenFinancialsForFix || requestedTab === "financials"
+        ? "financials"
+        : requestedTab === "adjustments"
+        ? "adjustments"
+        : pathname === "/financials"
+          ? "financials"
+          : "overview"
+    );
+  }, [pathname, requestedTab, shouldOpenFinancialsForFix, shouldOpenOverviewForFix]);
+
+  useEffect(() => {
+    if (activeTab !== "financials" || requestedFixSection !== ADD_BACK_LAYER_SECTION_ID) {
+      return;
+    }
+
+    const section = document.getElementById(ADD_BACK_LAYER_SECTION_ID);
+    if (!section) {
+      return;
+    }
+
+    section.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [activeTab, requestedFixSection]);
 
   useEffect(() => {
     setUnderwritingEbitdaBasis(mode === "adjusted" ? "adjusted" : "computed");
@@ -442,13 +504,73 @@ export function FinancialsView({ data }: FinancialsViewProps) {
     setSelectedPeriodId(nextPeriodId);
   }, [availablePeriods, data.snapshot.periodId]);
 
-  const adjustedFooterDisplay =
-    data.readiness.status === "blocked" ? "Not reliable" : null;
+  const companyId = data.company?.id ?? null;
+  const companyName = data.company?.name || "No company selected";
+  const overviewHref = companyId ? `/deal/${companyId}` : "/";
+  const financialsHref = companyId ? `/financials?companyId=${companyId}` : "/financials";
+  const sourceDataHref = companyId ? `/source-data?companyId=${companyId}` : "/source-data";
+  const currentSection = activeTab === "financials" ? "Financials" : "Overview";
   const effectiveBridge = effectiveNormalizedOutput?.bridge ?? data.ebitdaBridge ?? null;
   const ebitdaExplainability =
     effectiveNormalizedOutput?.ebitdaExplainability ??
     effectiveSnapshot.ebitdaExplainability ??
     null;
+  const addBackThresholdPercent = 25;
+  const effectiveAddBackTotal =
+    effectiveBridge?.addBackTotal ?? effectiveSnapshot.acceptedAddBacks ?? 0;
+  const missingExplainabilityComponents =
+    ebitdaExplainability?.missingComponents ?? [];
+  const bridgeInvalidReasons = effectiveBridge?.invalidReasons ?? [];
+  const bridgeWarnings = effectiveBridge?.warnings ?? [];
+  const addBackShareOfEbitdaPercent =
+    effectiveSnapshot.ebitda !== null && effectiveSnapshot.ebitda !== 0
+      ? (effectiveAddBackTotal / Math.abs(effectiveSnapshot.ebitda)) * 100
+      : null;
+  const financialStatusLabel =
+    data.readiness.status === "blocked"
+      ? missingExplainabilityComponents.length > 0
+        ? "Incomplete earnings base"
+        : "Missing required inputs"
+      : data.readiness.status === "caution"
+        ? "Pending validation"
+        : "Ready for review";
+  const financialStatusMessage =
+    data.readiness.status === "blocked"
+      ? missingExplainabilityComponents.length > 0
+        ? `Missing EBITDA support for ${missingExplainabilityComponents.join(", ")}.`
+        : bridgeInvalidReasons[0] ?? data.readiness.summaryMessage
+      : data.readiness.status === "caution"
+        ? bridgeWarnings[0] ?? data.readiness.summaryMessage
+        : data.dataQuality.confidenceLabel !== "High"
+          ? `${data.dataQuality.confidenceLabel} confidence with ${formatPercent(
+              data.dataQuality.mappingCoveragePercent
+            )} mapping coverage.`
+          : "Adjusted EBITDA is supported by the current normalized mapping set.";
+  const adjustmentsLabel =
+    data.readiness.status === "ready"
+      ? "Applied adjustments"
+      : "Proposed adjustments";
+  const adjustedEbitdaDisplay =
+    data.readiness.status === "blocked"
+      ? "Unavailable"
+      : formatCurrency(effectiveSnapshot.adjustedEbitda);
+  const topStripStatusMessage =
+    data.readiness.status === "blocked"
+      ? `Adjusted EBITDA unavailable — ${financialStatusLabel.toLowerCase()}`
+      : data.readiness.status === "caution"
+        ? "Adjusted EBITDA pending validation"
+        : "Adjusted EBITDA supported";
+  const constructionNotes = [
+    mode === "adjusted"
+      ? "Income statement is shown in adjusted view."
+      : "Income statement is shown in reported view.",
+    missingExplainabilityComponents.length > 0
+      ? `Missing bottom-up inputs: ${missingExplainabilityComponents.join(", ")}.`
+      : null,
+    data.readiness.status !== "ready"
+      ? `Adjustments are labeled as ${adjustmentsLabel.toLowerCase()} until adjusted EBITDA is fully supported.`
+      : "Adjustments are fully applied in the supported adjusted EBITDA view."
+  ].filter((note): note is string => Boolean(note));
   const balanceDifference =
     balanceSheetValidation.computedTotals.totalAssets -
     balanceSheetValidation.computedTotals.totalLiabilitiesAndEquity;
@@ -472,19 +594,10 @@ export function FinancialsView({ data }: FinancialsViewProps) {
       }),
     [effectiveSnapshot, parsedUnderwritingInputs, underwritingEbitdaBasis]
   );
-  const missingUnderwritingInputs = useMemo(() => {
-    const fieldLabels: Record<keyof typeof parsedUnderwritingInputs, string> = {
-      loanAmount: "Loan amount",
-      annualInterestRatePercent: "Interest rate",
-      loanTermYears: "Loan term",
-      amortizationYears: "Amortization",
-      collateralValue: "Collateral value"
-    };
-
-    return Object.entries(parsedUnderwritingInputs)
-      .filter(([, value]) => value === null)
-      .map(([key]) => fieldLabels[key as keyof typeof parsedUnderwritingInputs]);
-  }, [parsedUnderwritingInputs]);
+  const missingUnderwritingInputs = useMemo(
+    () => getMissingCreditScenarioInputs(parsedUnderwritingInputs),
+    [parsedUnderwritingInputs]
+  );
   const acceptedAddBackItemsForSnapshot = useMemo(
     () =>
       data.addBackReviewItems.filter(
@@ -493,20 +606,46 @@ export function FinancialsView({ data }: FinancialsViewProps) {
       ),
     [data.addBackReviewItems, effectiveSnapshot.periodId]
   );
-  const riskFlags = useMemo(
+  const completionSummary = useMemo(
     () =>
-      buildRiskFlags({
+      buildUnderwritingCompletion({
         snapshot: effectiveSnapshot,
-        creditScenario: underwritingScenario,
-        readiness: data.readiness,
+        entries: data.entries,
         dataQuality: data.dataQuality,
-        acceptedAddBackItems: acceptedAddBackItemsForSnapshot
+        taxSourceStatus: data.taxSourceStatus,
+        underwritingInputs: parsedUnderwritingInputs,
+        creditScenario: underwritingScenario
       }),
     [
-      acceptedAddBackItemsForSnapshot,
       data.dataQuality,
-      data.readiness,
+      data.entries,
+      data.taxSourceStatus,
       effectiveSnapshot,
+      parsedUnderwritingInputs,
+      underwritingScenario
+    ]
+  );
+  const investmentOverview = useMemo(
+    () =>
+      buildInvestmentOverview({
+        snapshot: effectiveSnapshot,
+        acceptedAddBackTotal: effectiveSnapshot.acceptedAddBacks ?? 0,
+        ebitdaBasis: underwritingEbitdaBasis,
+        underwritingInputs: parsedUnderwritingInputs,
+        creditScenario: underwritingScenario,
+        dataQuality: data.dataQuality,
+        reconciliation: data.reconciliation,
+        taxSourceStatus: data.taxSourceStatus,
+        completionSummary
+      }),
+    [
+      completionSummary,
+      data.dataQuality,
+      data.reconciliation,
+      data.taxSourceStatus,
+      effectiveSnapshot,
+      parsedUnderwritingInputs,
+      underwritingEbitdaBasis,
       underwritingScenario
     ]
   );
@@ -590,63 +729,40 @@ export function FinancialsView({ data }: FinancialsViewProps) {
         <section className="rounded-[2rem] border border-slate-200 bg-white px-6 py-6 shadow-panel md:px-8">
           <div className="flex flex-col gap-6">
             <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-            <div className="max-w-3xl">
-              <p className="text-xs font-medium uppercase tracking-[0.24em] text-slate-500">
-                {data.company?.name || "No company selected"} •{" "}
-                {effectiveSnapshot.label || "No reporting period loaded"}
-              </p>
-              <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950 md:text-4xl">
-                {data.company?.name || "No company selected"}
-              </h1>
-              <p className="mt-3 text-sm text-slate-600 md:text-base">
-                Selected period: {effectiveSnapshot.label || "No reporting period loaded"}
-              </p>
-            </div>
+              <div className="max-w-3xl">
+                <DealPageNavigation
+                  companyName={companyName}
+                  currentSection={currentSection}
+                  allDealsHref="/deals"
+                  overviewHref={overviewHref}
+                  financialsHref={financialsHref}
+                  sourceDataHref={sourceDataHref}
+                />
+                <p className="text-xs font-medium uppercase tracking-[0.24em] text-slate-500">
+                  {data.company?.name || "No company selected"} -{" "}
+                  {effectiveSnapshot.label || "No reporting period loaded"}
+                </p>
+                <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950 md:text-4xl">
+                  {data.company?.name || "No company selected"}
+                </h1>
+                <p className="mt-3 text-sm text-slate-600 md:text-base">
+                  Selected period: {effectiveSnapshot.label || "No reporting period loaded"}
+                </p>
+              </div>
 
               <div className="flex flex-wrap items-start gap-3">
-              {data.company ? (
-                <button
-                  type="button"
-                  onClick={deleteCompany}
-                  disabled={isDeletingCompany}
-                  className="rounded-xl border border-rose-200 px-4 py-2.5 text-sm font-medium text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {isDeletingCompany ? "Deleting company..." : "Delete Company"}
-                </button>
-              ) : null}
-              <Link
-                href="/deals"
-                className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-              >
-                All Deals
-              </Link>
-              <Link
-                href="/source-data"
-                className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-              >
-                Source Data
-              </Link>
+                {data.company ? (
+                  <button
+                    type="button"
+                    onClick={deleteCompany}
+                    disabled={isDeletingCompany}
+                    className="rounded-xl border border-rose-200 px-4 py-2.5 text-sm font-medium text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isDeletingCompany ? "Deleting company..." : "Delete Company"}
+                  </button>
+                ) : null}
               </div>
             </div>
-
-            <nav aria-label="Deal workspace sections" className="border-b border-slate-200">
-              <div className="flex flex-wrap gap-1">
-                {WORKSPACE_TABS.map((tab) => (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => setActiveTab(tab.id)}
-                    className={`border-b-2 px-4 py-3 text-sm font-medium ${
-                      activeTab === tab.id
-                        ? "border-slate-900 text-slate-950"
-                        : "border-transparent text-slate-500 hover:text-slate-700"
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
-            </nav>
           </div>
         </section>
 
@@ -733,92 +849,34 @@ export function FinancialsView({ data }: FinancialsViewProps) {
 
         {activeTab === "overview" ? (
           <section className="space-y-6">
-            <UnderwritingSnapshotPanel
-              snapshot={effectiveSnapshot}
-              scenario={underwritingScenario}
-              ebitdaBasis={underwritingEbitdaBasis}
-              missingInputs={missingUnderwritingInputs}
-            />
-            <DealDecisionPanel
-              snapshot={effectiveSnapshot}
-              creditScenario={underwritingScenario}
-              riskFlags={riskFlags}
-              acceptedAddBackTotal={effectiveSnapshot.acceptedAddBacks ?? 0}
-            />
+            <section>
+              <UnderwritingSnapshotPanel
+                snapshot={effectiveSnapshot}
+                scenario={underwritingScenario}
+                ebitdaBasis={underwritingEbitdaBasis}
+                missingInputs={missingUnderwritingInputs}
+              />
+            </section>
             <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel">
-              <div className="mb-4">
+              <div className="max-w-3xl">
                 <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
-                  Similar deals
+                  Performance & Trends
                 </p>
                 <h2 className="mt-2 text-xl font-semibold text-slate-900">
-                  Similar deals
+                  Performance & Trends
                 </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Keep trend context close to the top of the workflow so revenue, earnings, and change drivers can be scanned before underwriting details.
+                </p>
               </div>
-
-              {data.similarDeals.length > 0 ? (
-                <div className="overflow-x-auto rounded-xl border border-slate-200">
-                  <table className="min-w-full divide-y divide-slate-200 text-[13px]">
-                    <thead className="bg-slate-50">
-                      <tr>
-                        <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                          Company
-                        </th>
-                        <th className="px-3 py-2 text-right text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                          EBITDA
-                        </th>
-                        <th className="px-3 py-2 text-right text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                          Adjusted EBITDA
-                        </th>
-                        <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                          Decision
-                        </th>
-                        <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                          Primary Risk
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200 bg-white">
-                      {data.similarDeals.map((deal) => (
-                        <tr
-                          key={deal.companyId}
-                          className="cursor-pointer transition-colors hover:bg-slate-50"
-                          onClick={() => router.push(`/deal/${deal.companyId}`)}
-                        >
-                          <td className="px-3 py-2.5 font-medium text-slate-900">
-                            {deal.companyName}
-                          </td>
-                          <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">
-                            {deal.ebitda === null ? "—" : formatCurrency(deal.ebitda)}
-                          </td>
-                          <td className="px-3 py-2.5 text-right tabular-nums text-slate-900">
-                            {deal.adjustedEbitda === null
-                              ? "—"
-                              : formatCurrency(deal.adjustedEbitda)}
-                          </td>
-                          <td className="px-3 py-2.5">
-                            <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700">
-                              {deal.decision}
-                            </span>
-                          </td>
-                          <td className="max-w-[260px] px-3 py-2.5 text-[12px] text-slate-600">
-                            <span className="block truncate">{deal.primaryRisk ?? "—"}</span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+              <div className="mt-5 space-y-6 rounded-[1.5rem] bg-slate-50 p-4">
+                <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
+                  <DashboardCharts series={data.series} showOuterCard={false} />
+                  <PerformanceDrivers analyses={data.driverAnalyses} showOuterCard={false} />
                 </div>
-              ) : (
-                <p className="text-sm text-slate-500">No similar deals found</p>
-              )}
+                <MultiPeriodSummaryTable snapshots={data.snapshots} showOuterCard={false} />
+              </div>
             </section>
-            <RiskFlagsPanel
-              snapshot={effectiveSnapshot}
-              creditScenario={underwritingScenario}
-              readiness={data.readiness}
-              dataQuality={data.dataQuality}
-              acceptedAddBackItems={acceptedAddBackItemsForSnapshot}
-            />
             <CreditScenarioPanel
               snapshot={effectiveSnapshot}
               inputValues={underwritingInputValues}
@@ -826,321 +884,471 @@ export function FinancialsView({ data }: FinancialsViewProps) {
               ebitdaBasis={underwritingEbitdaBasis}
               onEbitdaBasisChange={setUnderwritingEbitdaBasis}
               scenario={underwritingScenario}
+              missingInputs={missingUnderwritingInputs}
+            />
+            <section className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
+              <InvestmentOverviewPanel overview={investmentOverview} detailHref="/source-data" />
+              <RiskFlagsPanel
+                snapshot={effectiveSnapshot}
+                creditScenario={underwritingScenario}
+                readiness={data.readiness}
+                dataQuality={data.dataQuality}
+                acceptedAddBackItems={acceptedAddBackItemsForSnapshot}
+                blockers={completionSummary.blockers}
+              />
+            </section>
+            <UnderwritingCompletionPanel
+              companyId={companyId}
+              summary={completionSummary}
             />
           </section>
         ) : null}
 
         {activeTab === "financials" ? (
           <>
-        <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-          <div className="space-y-4">
             <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel">
-              <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+              <div className="grid gap-4 border-b border-slate-200 pb-4 md:grid-cols-4">
                 <div>
-                  <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
-                    Financial Truth
-                  </p>
-                  <h2 className="mt-2 text-xl font-semibold text-slate-900">
-                    Income statement and earnings base
-                  </h2>
-                  <p className="mt-1 text-sm text-slate-500">
-                    Start with the reported statement, then follow the canonical EBITDA build and accepted adjustment path into underwriting.
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
                   <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
-                    EBITDA Basis
+                    Reported EBITDA
                   </p>
-                  <p className="mt-1 text-lg font-semibold text-slate-900">
+                  <p className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">
                     {formatCurrency(effectiveSnapshot.ebitda)}
                   </p>
                 </div>
-              </div>
-            </section>
-            <StatementTable
-              statement={incomeStatement}
-              footerValueDisplay={mode === "adjusted" ? adjustedFooterDisplay : null}
-            />
-            <EbitdaExplainabilityPanel explainability={ebitdaExplainability} />
-            <EbitdaBridge bridge={effectiveBridge} />
-          </div>
-          <div className="space-y-4">
-            <section className="rounded-[1.75rem] bg-white p-5 shadow-panel">
-              <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <h2 className="text-lg font-semibold text-slate-900">
-                    Balance Sheet Validation
+                  <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
+                    {adjustmentsLabel}
+                  </p>
+                  <p className="mt-2 text-3xl font-semibold tracking-tight text-teal-700">
+                    +{formatCurrency(effectiveAddBackTotal)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
+                    Adjusted EBITDA
+                  </p>
+                  <p className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">
+                    {adjustedEbitdaDisplay}
+                  </p>
+                  {data.readiness.status !== "ready" ? (
+                    <p className="mt-1 text-xs leading-5 text-slate-500">
+                      {financialStatusLabel}
+                    </p>
+                  ) : null}
+                </div>
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
+                    Status
+                  </p>
+                  <p className="mt-2 text-sm font-semibold leading-5 text-slate-950">
+                    {topStripStatusMessage}
+                  </p>
+                </div>
+              </div>
+              <div className="mt-4 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
+                    EBITDA Construction
+                  </p>
+                  <h2 className="mt-2 text-xl font-semibold text-slate-900">
+                    Earnings normalization workflow
                   </h2>
                   <p className="mt-1 text-sm text-slate-500">
-                    {balanceSheetValidation.overallSeverity === "pass"
-                      ? "Balance sheet reconciles for the selected period."
-                      : balanceSheetValidation.overallSeverity === "warning"
-                        ? "Balance sheet has discrepancies. Review validation details."
-                        : "Balance sheet does not reconcile. Review differences below."}
+                    Review the reported statement, normalize EBITDA through accepted add-backs, and carry the result into the adjusted bridge.
                   </p>
                 </div>
-                <span
-                  className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                    balanceSheetValidation.overallSeverity === "pass"
-                      ? "bg-teal-100 text-teal-800"
-                      : balanceSheetValidation.overallSeverity === "warning"
-                        ? "bg-amber-100 text-amber-800"
-                        : "bg-rose-100 text-rose-800"
-                  }`}
-                >
-                  {balanceSheetValidation.overallSeverity === "pass"
-                    ? "Pass"
-                    : balanceSheetValidation.overallSeverity === "warning"
-                      ? "Warning"
-                      : "Fail"}
-                </span>
+                <div className="flex flex-wrap gap-2 text-sm text-slate-600">
+                  <span className="rounded-full bg-slate-100 px-3 py-1.5 font-medium text-slate-700">
+                    {effectiveSnapshot.label}
+                  </span>
+                  <span className="rounded-full bg-slate-100 px-3 py-1.5 font-medium text-slate-700">
+                    {mode === "adjusted" ? "Adjusted view" : "Reported view"}
+                  </span>
+                </div>
               </div>
+            </section>
 
-              <div
-                className={`mt-4 grid gap-3 ${
-                  sourceComparisonChecks.length > 0 ? "xl:grid-cols-3" : "md:grid-cols-2"
-                }`}
-              >
-                <div
-                  className={`rounded-2xl border px-4 py-3 ${
-                    balanceSheetBalances
-                      ? "border-teal-200 bg-teal-50"
-                      : "border-rose-200 bg-rose-50"
-                  }`}
-                >
-                  <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
-                    Balance Check
-                  </p>
-                  <p className="mt-2 text-sm font-medium text-slate-900">
-                    {balanceSheetBalances
-                      ? "Balance Sheet Balances"
-                      : "Balance Sheet Does Not Balance"}
-                  </p>
-                  <p className="mt-1 text-sm text-slate-700">
-                    {balanceSheetBalances
-                      ? "Assets = Liabilities + Equity"
-                      : "Assets ≠ Liabilities + Equity"}
-                  </p>
-                  <p className="mt-2 text-sm text-slate-900">
-                    {formatCurrency(balanceSheetValidation.computedTotals.totalAssets)} ={" "}
-                    {formatCurrency(
-                      balanceSheetValidation.computedTotals.totalLiabilitiesAndEquity
-                    )}
-                  </p>
-                  <p className="mt-1 text-sm text-slate-600">
-                    Difference:{" "}
+            <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel">
+              <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_22rem] xl:items-start">
+                <div className="space-y-5">
+                  <StatementTable
+                    statement={incomeStatement}
+                    footerValueDisplay={mode === "adjusted" && data.readiness.status === "blocked" ? financialStatusLabel : null}
+                    showOuterCard={false}
+                    density="compact"
+                  />
+                  <section
+                    id={ADD_BACK_LAYER_SECTION_ID}
+                    className="border-t border-slate-200 pt-5"
+                  >
+                    <AddBackReviewPanel
+                      companyId={data.company?.id ?? null}
+                      periods={data.periods}
+                      items={data.addBackReviewItems}
+                      periodId={effectiveSnapshot.periodId}
+                      title="Add-Back Review"
+                      eyebrow="EBITDA Normalization"
+                      description="Review suggested and accepted adjustments before carrying them into adjusted EBITDA."
+                      showOuterCard={false}
+                      density="compact"
+                      manualEntryMode="collapsible"
+                    />
+                  </section>
+                </div>
+
+                <aside className="space-y-5">
+                  <section className="rounded-[1.5rem] bg-slate-50 p-4">
+                    <div className="border-b border-slate-200 pb-3">
+                      <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
+                        EBITDA Summary
+                      </p>
+                      <p className="mt-1 text-sm text-slate-500">
+                        Canonical EBITDA normalized through accepted adjustments.
+                      </p>
+                    </div>
+                    <div className="space-y-3 pt-3">
+                      <div className="flex items-baseline justify-between gap-4">
+                        <p className="text-sm font-medium text-slate-600">Reported / Canonical EBITDA</p>
+                        <p className="text-xl font-semibold text-slate-950">
+                          {formatCurrency(effectiveSnapshot.ebitda)}
+                        </p>
+                      </div>
+                      <div className="flex items-baseline justify-between gap-4 border-t border-slate-200 pt-3">
+                        <div>
+                          <p className="text-sm font-medium text-slate-600">{adjustmentsLabel}</p>
+                          {addBackShareOfEbitdaPercent !== null ? (
+                            <p className="mt-1 text-xs text-slate-500">
+                              {formatPercent(addBackShareOfEbitdaPercent)} of EBITDA
+                            </p>
+                          ) : null}
+                        </div>
+                        <p className="text-xl font-semibold text-teal-700">
+                          +{formatCurrency(effectiveAddBackTotal)}
+                        </p>
+                      </div>
+                      <div className="flex items-baseline justify-between gap-4 border-t border-slate-200 pt-3">
+                        <p className="text-sm font-medium text-slate-700">Adjusted EBITDA</p>
+                        <p className="text-xl font-semibold text-slate-950">
+                          {adjustedEbitdaDisplay}
+                        </p>
+                      </div>
+                      {data.readiness.status !== "ready" || bridgeWarnings.length ? (
+                        <div className="rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-700">
+                          <p className="text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
+                            Status
+                          </p>
+                          <p className="mt-1 font-medium text-slate-900">{financialStatusLabel}</p>
+                          <p className="mt-1 text-sm leading-5 text-slate-600">{financialStatusMessage}</p>
+                          {bridgeWarnings.length ? (
+                            <p className="mt-2 text-xs text-amber-700">
+                              {bridgeWarnings[0]}
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  </section>
+
+                  <section className="border-t border-slate-200 pt-5">
+                    <div className="rounded-[1.5rem] bg-slate-50 p-4">
+                      <div className="border-b border-slate-200 pb-3">
+                        <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
+                          Construction Notes
+                        </p>
+                        <p className="mt-1 text-sm text-slate-500">
+                          Short context for how the EBITDA output is being presented.
+                        </p>
+                      </div>
+                      <div className="pt-3">
+                        <ul className="space-y-2 text-sm leading-5 text-slate-600">
+                          {constructionNotes.map((note) => (
+                            <li key={note}>{note}</li>
+                          ))}
+                        </ul>
+                        {(bridgeWarnings.length > 1 || bridgeInvalidReasons.length > 0) ? (
+                          <details className="mt-3 text-sm text-slate-600">
+                            <summary className="cursor-pointer font-medium text-slate-900">
+                              View construction detail
+                            </summary>
+                            <div className="mt-2 space-y-2">
+                              {bridgeInvalidReasons.map((reason) => (
+                                <p key={reason}>{reason}</p>
+                              ))}
+                              {bridgeWarnings.slice(1).map((warning) => (
+                                <p key={warning}>{warning}</p>
+                              ))}
+                            </div>
+                          </details>
+                        ) : null}
+                      </div>
+                    </div>
+                  </section>
+
+                </aside>
+              </div>
+            </section>
+
+            <section className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr] xl:items-start">
+              <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel">
+                <StatementTable statement={balanceSheet} showOuterCard={false} />
+              </section>
+              <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel">
+                <div className="space-y-6">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
+                        Supporting Data
+                      </p>
+                      <h2 className="mt-2 text-lg font-semibold text-slate-900">
+                        Balance Sheet Validation
+                      </h2>
+                      <p className="mt-1 text-sm text-slate-500">
+                        {balanceSheetValidation.overallSeverity === "pass"
+                          ? "Balance sheet reconciles for the selected period."
+                          : balanceSheetValidation.overallSeverity === "warning"
+                            ? "Balance sheet has discrepancies. Review validation details."
+                            : "Balance sheet does not reconcile. Review differences below."}
+                      </p>
+                    </div>
                     <span
-                      className={
-                        Math.abs(balanceDifference) <= BALANCE_SHEET_VALIDATION_TOLERANCE
-                          ? "font-medium text-teal-700"
-                          : "font-semibold text-rose-700"
-                      }
+                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                        balanceSheetValidation.overallSeverity === "pass"
+                          ? "bg-teal-100 text-teal-800"
+                          : balanceSheetValidation.overallSeverity === "warning"
+                            ? "bg-amber-100 text-amber-800"
+                            : "bg-rose-100 text-rose-800"
+                      }`}
                     >
-                      {formatCurrency(balanceDifference)}
+                      {balanceSheetValidation.overallSeverity === "pass"
+                        ? "Pass"
+                        : balanceSheetValidation.overallSeverity === "warning"
+                          ? "Warning"
+                          : "Fail"}
                     </span>
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                  <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
-                    Computed Totals
-                  </p>
-                  <p className="mt-2 text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
-                    Assets
-                  </p>
-                  <p className="mt-2 text-sm text-slate-700">
-                    Total Assets:{" "}
-                    {formatCurrency(balanceSheetValidation.computedTotals.totalAssets)}
-                  </p>
-                  <p className="mt-3 text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
-                    Liabilities & Equity
-                  </p>
-                  <p className="mt-1 text-sm text-slate-700">
-                    Total Liabilities:{" "}
-                    {formatCurrency(balanceSheetValidation.computedTotals.totalLiabilities)}
-                  </p>
-                  <p className="mt-1 text-sm text-slate-700">
-                    Total Equity: {formatCurrency(balanceSheetValidation.computedTotals.totalEquity)}
-                  </p>
-                  <p className="mt-1 text-sm text-slate-700">
-                    Total Liabilities & Equity:{" "}
-                    {formatCurrency(
-                      balanceSheetValidation.computedTotals.totalLiabilitiesAndEquity
-                    )}
-                  </p>
-                  <p className="mt-1 text-sm text-slate-700">
-                    Working Capital:{" "}
-                    {formatCurrency(balanceSheetValidation.computedTotals.workingCapital)}
-                  </p>
-                </div>
-                {sourceComparisonChecks.length > 0 ? (
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                    <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
-                      Source vs Computed
-                    </p>
-                    <div className="mt-2 space-y-3">
-                      {sourceComparisonChecks.map((check) => (
-                        <div
-                          key={check.key}
-                          className={`rounded-xl border bg-white px-3 py-2 ${
-                            check.difference !== undefined &&
-                            Math.abs(check.difference) > BALANCE_SHEET_VALIDATION_TOLERANCE
-                              ? "border-rose-200"
-                              : "border-slate-200"
-                          }`}
+                  </div>
+
+                  <div
+                    className={`grid gap-3 ${
+                      sourceComparisonChecks.length > 0 ? "xl:grid-cols-3" : "md:grid-cols-2"
+                    }`}
+                  >
+                    <div
+                      className={`rounded-2xl border px-4 py-3 ${
+                        balanceSheetBalances
+                          ? "border-teal-200 bg-teal-50"
+                          : "border-rose-200 bg-rose-50"
+                      }`}
+                    >
+                      <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                        Balance Check
+                      </p>
+                      <p className="mt-2 text-sm font-medium text-slate-900">
+                        {balanceSheetBalances
+                          ? "Balance Sheet Balances"
+                          : "Balance Sheet Does Not Balance"}
+                      </p>
+                      <p className="mt-1 text-sm text-slate-700">
+                        {balanceSheetBalances
+                          ? "Assets = Liabilities + Equity"
+                          : "Assets != Liabilities + Equity"}
+                      </p>
+                      <p className="mt-2 text-sm text-slate-900">
+                        {formatCurrency(balanceSheetValidation.computedTotals.totalAssets)} ={' '}
+                        {formatCurrency(
+                          balanceSheetValidation.computedTotals.totalLiabilitiesAndEquity
+                        )}
+                      </p>
+                      <p className="mt-1 text-sm text-slate-600">
+                        Difference:{' '}
+                        <span
+                          className={
+                            Math.abs(balanceDifference) <= BALANCE_SHEET_VALIDATION_TOLERANCE
+                              ? "font-medium text-teal-700"
+                              : "font-semibold text-rose-700"
+                          }
                         >
-                          <p className="text-sm font-medium text-slate-900">
-                            {check.label.replace(": Source vs Computed", "")}
-                          </p>
-                          <p className="mt-1 text-sm text-slate-700">
-                            Source:{" "}
-                            {check.sourceValue !== undefined
-                              ? formatCurrency(check.sourceValue)
-                              : "—"}
-                          </p>
-                          <p className="text-sm text-slate-700">
-                            Computed:{" "}
-                            {check.computedValue !== undefined
-                              ? formatCurrency(check.computedValue)
-                              : "—"}
-                          </p>
-                          <p className="text-sm text-slate-700">
-                            Difference:{" "}
-                            <span
-                              className={
+                          {formatCurrency(balanceDifference)}
+                        </span>
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                      <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                        Computed Totals
+                      </p>
+                      <p className="mt-2 text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
+                        Assets
+                      </p>
+                      <p className="mt-2 text-sm text-slate-700">
+                        Total Assets:{' '}
+                        {formatCurrency(balanceSheetValidation.computedTotals.totalAssets)}
+                      </p>
+                      <p className="mt-3 text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
+                        Liabilities & Equity
+                      </p>
+                      <p className="mt-1 text-sm text-slate-700">
+                        Total Liabilities:{' '}
+                        {formatCurrency(balanceSheetValidation.computedTotals.totalLiabilities)}
+                      </p>
+                      <p className="mt-1 text-sm text-slate-700">
+                        Total Equity: {formatCurrency(balanceSheetValidation.computedTotals.totalEquity)}
+                      </p>
+                      <p className="mt-1 text-sm text-slate-700">
+                        Total Liabilities & Equity:{' '}
+                        {formatCurrency(
+                          balanceSheetValidation.computedTotals.totalLiabilitiesAndEquity
+                        )}
+                      </p>
+                      <p className="mt-1 text-sm text-slate-700">
+                        Working Capital:{' '}
+                        {formatCurrency(balanceSheetValidation.computedTotals.workingCapital)}
+                      </p>
+                    </div>
+                    {sourceComparisonChecks.length > 0 ? (
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                        <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                          Source vs Computed
+                        </p>
+                        <div className="mt-2 space-y-3">
+                          {sourceComparisonChecks.map((check) => (
+                            <div
+                              key={check.key}
+                              className={`rounded-xl border bg-white px-3 py-2 ${
                                 check.difference !== undefined &&
                                 Math.abs(check.difference) > BALANCE_SHEET_VALIDATION_TOLERANCE
-                                  ? "font-semibold text-rose-700"
-                                  : "font-medium text-teal-700"
-                              }
+                                  ? "border-rose-200"
+                                  : "border-slate-200"
+                              }`}
                             >
-                              {check.difference !== undefined
-                                ? formatCurrency(check.difference)
-                                : "—"}
+                              <p className="text-sm font-medium text-slate-900">
+                                {check.label.replace(': Source vs Computed', '')}
+                              </p>
+                              <p className="mt-1 text-sm text-slate-700">
+                                Source:{' '}
+                                {check.sourceValue !== undefined
+                                  ? formatCurrency(check.sourceValue)
+                                  : '-'}
+                              </p>
+                              <p className="text-sm text-slate-700">
+                                Computed:{' '}
+                                {check.computedValue !== undefined
+                                  ? formatCurrency(check.computedValue)
+                                  : '-'}
+                              </p>
+                              <p className="text-sm text-slate-700">
+                                Difference:{' '}
+                                <span
+                                  className={
+                                    check.difference !== undefined &&
+                                    Math.abs(check.difference) > BALANCE_SHEET_VALIDATION_TOLERANCE
+                                      ? "font-semibold text-rose-700"
+                                      : "font-medium text-teal-700"
+                                  }
+                                >
+                                  {check.difference !== undefined
+                                    ? formatCurrency(check.difference)
+                                    : '-'}
+                                </span>
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <details
+                    open={showValidationDetails}
+                    onToggle={(event) =>
+                      setShowValidationDetails(
+                        (event.currentTarget as HTMLDetailsElement).open
+                      )
+                    }
+                    className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                  >
+                    <summary className="cursor-pointer list-none text-sm font-medium text-slate-900">
+                      {showValidationDetails
+                        ? "Hide validation details"
+                        : "View validation details"}
+                    </summary>
+                    <div className="mt-4 space-y-3">
+                      {balanceSheetValidation.checks.map((check) => (
+                        <div
+                          key={check.key}
+                          className={`rounded-2xl border bg-white px-4 py-3 ${
+                            check.severity === "pass"
+                              ? "border-teal-200"
+                              : check.severity === "warning"
+                                ? "border-amber-200"
+                                : "border-rose-200"
+                          }`}
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-medium text-slate-900">{check.label}</p>
+                              <p className="mt-1 text-sm text-slate-600">{check.message}</p>
+                            </div>
+                            <span
+                              className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                                check.severity === "pass"
+                                  ? "bg-teal-100 text-teal-800"
+                                  : check.severity === "warning"
+                                    ? "bg-amber-100 text-amber-800"
+                                    : "bg-rose-100 text-rose-800"
+                              }`}
+                            >
+                              {check.severity === "pass"
+                                ? "Pass"
+                                : check.severity === "warning"
+                                  ? "Warning"
+                                  : "Fail"}
                             </span>
-                          </p>
+                          </div>
+                          {check.computedValue !== undefined || check.sourceValue !== undefined ? (
+                            <div className="mt-3 grid gap-2 text-sm text-slate-700 md:grid-cols-3">
+                              <p>
+                                {check.sourceValue !== undefined
+                                  ? `Computed ${check.label.replace(': Source vs Computed', '')}: `
+                                  : "Computed: "}
+                                {check.computedValue !== undefined
+                                  ? formatCurrency(check.computedValue)
+                                  : '-'}
+                              </p>
+                              <p>
+                                {check.sourceValue !== undefined
+                                  ? `Source ${check.label.replace(': Source vs Computed', '')}: `
+                                  : "Source: "}
+                                {check.sourceValue !== undefined
+                                  ? formatCurrency(check.sourceValue)
+                                  : '-'}
+                              </p>
+                              <p>
+                                Difference:{' '}
+                                {check.difference !== undefined
+                                  ? formatCurrency(check.difference)
+                                  : '-'}
+                              </p>
+                            </div>
+                          ) : null}
+                          {check.contributingLineItems?.length ? (
+                            <div className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                              {check.contributingLineItems.map((item) => (
+                                <p key={`${check.key}-${item.accountName}-${item.normalizedCategory}`}>
+                                  {item.accountName} - {item.normalizedCategory} -{' '}
+                                  {formatCurrency(item.amount)}
+                                </p>
+                              ))}
+                            </div>
+                          ) : null}
                         </div>
                       ))}
                     </div>
-                  </div>
-                ) : null}
-              </div>
-
-              <details
-                open={showValidationDetails}
-                onToggle={(event) =>
-                  setShowValidationDetails(
-                    (event.currentTarget as HTMLDetailsElement).open
-                  )
-                }
-                className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4"
-              >
-                <summary className="cursor-pointer list-none text-sm font-medium text-slate-900">
-                  {showValidationDetails
-                    ? "Hide validation details"
-                    : "View validation details"}
-                </summary>
-                <div className="mt-4 space-y-3">
-                  {balanceSheetValidation.checks.map((check) => (
-                    <div
-                      key={check.key}
-                      className={`rounded-2xl border bg-white px-4 py-3 ${
-                        check.severity === "pass"
-                          ? "border-teal-200"
-                          : check.severity === "warning"
-                            ? "border-amber-200"
-                            : "border-rose-200"
-                      }`}
-                    >
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-medium text-slate-900">{check.label}</p>
-                          <p className="mt-1 text-sm text-slate-600">{check.message}</p>
-                        </div>
-                        <span
-                          className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                            check.severity === "pass"
-                              ? "bg-teal-100 text-teal-800"
-                              : check.severity === "warning"
-                                ? "bg-amber-100 text-amber-800"
-                                : "bg-rose-100 text-rose-800"
-                          }`}
-                        >
-                          {check.severity === "pass"
-                            ? "Pass"
-                            : check.severity === "warning"
-                              ? "Warning"
-                              : "Fail"}
-                        </span>
-                      </div>
-                      {check.computedValue !== undefined || check.sourceValue !== undefined ? (
-                        <div className="mt-3 grid gap-2 text-sm text-slate-700 md:grid-cols-3">
-                          <p>
-                            {check.sourceValue !== undefined
-                              ? `Computed ${check.label.replace(": Source vs Computed", "")}: `
-                              : "Computed: "}
-                            {check.computedValue !== undefined
-                              ? formatCurrency(check.computedValue)
-                              : "—"}
-                          </p>
-                          <p>
-                            {check.sourceValue !== undefined
-                              ? `Source ${check.label.replace(": Source vs Computed", "")}: `
-                              : "Source: "}
-                            {check.sourceValue !== undefined
-                              ? formatCurrency(check.sourceValue)
-                              : "—"}
-                          </p>
-                          <p>
-                            Difference:{" "}
-                            {check.difference !== undefined
-                              ? formatCurrency(check.difference)
-                              : "—"}
-                          </p>
-                        </div>
-                      ) : null}
-                      {check.contributingLineItems?.length ? (
-                        <div className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                          {check.contributingLineItems.map((item) => (
-                            <p key={`${check.key}-${item.accountName}-${item.normalizedCategory}`}>
-                              {item.accountName} • {item.normalizedCategory} •{" "}
-                              {formatCurrency(item.amount)}
-                            </p>
-                          ))}
-                        </div>
-                      ) : null}
-                    </div>
-                  ))}
+                  </details>
                 </div>
-              </details>
+              </section>
             </section>
-            <StatementTable statement={balanceSheet} />
-          </div>
-        </section>
-
-        <section className="space-y-4">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
-              Operating Context
-            </p>
-            <h2 className="mt-2 text-xl font-semibold text-slate-900">
-              Trend support for underwriting
-            </h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Keep multi-period context close to the deal analysis workflow without repeating EBITDA or adjustment summaries.
-            </p>
-          </div>
-
-          <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
-            <DashboardCharts series={data.series} />
-            <PerformanceDrivers analyses={data.driverAnalyses} />
-          </div>
-        </section>
-
-        <MultiPeriodSummaryTable snapshots={data.snapshots} />
           </>
-        ) : null}
-
-        {activeTab === "adjustments" ? (
+        ) : null}        {activeTab === "adjustments" ? (
           <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel">
             <div className="mb-4">
               <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
@@ -1164,4 +1372,7 @@ export function FinancialsView({ data }: FinancialsViewProps) {
     </main>
   );
 }
+
+
+
 

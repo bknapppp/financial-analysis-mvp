@@ -5,6 +5,7 @@ import type { EbitdaExplainability } from "@/lib/types";
 
 type EbitdaExplainabilityPanelProps = {
   explainability: EbitdaExplainability | null | undefined;
+  showOuterCard?: boolean;
 };
 
 function formatOptionalCurrency(value: number | null | undefined) {
@@ -51,14 +52,15 @@ function BridgeRow({
 }
 
 export function EbitdaExplainabilityPanel({
-  explainability
+  explainability,
+  showOuterCard = true
 }: EbitdaExplainabilityPanelProps) {
   if (!explainability) {
     return null;
   }
 
-  return (
-    <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel">
+  const content = (
+    <>
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
@@ -142,6 +144,16 @@ export function EbitdaExplainabilityPanel({
           ) : null}
         </div>
       </div>
+    </>
+  );
+
+  if (!showOuterCard) {
+    return <section>{content}</section>;
+  }
+
+  return (
+    <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel">
+      {content}
     </section>
   );
 }

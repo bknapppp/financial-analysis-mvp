@@ -1,7 +1,10 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
+import { focusFixItTarget } from "@/components/fix-it-focus";
 import { formatCreditScenarioCurrency } from "@/lib/credit-scenario";
+import { UNDERWRITING_WORKBENCH_SECTION_ID } from "@/lib/fix-it";
 import type {
   CreditScenarioInputs,
   CreditScenarioResult,
@@ -17,6 +20,7 @@ type CreditScenarioPanelProps = {
   ebitdaBasis: UnderwritingEbitdaBasis;
   onEbitdaBasisChange: (basis: UnderwritingEbitdaBasis) => void;
   scenario: CreditScenarioResult;
+  missingInputs: string[];
 };
 
 export type InputFieldKey = keyof CreditScenarioInputs;
@@ -95,6 +99,24 @@ function metricDescription(metric: CreditScenarioMetric) {
     : metric.description;
 }
 
+function buildReasonText(metric: "DSCR" | "Leverage" | "LTV", missingInputs: string[]) {
+  if (metric === "DSCR") {
+    return missingInputs.length > 0
+      ? `Requires ${missingInputs.join(", ").toLowerCase()}.`
+      : "Debt service inputs are incomplete.";
+  }
+
+  if (metric === "Leverage") {
+    return missingInputs.length > 0
+      ? "Requires debt sizing inputs and a usable EBITDA basis."
+      : "Debt sizing or EBITDA support is incomplete.";
+  }
+
+  return missingInputs.includes("Purchase price / collateral support")
+    ? "Requires purchase price or collateral support."
+    : "Collateral support is incomplete.";
+}
+
 export function parseCreditScenarioInputValues(
   inputValues: CreditScenarioInputValues
 ): CreditScenarioInputs {
@@ -113,7 +135,8 @@ export function CreditScenarioPanel({
   onInputValuesChange,
   ebitdaBasis,
   onEbitdaBasisChange,
-  scenario
+  scenario,
+  missingInputs
 }: CreditScenarioPanelProps) {
   const selectedEbitda =
     ebitdaBasis === "adjusted" ? snapshot.adjustedEbitda : snapshot.ebitda;
@@ -136,12 +159,46 @@ export function CreditScenarioPanel({
     scenario.annualPrincipalPayment !== null ||
     scenario.annualDebtService !== null;
   const hasRatioOutputs = metrics.some((metric) => metric.status !== "insufficient");
+  const readinessItems = [
+    {
+      label: "DSCR" as const,
+      isComputable: scenario.metrics.dscr.status !== "insufficient"
+    },
+    {
+      label: "Leverage" as const,
+      isComputable: scenario.metrics.debtToEbitda.status !== "insufficient"
+    },
+    {
+      label: "LTV" as const,
+      isComputable: scenario.metrics.ltv.status !== "insufficient"
+    }
+  ];
+  const blockedItems = readinessItems.filter((item) => !item.isComputable);
   const maturityBalanceDisplay = scenario.balanceAtMaturity === null
     ? "—"
     : formatCreditScenarioCurrency(scenario.balanceAtMaturity);
+  const searchParams = useSearchParams();
+  const requestedFixSection = searchParams.get("fixSection");
+  const requestedFixField = searchParams.get("fixField");
+
+  useEffect(() => {
+    if (requestedFixSection !== UNDERWRITING_WORKBENCH_SECTION_ID) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      focusFixItTarget(requestedFixSection, requestedFixField);
+    }, 150);
+
+    return () => window.clearTimeout(timer);
+  }, [requestedFixField, requestedFixSection]);
 
   return (
-    <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel">
+    <section
+      id={UNDERWRITING_WORKBENCH_SECTION_ID}
+      data-fix-section={UNDERWRITING_WORKBENCH_SECTION_ID}
+      className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel"
+    >
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
@@ -243,6 +300,8 @@ export function CreditScenarioPanel({
                 </span>
                 <div className="relative">
                   <input
+                    id={`underwriting-${field.key}`}
+                    data-fix-field={`underwriting-${field.key}`}
                     inputMode="decimal"
                     value={inputValues[field.key]}
                     onChange={(event) =>
@@ -384,6 +443,52 @@ export function CreditScenarioPanel({
                 </p>
               </div>
             </div>
+          </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
+                  Structure Readiness
+                </p>
+                <p className="mt-2 text-sm text-slate-600">
+                  Keep financing outputs in the same workflow as the inputs that unlock them.
+                </p>
+              </div>
+              <span
+                className={`rounded-full px-3 py-1 text-xs font-medium ${
+                  blockedItems.length === 0
+                    ? "bg-teal-100 text-teal-800"
+                    : "bg-amber-100 text-amber-800"
+                }`}
+              >
+                {blockedItems.length === 0
+                  ? "All core metrics ready"
+                  : `${blockedItems.length} blocked`}
+              </span>
+            </div>
+
+            {blockedItems.length > 0 ? (
+              <div className="mt-4 space-y-2">
+                {blockedItems.map((item) => (
+                  <div
+                    key={item.label}
+                    className="rounded-xl bg-white px-3 py-3"
+                  >
+                    <p className="text-sm font-semibold text-slate-900">{item.label}</p>
+                    <p className="mt-1 text-sm text-slate-600">
+                      {buildReasonText(item.label, missingInputs)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-4 rounded-xl bg-white px-3 py-3">
+                <p className="text-sm font-medium text-slate-900">
+                  All core structure metrics are currently computable from the entered inputs.
+                </p>
+              </div>
+            )}
           </section>
         </div>
       </div>

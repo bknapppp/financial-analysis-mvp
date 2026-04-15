@@ -60,7 +60,8 @@ const companyScoped = suggestAccountMapping(
   "Service Revenue",
   savedMappings,
   "income",
-  "company-a"
+  "company-a",
+  "reported_financials"
 );
 assert.equal(companyScoped.matchedBy, "memory");
 assert.equal(companyScoped.memoryScope, "company");
@@ -71,15 +72,17 @@ const globalFallback = suggestAccountMapping(
   "Service Revenue",
   savedMappings,
   "income",
-  "company-b"
+  "company-b",
+  "reported_financials"
 );
 assert.equal(globalFallback.matchedBy, "memory");
-assert.equal(globalFallback.memoryScope, "global");
+assert.equal(globalFallback.memoryScope, "shared");
 assert.equal(globalFallback.category, "Revenue");
 
 // 3) duplicate labels in the same import resolve consistently
 const duplicateRows = ["Service Revenue", "Service Revenue", "Service Revenue"].map(
-  (label) => suggestAccountMapping(label, savedMappings, "income", "company-a")
+  (label) =>
+    suggestAccountMapping(label, savedMappings, "income", "company-a", "reported_financials")
 );
 assert.equal(duplicateRows.length, 3);
 assert.ok(duplicateRows.every((row) => row.category === duplicateRows[0].category));
@@ -93,7 +96,8 @@ const unmappedFallback = suggestAccountMapping(
   "Completely Novel Ambiguous Label",
   [],
   "income",
-  "company-a"
+  "company-a",
+  "reported_financials"
 );
 assert.equal(unmappedFallback.matchedBy, "unmapped");
 assert.equal(unmappedFallback.confidence, "low");
@@ -101,12 +105,19 @@ assert.equal(unmappedFallback.category, null);
 assert.equal(unmappedFallback.statementType, null);
 
 // 5) statement-type-aware mapping does not mix income vs balance sheet behavior
-const incomeReserve = suggestAccountMapping("Reserve", savedMappings, "income", "company-a");
+const incomeReserve = suggestAccountMapping(
+  "Reserve",
+  savedMappings,
+  "income",
+  "company-a",
+  "reported_financials"
+);
 const balanceReserve = suggestAccountMapping(
   "Reserve",
   savedMappings,
   "balance_sheet",
-  "company-a"
+  "company-a",
+  "reported_financials"
 );
 assert.equal(incomeReserve.category, "Operating Expenses");
 assert.equal(incomeReserve.statementType, "income");
@@ -130,7 +141,8 @@ const resolvedFromPreloaded = await resolveAccountMapping({
   accountName: "Service Revenue",
   savedMappings,
   preferredStatementType: "income",
-  companyId: "company-a"
+  companyId: "company-a",
+  sourceType: "reported_financials"
 });
 assert.equal(resolvedFromPreloaded.matchedBy, "memory");
 assert.equal(resolvedFromPreloaded.memoryScope, "company");

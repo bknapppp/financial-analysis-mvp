@@ -1,4 +1,5 @@
 import Papa from "papaparse";
+import { devLog } from "@/lib/debug";
 import {
   parseWideStatementMatrixWithDiagnostics,
   type StatementMatrixRow,
@@ -114,7 +115,7 @@ function buildRowsFromMatrix(matrix: StatementMatrixRow[]) {
       "Statement Type": row.statement_type
     }));
 
-    console.log("IMPORT FORMAT DETECTED", {
+    devLog("IMPORT FORMAT DETECTED", {
       format: "wide",
       reason:
         "Wide-format table detected and transformed into the internal long-format row shape before preview rendering.",
@@ -145,7 +146,7 @@ function buildRowsFromMatrix(matrix: StatementMatrixRow[]) {
     };
   }
 
-  console.log("IMPORT FORMAT DETECTED", {
+  devLog("IMPORT FORMAT DETECTED", {
     format: "existing-long-format",
     reason:
       "Wide-format transformation was not applied, so the existing long-format parser remains the default path.",

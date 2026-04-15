@@ -55,9 +55,15 @@ function findMissingCategories(
 ) {
   const missing: string[] = [];
 
-  if (latestSnapshot.revenue === 0) missing.push("Revenue");
-  if (latestSnapshot.cogs === 0) missing.push("COGS");
-  if (latestSnapshot.operatingExpenses === 0) {
+  const hasRevenue = entriesForLatestPeriod.some((entry) => entry.category === "Revenue");
+  const hasCogs = entriesForLatestPeriod.some((entry) => entry.category === "COGS");
+  const hasOperatingExpenses = entriesForLatestPeriod.some(
+    (entry) => entry.category === "Operating Expenses"
+  );
+
+  if (!hasRevenue) missing.push("Revenue");
+  if (!hasCogs) missing.push("COGS");
+  if (!hasOperatingExpenses) {
     missing.push("Operating Expenses");
   }
 
@@ -199,8 +205,9 @@ export function buildDataQualityReport({
     }
 
     if (
-      latestSnapshot.ebitdaMarginPercent < 0 ||
-      latestSnapshot.ebitdaMarginPercent > 100
+      latestSnapshot.ebitdaMarginPercent !== null &&
+      (latestSnapshot.ebitdaMarginPercent < 0 ||
+        latestSnapshot.ebitdaMarginPercent > 100)
     ) {
       sanityIssues.push({
         message: "EBITDA margin is outside a normal 0% to 100% range — profitability may be misstated.",
@@ -208,7 +215,11 @@ export function buildDataQualityReport({
       });
     }
 
-    if (latestSnapshot.ebitda > latestSnapshot.revenue && latestSnapshot.revenue > 0) {
+    if (
+      latestSnapshot.ebitda !== null &&
+      latestSnapshot.ebitda > latestSnapshot.revenue &&
+      latestSnapshot.revenue > 0
+    ) {
       sanityIssues.push({
         message: "EBITDA exceeds revenue — account classification likely needs attention.",
         severity: "Critical"

@@ -17,6 +17,7 @@ import { PerformanceDrivers } from "@/components/performance-drivers";
 import { ReadinessPanel } from "@/components/readiness-panel";
 import { RecommendedActions } from "@/components/recommended-actions";
 import { ReconciliationPanel } from "@/components/reconciliation-panel";
+import { buildFixItHref } from "@/lib/fix-it";
 import { formatCurrency, formatPercent } from "@/lib/formatters";
 import { buildAuditMetrics, buildMappingConsistencyIssues } from "@/lib/mapping-intelligence";
 import type {
@@ -31,7 +32,15 @@ type DashboardShellProps = {
   data: DashboardData;
 };
 
-function calculatePercentDelta(current: number, prior: number) {
+function hasValue(value: number | null | undefined): value is number {
+  return value !== null && value !== undefined && Number.isFinite(value);
+}
+
+function calculatePercentDelta(current: number | null, prior: number | null) {
+  if (!hasValue(current) || !hasValue(prior)) {
+    return null;
+  }
+
   if (prior === 0) {
     return null;
   }
@@ -39,7 +48,11 @@ function calculatePercentDelta(current: number, prior: number) {
   return ((current - prior) / Math.abs(prior)) * 100;
 }
 
-function formatCurrencyDelta(current: number, prior: number) {
+function formatCurrencyDelta(current: number | null, prior: number | null) {
+  if (!hasValue(current) || !hasValue(prior)) {
+    return "\u2014";
+  }
+
   const delta = current - prior;
   const prefix = delta > 0 ? "+" : "";
   return `${prefix}${new Intl.NumberFormat("en-US", {
@@ -49,11 +62,15 @@ function formatCurrencyDelta(current: number, prior: number) {
   }).format(delta)} absolute`;
 }
 
-function formatSummaryDelta(current: number, prior: number, suffix = "") {
+function formatSummaryDelta(
+  current: number | null,
+  prior: number | null,
+  suffix = ""
+) {
   const percentDelta = calculatePercentDelta(current, prior);
 
   if (percentDelta === null) {
-    return "—";
+    return "-";
   }
 
   const prefix = percentDelta > 0 ? "+" : "";
@@ -139,9 +156,9 @@ export function DashboardShell({ data }: DashboardShellProps) {
   }, [auditMetrics.cogs.badge, auditMetrics.revenue.badge]);
   const acceptedAddBackTotal =
     data.ebitdaBridge?.addBackTotal ??
-    Math.max(0, data.snapshot.adjustedEbitda - data.snapshot.ebitda);
+    data.snapshot.acceptedAddBacks;
   const priorAcceptedAddBackTotal = priorSnapshot
-    ? Math.max(0, priorSnapshot.adjustedEbitda - priorSnapshot.ebitda)
+    ? priorSnapshot.acceptedAddBacks
     : null;
   const reviewStatusBadge: KpiTraceabilityBadge | null =
     data.dataQuality.confidenceLabel === "Low"
@@ -151,7 +168,7 @@ export function DashboardShell({ data }: DashboardShellProps) {
         : null;
   const reviewStatusHelpText =
     data.dataQuality.confidenceLabel === "High"
-      ? "Data package is reliable for adjusted EBITDA review"
+      ? "Data package is reliable for the current deal review"
       : data.dataQuality.confidenceLabel === "Medium"
         ? "Some diligence issues may affect accepted adjustments"
         : "Resolve mapping and completeness issues before relying on adjusted results";
@@ -295,11 +312,11 @@ export function DashboardShell({ data }: DashboardShellProps) {
               <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
                 <div className="min-w-0 max-w-3xl">
                   <p className="text-xs font-medium uppercase tracking-[0.24em] text-slate-500">
-                    {data.company?.name || "No company selected"} •{" "}
+                    {data.company?.name || "No company selected"} -{" "}
                     {data.snapshot.label || "No reporting period loaded"}
                   </p>
                   <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950 md:text-4xl">
-                    Adjusted EBITDA Review
+                    Overview
                   </h1>
                   <p className="mt-3 text-sm text-slate-600 md:text-base">
                     {topSectionSummary}
@@ -312,8 +329,16 @@ export function DashboardShell({ data }: DashboardShellProps) {
                       href="/financials"
                       className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
                     >
-                      View Financials
+                      Financials
                     </Link>
+                    {acceptedAddBackTotal > 0 && data.company ? (
+                      <Link
+                        href={buildFixItHref("Review add-backs", `/deal/${data.company.id}`)}
+                        className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                      >
+                        Review add-backs
+                      </Link>
+                    ) : null}
                     <Link
                       href="/source-data"
                       className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
@@ -719,3 +744,6 @@ export function DashboardShell({ data }: DashboardShellProps) {
     </>
   );
 }
+
+
+

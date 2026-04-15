@@ -81,7 +81,9 @@ export function buildRiskFlags({
   const flags: RiskFlagCandidate[] = [];
   const acceptedAddBacks = snapshot.acceptedAddBacks ?? 0;
   const addBackShareOfEbitda =
-    snapshot.ebitda > 0 ? acceptedAddBacks / snapshot.ebitda : null;
+    snapshot.ebitda !== null && snapshot.ebitda > 0
+      ? acceptedAddBacks / snapshot.ebitda
+      : null;
   const lowConfidenceAcceptedAddBacks = acceptedAddBackItems.filter(
     (item) => item.dependsOnLowConfidenceMapping
   ).length;
@@ -136,7 +138,7 @@ export function buildRiskFlags({
     });
   }
 
-  if (snapshot.ebitda < 0) {
+  if (snapshot.ebitda !== null && snapshot.ebitda < 0) {
     appendFlag(flags, {
       severity: "high",
       priority: 5,
@@ -145,7 +147,10 @@ export function buildRiskFlags({
         "Negative operating cash flow is inconsistent with conventional cash flow underwriting.",
       metric: formatCurrency(snapshot.ebitda)
     });
-  } else if (snapshot.ebitdaMarginPercent < 10) {
+  } else if (
+    snapshot.ebitdaMarginPercent !== null &&
+    snapshot.ebitdaMarginPercent < 10
+  ) {
     appendFlag(flags, {
       severity: "medium",
       priority: 5,

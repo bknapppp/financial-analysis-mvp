@@ -130,7 +130,7 @@ function snapshotFromEntries(entries: FinancialEntry[], addBacks: AddBack[] = []
   assert.equal(snapshot.depreciationAndAmortization, 0);
   assert.equal(snapshot.grossProfit, 650);
   assert.equal(snapshot.ebit, 150);
-  assert.equal(snapshot.ebitda, 0);
+  assert.equal(snapshot.ebitda, null);
   assert.equal(snapshot.incomeStatementDebug?.revenue.source, "components");
   assert.deepEqual(snapshot.incomeStatementDebug?.revenue.selectedLabels, [
     "Product Revenue",
@@ -261,6 +261,38 @@ function snapshotFromEntries(entries: FinancialEntry[], addBacks: AddBack[] = []
     "Tax Expense",
     "Depreciation & Amortization"
   ]);
+}
+
+{
+  const snapshot = snapshotFromEntries([
+    createNamedIncomeEntry("Revenue", "Revenue", 1000),
+    createNamedIncomeEntry("COGS", "COGS", 400),
+    createNamedIncomeEntry("Operating Expenses", "Operating Expenses", 300)
+  ]);
+
+  assert.equal(snapshot.ebit, 300);
+  assert.equal(snapshot.ebitda, null);
+  assert.equal(snapshot.adjustedEbitda, null);
+  assert.equal(snapshot.incomeStatementMetricDebug?.ebitda.source, "none");
+  assert.equal(snapshot.ebitdaExplainability?.basis, "incomplete");
+}
+
+{
+  const snapshot = snapshotFromEntries([
+    createNamedIncomeEntry("Revenue", "Revenue", 0),
+    createNamedIncomeEntry("COGS", "COGS", 0),
+    createNamedIncomeEntry("Operating Expenses", "Operating Expenses", 0),
+    createNamedIncomeEntry("Net Income", "Net Income", 0),
+    createNamedIncomeEntry("Interest Expense", "Non-operating", 0),
+    createNamedIncomeEntry("Tax Expense", "Tax Expense", 0),
+    createNamedIncomeEntry("Depreciation", "Depreciation / Amortization", 0),
+    createNamedIncomeEntry("Reported EBITDA", "EBITDA", 0)
+  ]);
+
+  assert.equal(snapshot.ebit, 0);
+  assert.equal(snapshot.ebitda, 0);
+  assert.equal(snapshot.reportedEbitda, 0);
+  assert.equal(snapshot.adjustedEbitda, 0);
 }
 
 console.log("calculations tests passed");

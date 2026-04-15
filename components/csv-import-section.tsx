@@ -29,6 +29,7 @@ import {
   matchDetectedPeriodsToExisting,
   normalizeImportedPeriod
 } from "@/lib/import-periods";
+import { devLog } from "@/lib/debug";
 import type {
   AccountMapping,
   Company,
@@ -105,15 +106,20 @@ function matchedByClass(value: string) {
   return "bg-amber-100 text-amber-800";
 }
 
-function memoryScopeText(value: "company" | "global" | null | undefined) {
+function memoryScopeText(value: "company" | "global" | "shared" | null | undefined) {
   if (value === "company") return "From Saved Mapping (Company)";
+  if (value === "shared") return "From Saved Mapping (Shared)";
   if (value === "global") return "From Saved Mapping (Global)";
   return "From Saved Mapping";
 }
 
-function memoryScopeDetail(value: "company" | "global" | null | undefined) {
+function memoryScopeDetail(value: "company" | "global" | "shared" | null | undefined) {
   if (value === "company") {
     return "Previously confirmed mapping for this company";
+  }
+
+  if (value === "shared") {
+    return "Previously confirmed mapping shared across companies";
   }
 
   if (value === "global") {
@@ -131,7 +137,7 @@ function confidenceClass(value: string) {
 
 function formatMatchedBy(
   value: string,
-  memoryScope?: "company" | "global" | null
+  memoryScope?: "company" | "global" | "shared" | null
 ) {
   if (value === "memory") return memoryScopeText(memoryScope);
   if (value === "saved_mapping") return "Saved mapping";
@@ -493,7 +499,7 @@ export function CsvImportSection({
     const dedupedPeriods = Array.from(unique.values()).sort((left, right) =>
       (left.periodDate || left.label).localeCompare(right.periodDate || right.label)
     );
-    console.log("PREVIEW PERIOD CANONICALIZATION", {
+    devLog("PREVIEW PERIOD CANONICALIZATION", {
       derivedGroupedPeriodListBeforeDedup,
       groupedPeriodListAfterDedup: dedupedPeriods.map((period) => period.key),
       sampleGroupedRowValuesByCanonicalPeriod:
@@ -530,15 +536,15 @@ export function CsvImportSection({
   }, [groupedPreviewRows, previewPeriodColumns.length]);
 
   useEffect(() => {
-    console.log("STRUCTURE PREVIEW UPDATED");
-    console.log("structurePreviewRows.length", structurePreviewRows.length);
-    console.log("firstStructurePreviewRow", structurePreviewRows[0] ?? null);
+    devLog("STRUCTURE PREVIEW UPDATED");
+    devLog("structurePreviewRows.length", structurePreviewRows.length);
+    devLog("firstStructurePreviewRow", structurePreviewRows[0] ?? null);
   }, [selectedSheet, structurePreviewRows]);
 
   useEffect(() => {
-    console.log("PREVIEW ROWS UPDATED");
-    console.log("previewRows.length", previewRows.length);
-    console.log("firstPreviewRow", previewRows[0] ?? null);
+    devLog("PREVIEW ROWS UPDATED");
+    devLog("previewRows.length", previewRows.length);
+    devLog("firstPreviewRow", previewRows[0] ?? null);
 
     const validRows = previewRows.filter((row) => {
       const hasAccount = !!row.accountName?.trim();
@@ -548,9 +554,9 @@ export function CsvImportSection({
       return hasAccount && hasAmount && hasPeriod;
     });
 
-    console.log("validRowsBeforeGrouping", validRows.length);
-    console.log("sampleValidRow", validRows[0] ?? null);
-    console.log(
+    devLog("validRowsBeforeGrouping", validRows.length);
+    devLog("sampleValidRow", validRows[0] ?? null);
+    devLog(
       "rowsMissingPeriod",
       previewRows.filter((row) => !row.sourcePeriodLabel && !row.sourcePeriodDate)
         .length
@@ -558,10 +564,10 @@ export function CsvImportSection({
   }, [selectedSheet, structurePreviewRows, previewRows]);
 
   useEffect(() => {
-    console.log("GROUPED ROWS UPDATED");
-    console.log("groupedPreviewRows.length", groupedPreviewRows.length);
-    console.log("firstGroupedRow", groupedPreviewRows[0] ?? null);
-    console.log("groupingInputRows", previewRows.slice(0, 5));
+    devLog("GROUPED ROWS UPDATED");
+    devLog("groupedPreviewRows.length", groupedPreviewRows.length);
+    devLog("firstGroupedRow", groupedPreviewRows[0] ?? null);
+    devLog("groupingInputRows", previewRows.slice(0, 5));
   }, [selectedSheet, previewRows, groupedPreviewRows]);
   const filteredPreviewRows = useMemo(() => {
     return groupedPreviewRows.filter((row) => {
@@ -761,7 +767,7 @@ export function CsvImportSection({
         })
       );
 
-    console.log("STEP 4 IMPORT TRANSFORM", {
+    devLog("STEP 4 IMPORT TRANSFORM", {
       groupedPreviewRowsCount: groupedPreviewRows.length,
       rowsAfterFiltering: importRows.length,
       finalNormalizedCategories: importRows.map((row) => ({
@@ -787,7 +793,7 @@ export function CsvImportSection({
       rows: importRows
     };
 
-    console.log("STEP 4 IMPORT PAYLOAD", payload);
+    devLog("STEP 4 IMPORT PAYLOAD", payload);
 
     const response = await fetch("/api/financial-import", {
       method: "POST",

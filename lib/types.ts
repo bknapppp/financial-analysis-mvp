@@ -1,5 +1,9 @@
 export type StatementType = "income" | "balance_sheet";
 
+export type FinancialSourceType = "reported_financials" | "tax_return";
+
+export type FinancialSourceConfidence = "high" | "medium" | "low" | "unknown";
+
 export type NormalizedCategory =
   | "Revenue"
   | "COGS"
@@ -51,6 +55,32 @@ export type ReportingPeriod = {
   created_at: string;
 };
 
+export type SourceDocument = {
+  id: string;
+  company_id: string;
+  source_type: FinancialSourceType;
+  source_file_name: string | null;
+  upload_id: string | null;
+  source_currency: string | null;
+  source_confidence: FinancialSourceConfidence | null;
+  created_at: string;
+};
+
+export type SourceReportingPeriod = {
+  id: string;
+  source_document_id: string | null;
+  label: string;
+  period_date: string;
+  source_period_label: string | null;
+  source_year: number | null;
+  created_at: string;
+  source_type: FinancialSourceType;
+  source_file_name: string | null;
+  upload_id: string | null;
+  source_currency: string | null;
+  source_confidence: FinancialSourceConfidence | null;
+};
+
 export type FinancialEntry = {
   id: string;
   account_name: string;
@@ -65,13 +95,52 @@ export type FinancialEntry = {
   created_at: string;
 };
 
+export type SourceFinancialEntry = {
+  id: string;
+  account_name: string;
+  statement_type: StatementType;
+  amount: number;
+  category: NormalizedCategory;
+  addback_flag: boolean;
+  matched_by?: AuditMatchedBy | null;
+  confidence?: AuditConfidence | null;
+  mapping_explanation?: string | null;
+  created_at: string;
+  source_period_id: string;
+  source_document_id: string | null;
+  source_type: FinancialSourceType;
+  source_file_name: string | null;
+  upload_id: string | null;
+  source_period_label: string | null;
+  source_year: number | null;
+  source_currency: string | null;
+  source_confidence: FinancialSourceConfidence | null;
+};
+
+export type SourceFinancialContext = {
+  sourceType: FinancialSourceType;
+  periods: SourceReportingPeriod[];
+  entries: SourceFinancialEntry[];
+  documents: SourceDocument[];
+};
+
 export type AccountMapping = {
   id: string;
   company_id: string | null;
   account_name: string;
   account_name_key: string;
+  normalized_label?: string | null;
+  concept?: string | null;
   category: NormalizedCategory;
   statement_type: StatementType;
+  source_type?: FinancialSourceType | null;
+  confidence?: string | null;
+  source?: string | null;
+  usage_count?: number | null;
+  last_used_at?: string | null;
+  mapping_method?: string | null;
+  mapping_explanation?: string | null;
+  matched_rule?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -109,7 +178,7 @@ export type AddBack = {
 
 export type StatementRow = {
   label: string;
-  value: number;
+  value: number | null;
 };
 
 export type NormalizedMappingProvenance =
@@ -137,7 +206,7 @@ export type NormalizedStatementRowKind = "line_item" | "subtotal" | "metric";
 export type NormalizedStatementRow = {
   key: string;
   label: string;
-  value: number;
+  value: number | null;
   kind: NormalizedStatementRowKind;
   rollupKey?: string;
 };
@@ -148,14 +217,14 @@ export type NormalizedStatement =
       title: "Income Statement";
       rows: NormalizedStatementRow[];
       footerLabel: "EBITDA" | "Adjusted EBITDA";
-      footerValue: number;
+      footerValue: number | null;
     }
   | {
       statementKey: "balance_sheet";
       title: "Balance Sheet";
       rows: NormalizedStatementRow[];
       footerLabel: "Working Capital";
-      footerValue: number;
+      footerValue: number | null;
     };
 
 export type ReconciliationIssueSeverity = "critical" | "warning" | "info";
@@ -206,15 +275,15 @@ export type PeriodSnapshot = {
   nonOperating?: number;
   taxExpense?: number;
   netIncome?: number;
-  ebit?: number;
-  reportedOperatingIncome?: number;
-  reportedEbitda?: number;
-  ebitda: number;
+  ebit?: number | null;
+  reportedOperatingIncome?: number | null;
+  reportedEbitda?: number | null;
+  ebitda: number | null;
   acceptedAddBacks: number;
-  adjustedEbitda: number;
+  adjustedEbitda: number | null;
   grossMarginPercent: number;
-  ebitdaMarginPercent: number;
-  adjustedEbitdaMarginPercent: number;
+  ebitdaMarginPercent: number | null;
+  adjustedEbitdaMarginPercent: number | null;
   currentAssets: number;
   currentLiabilities: number;
   workingCapital: number;
@@ -305,15 +374,19 @@ export type UnderwritingEbitdaBasis = "computed" | "adjusted";
 export type DashboardSeriesPoint = {
   label: string;
   revenue: number;
-  reportedEbitda: number;
-  adjustedEbitda: number;
+  reportedEbitda: number | null;
+  adjustedEbitda: number | null;
 };
 
 export type SimilarDeal = {
   companyId: string;
   companyName: string;
+  revenue: number | null;
   ebitda: number | null;
+  ebitdaMarginPercent: number | null;
   adjustedEbitda: number | null;
+  acceptedAddBacks: number | null;
+  addBacksPercent: number | null;
   decision: "approve" | "caution" | "decline";
   primaryRisk: string | null;
 };
@@ -487,6 +560,88 @@ export type DataReadiness = {
   summaryMessage: string;
 };
 
+export type TaxSourceComparisonStatus = "not_loaded" | "partial" | "ready";
+
+export type TaxSourceStatus = {
+  documentCount: number;
+  periodCount: number;
+  rowCount: number;
+  mappedLineCount: number;
+  lowConfidenceLineCount: number;
+  broadClassificationCount: number;
+  hasMatchingPeriod: boolean;
+  matchingPeriodLabel: string | null;
+  comparisonStatus: TaxSourceComparisonStatus;
+  comparisonComputable: boolean;
+  missingComponents: string[];
+  notes: string[];
+  revenueDeltaPercent: number | null;
+  reportedEbitdaDeltaPercent: number | null;
+  adjustedEbitdaDeltaPercent: number | null;
+};
+
+export type UnderwritingCompletionStatus = "ready" | "in_progress" | "blocked";
+
+export type UnderwritingCompletionSectionStatus =
+  | "complete"
+  | "in_progress"
+  | "blocked";
+
+export type UnderwritingCompletionSectionKey =
+  | "financial_inputs"
+  | "mapping_completeness"
+  | "tax_source_readiness"
+  | "structure_inputs"
+  | "underwriting_readiness";
+
+export type UnderwritingCompletionItem = {
+  key: string;
+  label: string;
+  detail?: string;
+  isComplete: boolean;
+  isBlocking: boolean;
+  nextAction?: string;
+};
+
+export type UnderwritingCompletionSection = {
+  key: UnderwritingCompletionSectionKey;
+  title: string;
+  weight: number;
+  completionPercent: number;
+  status: UnderwritingCompletionSectionStatus;
+  completedCount: number;
+  totalCount: number;
+  items: UnderwritingCompletionItem[];
+};
+
+export type UnderwritingCompletionSummary = {
+  completionPercent: number;
+  completionStatus: UnderwritingCompletionStatus;
+  blockers: string[];
+  missingItems: string[];
+  completedItems: string[];
+  nextActions: string[];
+  sections: UnderwritingCompletionSection[];
+};
+
+export type InvestmentOverviewSectionKey =
+  | "earnings_quality"
+  | "financial_integrity"
+  | "structure_readiness"
+  | "key_underwriting_gaps";
+
+export type InvestmentOverviewSection = {
+  key: InvestmentOverviewSectionKey;
+  title: string;
+  items: string[];
+};
+
+export type InvestmentOverviewSummary = {
+  title: "Investment Overview";
+  summary: string;
+  sections: InvestmentOverviewSection[];
+};
+
 export type AddBackSuggestion = {
   companyId: string;
   periodId: string;
@@ -536,7 +691,7 @@ export type EbitdaBridgeCategoryGroup = {
 export type EbitdaBridge = {
   periodId: string;
   periodLabel: string;
-  reportedEbitda: number;
+  reportedEbitda: number | null;
   addBackTotal: number;
   adjustedEbitda: number | null;
   canComputeAdjustedEbitda: boolean;
@@ -552,12 +707,12 @@ export type NormalizedPeriodOutput = {
   mappedLines: NormalizedMappedLine[];
   incomeStatement: Extract<NormalizedStatement, { statementKey: "income_statement" }>;
   balanceSheet: Extract<NormalizedStatement, { statementKey: "balance_sheet" }>;
-  reportedEbitda: number;
+  reportedEbitda: number | null;
   acceptedAddBacks: number;
-  adjustedEbitda: number;
+  adjustedEbitda: number | null;
   grossMarginPercent: number;
-  reportedEbitdaMarginPercent: number;
-  adjustedEbitdaMarginPercent: number;
+  reportedEbitdaMarginPercent: number | null;
+  adjustedEbitdaMarginPercent: number | null;
   reportedEbitdaGrowthPercent: number | null;
   adjustedEbitdaGrowthPercent: number | null;
   reconciliation: ReconciliationReport;
@@ -587,6 +742,8 @@ export type DashboardData = {
   similarDeals: SimilarDeal[];
   dataQuality: DataQualityReport;
   readiness: DataReadiness;
+  taxSourceStatus: TaxSourceStatus;
+  completionSummary: UnderwritingCompletionSummary;
   ebitdaBridge: EbitdaBridge | null;
   reconciliation: ReconciliationReport;
   normalizedPeriods: NormalizedPeriodOutput[];

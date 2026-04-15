@@ -14,6 +14,7 @@ import type { DashboardSeriesPoint } from "@/lib/types";
 
 type DashboardChartsProps = {
   series: DashboardSeriesPoint[];
+  showOuterCard?: boolean;
 };
 
 function formatCompactCurrency(value: number) {
@@ -30,9 +31,12 @@ function formatCompactCurrency(value: number) {
   return `$${value.toFixed(0)}`;
 }
 
-export function DashboardCharts({ series }: DashboardChartsProps) {
-  return (
-    <section className="rounded-[1.75rem] bg-white p-5 shadow-panel">
+export function DashboardCharts({
+  series,
+  showOuterCard = true
+}: DashboardChartsProps) {
+  const content = (
+    <>
       <div className="mb-5">
         <h2 className="text-lg font-semibold text-slate-900">Trend view</h2>
         <p className="mt-1 text-sm text-slate-500">
@@ -106,6 +110,12 @@ export function DashboardCharts({ series }: DashboardChartsProps) {
           </ResponsiveContainer>
         </div>
       </div>
-    </section>
+    </>
   );
+
+  if (!showOuterCard) {
+    return <section>{content}</section>;
+  }
+
+  return <section className="rounded-[1.75rem] bg-white p-5 shadow-panel">{content}</section>;
 }

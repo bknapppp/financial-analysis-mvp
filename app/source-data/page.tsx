@@ -1,14 +1,27 @@
-import Link from "next/link";
 import { CompanySetupForm } from "@/components/company-setup-form";
 import { CsvImportSection } from "@/components/csv-import-section";
+import { DealPageNavigation } from "@/components/deal-page-navigation";
 import { EntryForm } from "@/components/entry-form";
 import { PeriodForm } from "@/components/period-form";
+import { SourceDataSummaryPanel } from "@/components/source-data-summary-panel";
+import { SourceReconciliationCard } from "@/components/source-reconciliation-card";
+import { UnderwritingCompletionPanel } from "@/components/underwriting-completion-panel";
 import { getDashboardData } from "@/lib/data";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 60;
 
-export default async function SourceDataPage() {
-  const data = await getDashboardData();
+export default async function SourceDataPage({
+  searchParams
+}: {
+  searchParams?: Promise<{ companyId?: string }>;
+}) {
+  const resolvedSearchParams = (await searchParams) ?? {};
+  const data = await getDashboardData(resolvedSearchParams.companyId);
+  const companyName = data.company?.name || "No company selected";
+  const companyId = data.company?.id ?? null;
+  const overviewHref = companyId ? `/deal/${companyId}` : "/";
+  const financialsHref = companyId ? `/financials?companyId=${companyId}` : "/financials";
+  const sourceDataHref = companyId ? `/source-data?companyId=${companyId}` : "/source-data";
 
   return (
     <main className="min-h-screen px-4 py-8 md:px-8">
@@ -16,6 +29,14 @@ export default async function SourceDataPage() {
         <section className="rounded-[2rem] border border-slate-200 bg-white px-6 py-6 shadow-panel md:px-8">
           <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
             <div className="max-w-3xl">
+              <DealPageNavigation
+                companyName={companyName}
+                currentSection="Source Data"
+                allDealsHref="/deals"
+                overviewHref={overviewHref}
+                financialsHref={financialsHref}
+                sourceDataHref={sourceDataHref}
+              />
               <p className="text-xs font-medium uppercase tracking-[0.24em] text-slate-500">
                 {data.company?.name || "No company selected"} •{" "}
                 {data.snapshot.label || "No reporting period loaded"}
@@ -28,20 +49,20 @@ export default async function SourceDataPage() {
               </p>
             </div>
 
-            <div className="flex flex-wrap gap-3">
-              <Link
-                href="/"
-                className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-              >
-                Back to Adjusted EBITDA Review
-              </Link>
-              <Link
-                href="/financials"
-                className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-              >
-                View Financials
-              </Link>
-            </div>
+          </div>
+        </section>
+
+        <section>
+          <div className="space-y-6">
+            <UnderwritingCompletionPanel
+              companyId={data.company?.id ?? null}
+              summary={data.completionSummary}
+            />
+            <SourceDataSummaryPanel data={data} />
+            <SourceReconciliationCard
+              companyId={data.company?.id ?? null}
+              periodId={data.snapshot.periodId || null}
+            />
           </div>
         </section>
 

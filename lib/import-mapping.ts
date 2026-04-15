@@ -16,6 +16,7 @@ import type {
   NormalizedCategory,
   StatementType
 } from "@/lib/types";
+import { devLog } from "@/lib/debug";
 import type { ImportColumnMapping, RawImportRow } from "@/lib/import-preview";
 
 export type ImportPreviewRow = {
@@ -33,7 +34,7 @@ export type ImportPreviewRow = {
   matchedBy: AuditMatchedBy;
   confidence: AuditConfidence;
   mappingExplanation: string;
-  memoryScope?: "company" | "global" | null;
+  memoryScope?: "company" | "shared" | null;
   needsReview: boolean;
   isExcluded: boolean;
   isNonBlocking: boolean;
@@ -50,7 +51,7 @@ export type ImportAccountReviewRow = {
   matchedBy: AuditMatchedBy;
   confidence: AuditConfidence;
   mappingExplanation: string;
-  memoryScope?: "company" | "global" | null;
+  memoryScope?: "company" | "shared" | null;
   needsReview: boolean;
   hasConflict: boolean;
   sourcePeriodLabels: string[];
@@ -70,7 +71,7 @@ export type GroupedImportPreviewRow = {
   matchedBy: AuditMatchedBy;
   confidence: AuditConfidence;
   mappingExplanation: string;
-  memoryScope?: "company" | "global" | null;
+  memoryScope?: "company" | "shared" | null;
   needsReview: boolean;
   isExcluded: boolean;
   isNonBlocking: boolean;
@@ -216,7 +217,7 @@ export function buildImportPreviewRows(params: {
   } | null;
 }) {
   const { companyId, rows, columnMapping, savedMappings, fallbackPeriod = null } = params;
-  console.log("BUILD IMPORT PREVIEW CALLED", {
+  devLog("BUILD IMPORT PREVIEW CALLED", {
     totalRows: rows.length
   });
   const accountNameKey = columnMapping.accountName;
@@ -261,7 +262,7 @@ export function buildImportPreviewRows(params: {
       const normalizedLabel = normalizeAccountName(accountName);
 
       if (index < 3) {
-        console.log("ROW EXTRACTION DEBUG", {
+        devLog("ROW EXTRACTION DEBUG", {
           rowIndex: index,
           rawRow: row,
           selectedHeaders: {
@@ -295,7 +296,7 @@ export function buildImportPreviewRows(params: {
 
       if (isNonFinancialPreviewLabel(accountName)) {
         if (index < 3) {
-          console.log("POST-VALIDATION DROP", {
+          devLog("POST-VALIDATION DROP", {
             rowIndex: index,
             reason: "nonFinancialLabel",
             accountName,
@@ -333,6 +334,7 @@ export function buildImportPreviewRows(params: {
         accountName,
         companyId,
         savedMappings,
+        sourceType: "reported_financials",
         preferredStatementType: manualStatementType ?? csvStatementType ?? null,
         manualCategory,
         manualStatementType,
@@ -347,7 +349,7 @@ export function buildImportPreviewRows(params: {
         statementType
       });
       if (statementType === "balance_sheet") {
-        console.log("BALANCE SHEET CATEGORY VALIDATION", {
+        devLog("BALANCE SHEET CATEGORY VALIDATION", {
           accountName,
           incomingCategory: manualCategory ?? csvCategory ?? selection.category ?? null,
           parsedCategory: category,
@@ -395,7 +397,7 @@ export function buildImportPreviewRows(params: {
       };
 
       if (index < 3) {
-        console.log("PREVIEW ROW ACCEPTED", {
+        devLog("PREVIEW ROW ACCEPTED", {
           rowIndex: index,
           accountName,
           amountValue,
@@ -410,7 +412,7 @@ export function buildImportPreviewRows(params: {
     })
     .filter((row): row is ImportPreviewRow => Boolean(row));
 
-  console.log("PREVIEW VALIDATION SUMMARY", {
+  devLog("PREVIEW VALIDATION SUMMARY", {
     totalRows: rows.length,
     validRowsBeforeGrouping: builtRows.length,
     firstAcceptedRow: acceptedRows[0] ?? null

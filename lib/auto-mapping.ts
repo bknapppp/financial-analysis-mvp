@@ -1,9 +1,15 @@
-import type { AccountMapping, NormalizedCategory, StatementType } from "./types";
+import type {
+  AccountMapping,
+  FinancialSourceType,
+  NormalizedCategory,
+  StatementType
+} from "./types";
 import {
   findSavedMapping,
   getSavedMapping,
   normalizeMappingLabel
 } from "./mapping-memory.ts";
+import { devLog } from "./debug.ts";
 
 export type IncomeStatementConcept =
   | "Revenue"
@@ -45,12 +51,16 @@ export type AutoMappingResult = {
     | "unmapped";
   confidence: "high" | "medium" | "low";
   explanation: string;
-  memoryScope?: "company" | "global" | null;
+  memoryScope?: "company" | "shared" | null;
+  mappingSource?: "company_memory" | "shared_memory" | "rule_engine" | "fallback";
+  matchedRule?: string | null;
+  matchedMemoryKey?: string | null;
+  memorySourceType?: FinancialSourceType | "generic" | null;
   mappingId?: string;
   resolutionSource:
     | "manual_override"
     | "company_saved_mapping"
-    | "global_saved_mapping"
+    | "shared_saved_mapping"
     | "csv_mapping"
     | "keyword_rule"
     | "unmapped";
@@ -693,7 +703,11 @@ function buildResolvedResult(params: {
   resolutionSource: AutoMappingResult["resolutionSource"];
   confidence: AutoMappingResult["confidence"];
   explanation: string;
-  memoryScope?: "company" | "global" | null;
+  memoryScope?: "company" | "shared" | null;
+  mappingSource?: AutoMappingResult["mappingSource"];
+  matchedRule?: string | null;
+  matchedMemoryKey?: string | null;
+  memorySourceType?: AutoMappingResult["memorySourceType"];
   mappingId?: string;
   decisionPath: string[];
 }) {
@@ -711,6 +725,17 @@ function buildResolvedResult(params: {
     confidence: params.confidence,
     explanation: params.explanation,
     memoryScope: params.memoryScope ?? null,
+    mappingSource:
+      params.mappingSource ??
+      (params.matchedBy === "keyword_rule"
+        ? "rule_engine"
+        : params.matchedBy === "unmapped"
+          ? "fallback"
+          : null) ??
+      undefined,
+    matchedRule: params.matchedRule ?? null,
+    matchedMemoryKey: params.matchedMemoryKey ?? null,
+    memorySourceType: params.memorySourceType ?? null,
     mappingId: params.mappingId,
     resolutionSource: params.resolutionSource,
     decisionPath: params.decisionPath
@@ -743,6 +768,7 @@ export function resolveMappingSelection(params: {
   savedMappings?: AccountMapping[];
   preferredStatementType?: StatementType | null;
   companyId?: string | null;
+  sourceType?: FinancialSourceType | null;
   manualCategory?: NormalizedCategory | null;
   manualStatementType?: StatementType | null;
   csvCategory?: NormalizedCategory | null;
@@ -753,6 +779,7 @@ export function resolveMappingSelection(params: {
     savedMappings = [],
     preferredStatementType = null,
     companyId = null,
+    sourceType = null,
     manualCategory = null,
     manualStatementType = null,
     csvCategory = null,
@@ -768,7 +795,7 @@ export function resolveMappingSelection(params: {
     inferStatementTypeFromCategory(csvCategory) ??
     null;
 
-  console.log("AUTO MAPPING INPUT", {
+  devLog("AUTO MAPPING INPUT", {
     accountName,
     normalizedAccountName,
     detectedStatementType: lookupStatementType ?? "unspecified"
@@ -797,7 +824,8 @@ export function resolveMappingSelection(params: {
     mappings: savedMappings,
     companyId,
     accountName,
-    statementType: lookupStatementType
+    statementType: lookupStatementType,
+    sourceType
   });
 
   if (memoryMatch) {
@@ -808,7 +836,7 @@ export function resolveMappingSelection(params: {
 
     if (!sanitizedMemoryCategory) {
       decisionPath.push("saved_mapping_invalid_for_statement_type");
-      console.log("MAPPING MEMORY MISS", {
+      devLog("MAPPING MEMORY MISS", {
         accountName,
         normalizedAccountName,
         detectedStatementType: lookupStatementType ?? "unspecified",
@@ -816,10 +844,10 @@ export function resolveMappingSelection(params: {
       });
     } else {
       decisionPath.push(
-        memoryMatch.scope === "company" ? "company_saved_mapping" : "global_saved_mapping"
+        memoryMatch.scope === "company" ? "company_saved_mapping" : "shared_saved_mapping"
       );
 
-      console.log("MAPPING MEMORY HIT", {
+      devLog("MAPPING MEMORY HIT", {
         accountName,
         normalizedAccountName,
         scope: memoryMatch.scope,
@@ -838,13 +866,20 @@ export function resolveMappingSelection(params: {
         explanation:
           memoryMatch.scope === "company"
             ? "Previously confirmed mapping for this company."
-            : "Previously confirmed global mapping.",
+            : "Previously confirmed shared mapping.",
         memoryScope: memoryMatch.scope,
+        mappingSource:
+          memoryMatch.scope === "company" ? "company_memory" : "shared_memory",
+        matchedMemoryKey: `${memoryMatch.record.normalized_label ?? memoryMatch.record.account_name_key}::${memoryMatch.record.statement_type}`,
+        memorySourceType:
+          memoryMatch.record.source_type ?? (
+            memoryMatch.sourceMatch === "generic" ? "generic" : null
+          ),
         mappingId: memoryMatch.record.id,
         resolutionSource:
           memoryMatch.scope === "company"
             ? "company_saved_mapping"
-            : "global_saved_mapping",
+            : "shared_saved_mapping",
         decisionPath
       });
     }
@@ -865,6 +900,7 @@ export function resolveMappingSelection(params: {
       confidence: "high",
       explanation: "Using category or statement type provided in the source file.",
       resolutionSource: "csv_mapping",
+      mappingSource: "fallback",
       decisionPath
     });
   }
@@ -877,7 +913,7 @@ export function resolveMappingSelection(params: {
     const incomeRule = findIncomeStatementRule(normalizedAccountName);
 
     if (incomeRule) {
-      console.log("AUTO MAPPING DECISION", {
+      devLog("AUTO MAPPING DECISION", {
         accountName,
         detectedStatementType: lookupStatementType ?? "unspecified",
         decisionPath,
@@ -898,6 +934,8 @@ export function resolveMappingSelection(params: {
           incomeRule.category,
           incomeRule.statementType
         ),
+        mappingSource: "rule_engine",
+        matchedRule: incomeRule.matchedPattern,
         resolutionSource: "keyword_rule",
         decisionPath
       });
@@ -909,7 +947,7 @@ export function resolveMappingSelection(params: {
     const balanceRule = findBalanceSheetRule(normalizedAccountName);
 
     if (balanceRule) {
-      console.log("AUTO MAPPING DECISION", {
+      devLog("AUTO MAPPING DECISION", {
         accountName,
         detectedStatementType: lookupStatementType ?? "unspecified",
         decisionPath,
@@ -930,6 +968,8 @@ export function resolveMappingSelection(params: {
           balanceRule.category,
           "balance_sheet"
         ),
+        mappingSource: "rule_engine",
+        matchedRule: balanceRule.matchedPattern,
         resolutionSource: "keyword_rule",
         decisionPath
       });
@@ -937,7 +977,7 @@ export function resolveMappingSelection(params: {
   }
 
   decisionPath.push("unmapped");
-  console.log("AUTO MAPPING FALLBACK", {
+  devLog("AUTO MAPPING FALLBACK", {
     accountName,
     detectedStatementType: lookupStatementType ?? "unspecified",
     decisionPath,
@@ -952,6 +992,7 @@ export function resolveMappingSelection(params: {
     confidence: "low",
     explanation:
       "No strong saved mapping or explicit account rule matched this label. Left unmapped for review rather than forcing a Revenue classification.",
+    mappingSource: "fallback",
     resolutionSource: "unmapped",
     decisionPath
   });
@@ -1231,13 +1272,15 @@ export function suggestAccountMapping(
   accountName: string,
   savedMappings: AccountMapping[] = [],
   preferredStatementType: StatementType | null = null,
-  companyId: string | null = null
+  companyId: string | null = null,
+  sourceType: FinancialSourceType | null = null
 ): AutoMappingResult {
   return resolveMappingSelection({
     accountName,
     savedMappings,
     preferredStatementType,
-    companyId
+    companyId,
+    sourceType
   });
 }
 
@@ -1247,13 +1290,15 @@ export async function resolveAccountMapping(params: {
   savedMappings?: AccountMapping[];
   preferredStatementType?: StatementType | null;
   companyId?: string | null;
+  sourceType?: FinancialSourceType | null;
 }): Promise<AutoMappingResult> {
   const {
     supabase,
     accountName,
     savedMappings = [],
     preferredStatementType = null,
-    companyId = null
+    companyId = null,
+    sourceType = null
   } = params;
   const normalizedLabel = normalizeMappingText(accountName);
 
@@ -1263,7 +1308,7 @@ export async function resolveAccountMapping(params: {
    * 2) If no preloaded mappings were supplied, fall back to a direct DB lookup.
    * 3) If no saved mapping applies, use deterministic keyword rules.
    *
-   * This preserves mapping precedence (company -> global) while avoiding N+1
+   * This preserves mapping precedence (company -> shared) while avoiding N+1
    * round trips during imports where mappings are preloaded once.
    */
   if (preferredStatementType) {
@@ -1273,13 +1318,15 @@ export async function resolveAccountMapping(params: {
             mappings: savedMappings,
             companyId,
             accountName,
-            statementType: preferredStatementType
+            statementType: preferredStatementType,
+            sourceType
           })
         : await getSavedMapping({
             supabase,
             companyId,
             accountName,
-            statementType: preferredStatementType
+            statementType: preferredStatementType,
+            sourceType
           });
 
     if (memoryMatch) {
@@ -1288,7 +1335,7 @@ export async function resolveAccountMapping(params: {
         statementType: memoryMatch.record.statement_type
       });
       if (!sanitizedMemoryCategory) {
-        console.log("MAPPING MEMORY MISS", {
+        devLog("MAPPING MEMORY MISS", {
           accountName,
           normalizedLabel,
           detectedStatementType: preferredStatementType ?? "unspecified",
@@ -1326,15 +1373,22 @@ export async function resolveAccountMapping(params: {
         explanation:
           memoryMatch.scope === "company"
             ? "Previously confirmed mapping for this company."
-            : "Previously confirmed global mapping.",
+            : "Previously confirmed shared mapping.",
         memoryScope: memoryMatch.scope,
+        mappingSource:
+          memoryMatch.scope === "company" ? "company_memory" : "shared_memory",
+        matchedMemoryKey: `${savedMapping.normalized_label ?? savedMapping.account_name_key}::${savedMapping.statement_type}`,
+        memorySourceType:
+          savedMapping.source_type ?? (
+            memoryMatch.sourceMatch === "generic" ? "generic" : null
+          ),
         mappingId: savedMapping.id,
         resolutionSource:
           memoryMatch.scope === "company"
             ? "company_saved_mapping"
-            : "global_saved_mapping",
+            : "shared_saved_mapping",
         decisionPath: [
-          memoryMatch.scope === "company" ? "company_saved_mapping" : "global_saved_mapping"
+          memoryMatch.scope === "company" ? "company_saved_mapping" : "shared_saved_mapping"
         ]
       });
       }
@@ -1345,7 +1399,8 @@ export async function resolveAccountMapping(params: {
     accountName,
     savedMappings,
     preferredStatementType,
-    companyId
+    companyId,
+    sourceType
   );
 
   return {

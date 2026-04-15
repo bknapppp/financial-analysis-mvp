@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { getAddBackTypeLabel } from "@/lib/add-backs";
-import { formatCurrency } from "@/lib/formatters";
+import { formatCurrency, formatPercent } from "@/lib/formatters";
 import type {
   AddBackClassificationConfidence,
   AddBackReviewItem,
@@ -16,6 +16,21 @@ type AddBackReviewPanelProps = {
   companyId: string | null;
   periods: ReportingPeriod[];
   items: AddBackReviewItem[];
+  periodId?: string | null;
+  title?: string;
+  eyebrow?: string;
+  description?: string;
+  showOuterCard?: boolean;
+  impactSummary?: {
+    canonicalEbitda: number | null;
+    totalAddBacks: number;
+    adjustedEbitda: number | null;
+    periodLabel: string;
+    thresholdPercent?: number;
+    exceedsThreshold?: boolean;
+  } | null;
+  density?: "default" | "compact";
+  manualEntryMode?: "expanded" | "collapsible";
 };
 
 type EditableRowState = {
@@ -37,7 +52,6 @@ type AddBackApiError = {
 const FILTER_OPTIONS: Array<"all" | AddBackStatus> = [
   "all",
   "suggested",
-  "accepted",
   "rejected"
 ];
 
@@ -114,15 +128,24 @@ function formatApiError(payload: AddBackApiError, fallback: string) {
 export function AddBackReviewPanel({
   companyId,
   periods,
-  items
+  items,
+  periodId = null,
+  title = "Review and defend adjustments",
+  eyebrow = "Add-Back Review",
+  description = "Accept, reject, edit, and document add-backs before using Adjusted EBITDA.",
+  showOuterCard = true,
+  impactSummary = null,
+  density = "default",
+  manualEntryMode = "expanded"
 }: AddBackReviewPanelProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [filter, setFilter] = useState<"all" | AddBackStatus>("all");
   const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [localItems, setLocalItems] = useState<AddBackReviewItem[]>(items);
   const [drafts, setDrafts] = useState<Record<string, EditableRowState>>({});
   const [manualDraft, setManualDraft] = useState(() =>
-    defaultDraft(periods[periods.length - 1]?.id ?? "")
+    defaultDraft(periodId ?? periods[periods.length - 1]?.id ?? "")
   );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -130,10 +153,39 @@ export function AddBackReviewPanel({
     Partial<Record<ManualFieldErrorKey, string>>
   >({});
   const [showManualDetails, setShowManualDetails] = useState(false);
+  const [showManualForm, setShowManualForm] = useState(
+    manualEntryMode === "expanded"
+  );
+
+  useEffect(() => {
+    if (!periodId) {
+      return;
+    }
+
+    setManualDraft((current) => ({
+      ...current,
+      periodId
+    }));
+  }, [periodId]);
+
+  useEffect(() => {
+    setShowManualForm(manualEntryMode === "expanded");
+  }, [manualEntryMode]);
+
+  useEffect(() => {
+    setLocalItems(items);
+  }, [items]);
+
+  const scopedItems = useMemo(
+    () =>
+      periodId ? localItems.filter((item) => item.periodId === periodId) : localItems,
+    [localItems, periodId]
+  );
 
   const filteredItems = useMemo(() => {
+    const reviewItems = scopedItems.filter((item) => item.status !== "accepted");
     const nextItems =
-      filter === "all" ? items : items.filter((item) => item.status === filter);
+      filter === "all" ? reviewItems : reviewItems.filter((item) => item.status === filter);
 
     return nextItems.sort((left, right) => {
       if (left.status !== right.status) {
@@ -147,7 +199,12 @@ export function AddBackReviewPanel({
 
       return left.periodLabel.localeCompare(right.periodLabel);
     });
-  }, [filter, items]);
+  }, [filter, scopedItems]);
+
+  const appliedCount = useMemo(
+    () => scopedItems.filter((item) => item.status === "accepted").length,
+    [scopedItems]
+  );
 
   function getRowKey(item: AddBackReviewItem) {
     return item.id ?? `${item.periodId}:${item.linkedEntryId ?? item.description}:${item.type}`;
@@ -189,12 +246,37 @@ export function AddBackReviewPanel({
     startTransition(() => router.refresh());
   }
 
+  function updateLocalItem(
+    item: AddBackReviewItem,
+    updater: (current: AddBackReviewItem) => AddBackReviewItem
+  ) {
+    const key = getRowKey(item);
+
+    setLocalItems((currentItems) =>
+      currentItems.map((currentItem) =>
+        getRowKey(currentItem) === key ? updater(currentItem) : currentItem
+      )
+    );
+  }
+
   async function persistSuggestion(item: AddBackReviewItem, status: AddBackStatus) {
     if (!companyId) {
       return;
     }
 
     const draft = getRowDraft(item);
+    const optimisticItem: AddBackReviewItem = {
+      ...item,
+      type: draft.type,
+      description: draft.description,
+      amount: Number(draft.amount),
+      classificationConfidence: draft.classificationConfidence,
+      justification: draft.justification,
+      supportingReference: draft.supportingReference || null,
+      status
+    };
+
+    updateLocalItem(item, () => optimisticItem);
     const response = await fetch("/api/add-backs", {
       method: "POST",
       headers: {
@@ -218,6 +300,7 @@ export function AddBackReviewPanel({
     const payload = (await response.json()) as AddBackApiError;
 
     if (!response.ok) {
+      updateLocalItem(item, () => item);
       setErrorMessage(formatApiError(payload, "Add-back could not be saved."));
       return;
     }
@@ -232,6 +315,18 @@ export function AddBackReviewPanel({
     }
 
     const draft = getRowDraft(item);
+    const nextItem: AddBackReviewItem = {
+      ...item,
+      type: draft.type,
+      description: draft.description,
+      amount: Number(draft.amount),
+      classificationConfidence: draft.classificationConfidence,
+      justification: draft.justification,
+      supportingReference: draft.supportingReference || null,
+      status: status ?? item.status
+    };
+
+    updateLocalItem(item, () => nextItem);
     const response = await fetch(`/api/add-backs/${item.id}`, {
       method: "PATCH",
       headers: {
@@ -251,6 +346,7 @@ export function AddBackReviewPanel({
     const payload = (await response.json()) as AddBackApiError;
 
     if (!response.ok) {
+      updateLocalItem(item, () => item);
       setErrorMessage(formatApiError(payload, "Add-back could not be updated."));
       return;
     }
@@ -324,24 +420,20 @@ export function AddBackReviewPanel({
       return;
     }
 
-    setManualDraft(defaultDraft(periods[periods.length - 1]?.id ?? ""));
+    setManualDraft(defaultDraft(periodId ?? periods[periods.length - 1]?.id ?? ""));
     setManualErrors({});
     refresh("Manual add-back added.");
   }
 
-  return (
-    <section className="rounded-[1.75rem] bg-white p-5 shadow-panel">
+  const content = (
+    <>
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
           <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
-            Add-Back Review
+            {eyebrow}
           </p>
-          <h3 className="mt-2 text-lg font-semibold text-slate-900">
-            Review and defend adjustments
-          </h3>
-          <p className="mt-1 text-sm text-slate-500">
-            Accept, reject, edit, and document add-backs before using Adjusted EBITDA.
-          </p>
+          <h3 className="mt-2 text-lg font-semibold text-slate-900">{title}</h3>
+          <p className="mt-1 text-sm text-slate-500">{description}</p>
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -362,6 +454,50 @@ export function AddBackReviewPanel({
         </div>
       </div>
 
+      {impactSummary ? (
+        <div className="mt-5 grid gap-3 md:grid-cols-3">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+              Canonical EBITDA
+            </p>
+            <p className="mt-2 text-xl font-semibold text-slate-900">
+              {formatCurrency(impactSummary.canonicalEbitda)}
+            </p>
+            <p className="mt-1 text-xs text-slate-500">{impactSummary.periodLabel}</p>
+          </div>
+          <div className="rounded-2xl border border-teal-200 bg-teal-50 px-4 py-3">
+            <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+              Total Add-Backs
+            </p>
+            <p className="mt-2 text-xl font-semibold text-teal-800">
+              +{formatCurrency(impactSummary.totalAddBacks)}
+            </p>
+            {impactSummary.canonicalEbitda !== null &&
+            impactSummary.canonicalEbitda !== 0 ? (
+              <p className="mt-1 text-xs text-slate-600">
+                {formatPercent(
+                  (impactSummary.totalAddBacks / Math.abs(impactSummary.canonicalEbitda)) * 100
+                )}{" "}
+                of EBITDA
+              </p>
+            ) : null}
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+              Adjusted EBITDA
+            </p>
+            <p className="mt-2 text-xl font-semibold text-slate-900">
+              {formatCurrency(impactSummary.adjustedEbitda)}
+            </p>
+            {impactSummary.exceedsThreshold ? (
+              <p className="mt-1 text-xs font-medium text-amber-700">
+                Add-backs exceed {impactSummary.thresholdPercent ?? 25}% of EBITDA.
+              </p>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
       {errorMessage ? (
         <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
           {errorMessage}
@@ -374,34 +510,67 @@ export function AddBackReviewPanel({
         </div>
       ) : null}
 
-      <div className="mt-5 rounded-[1.75rem] border border-slate-200 bg-slate-50/80 p-4">
-        <div className="border-b border-slate-200 pb-3">
-          <p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">
-            Manual Adjustment
-          </p>
-          <p className="mt-1.5 text-sm text-slate-600">
-            Enter a discrete underwriting adjustment for a specific reporting period.
-          </p>
+      {appliedCount > 0 ? (
+        <div className="mt-4 text-sm text-slate-600">
+          {appliedCount} add-back{appliedCount === 1 ? "" : "s"} applied
+        </div>
+      ) : null}
+
+      <div
+        className={`mt-5 rounded-[1.5rem] border border-slate-200 bg-slate-50/80 ${
+          density === "compact" ? "p-3" : "p-4"
+        }`}
+      >
+        <div
+          className={`flex flex-col gap-3 ${
+            showManualForm ? "border-b border-slate-200 pb-3" : ""
+          } md:flex-row md:items-center md:justify-between`}
+        >
+          <div>
+            <p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">
+              Manual Adjustment
+            </p>
+            <p className="mt-1.5 text-sm text-slate-600">
+              Enter a discrete underwriting adjustment for a specific reporting period.
+            </p>
+          </div>
+          {manualEntryMode === "collapsible" ? (
+            <button
+              type="button"
+              onClick={() => setShowManualForm((current) => !current)}
+              className="inline-flex rounded-xl bg-white px-3 py-2 text-sm font-medium text-slate-900 hover:bg-slate-100"
+            >
+              {showManualForm ? "Hide adjustment form" : "+ Add adjustment"}
+            </button>
+          ) : null}
         </div>
 
-        <div className="mt-4 grid gap-3 xl:grid-cols-[1.7fr_0.9fr_1fr_0.9fr]">
+        {showManualForm ? (
+          <>
+            <div
+              className={`mt-4 grid gap-3 ${
+                density === "compact"
+                  ? "xl:grid-cols-[1.8fr_0.8fr_0.9fr_0.8fr]"
+                  : "xl:grid-cols-[1.7fr_0.9fr_1fr_0.9fr]"
+              }`}
+            >
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700">
               Description
             </label>
             <input
               value={manualDraft.description}
-              onChange={(event) =>
-                {
-                  setManualDraft((current) => ({
-                    ...current,
-                    description: event.target.value
-                  }));
-                  setManualErrors((current) => ({ ...current, description: undefined }));
-                }
-              }
+              onChange={(event) => {
+                setManualDraft((current) => ({
+                  ...current,
+                  description: event.target.value
+                }));
+                setManualErrors((current) => ({ ...current, description: undefined }));
+              }}
               placeholder="Owner vehicle expense"
-              className={`w-full rounded-xl border px-3 py-1.5 text-sm text-slate-900 outline-none ring-0 transition focus:border-teal-500 ${
+              className={`w-full rounded-xl border px-3 ${
+                density === "compact" ? "py-1.5" : "py-2"
+              } text-sm text-slate-900 outline-none ring-0 transition focus:border-teal-500 ${
                 manualErrors.description ? "border-rose-300 bg-rose-50" : "border-slate-200"
               }`}
             />
@@ -411,9 +580,7 @@ export function AddBackReviewPanel({
           </div>
 
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">
-              Period
-            </label>
+            <label className="mb-1 block text-sm font-medium text-slate-700">Period</label>
             <select
               value={manualDraft.periodId}
               onChange={(event) =>
@@ -434,7 +601,7 @@ export function AddBackReviewPanel({
 
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700">
-              Type
+              Category
             </label>
             <select
               value={manualDraft.type}
@@ -454,24 +621,22 @@ export function AddBackReviewPanel({
           </div>
 
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">
-              Amount
-            </label>
+            <label className="mb-1 block text-sm font-medium text-slate-700">Amount</label>
             <input
               type="number"
               step="0.01"
               value={manualDraft.amount}
-              onChange={(event) =>
-                {
-                  setManualDraft((current) => ({
-                    ...current,
-                    amount: event.target.value
-                  }));
-                  setManualErrors((current) => ({ ...current, amount: undefined }));
-                }
-              }
+              onChange={(event) => {
+                setManualDraft((current) => ({
+                  ...current,
+                  amount: event.target.value
+                }));
+                setManualErrors((current) => ({ ...current, amount: undefined }));
+              }}
               placeholder="1500"
-              className={`w-full rounded-xl border px-3 py-1.5 text-sm text-slate-900 outline-none ring-0 transition focus:border-teal-500 ${
+              className={`w-full rounded-xl border px-3 ${
+                density === "compact" ? "py-1.5" : "py-2"
+              } text-sm text-slate-900 outline-none ring-0 transition focus:border-teal-500 ${
                 manualErrors.amount ? "border-rose-300 bg-rose-50" : "border-slate-200"
               }`}
             />
@@ -479,27 +644,27 @@ export function AddBackReviewPanel({
               <p className="mt-1 text-xs text-rose-700">{manualErrors.amount}</p>
             ) : null}
           </div>
-        </div>
+            </div>
 
-        <div className="mt-3 grid gap-3 xl:grid-cols-[1.8fr_auto] xl:items-end">
+            <div className="mt-3 grid gap-3 xl:grid-cols-[1.8fr_auto] xl:items-end">
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700">
               Rationale
             </label>
             <textarea
               value={manualDraft.justification}
-              onChange={(event) =>
-                {
-                  setManualDraft((current) => ({
-                    ...current,
-                    justification: event.target.value
-                  }));
-                  setManualErrors((current) => ({ ...current, justification: undefined }));
-                }
-              }
+              onChange={(event) => {
+                setManualDraft((current) => ({
+                  ...current,
+                  justification: event.target.value
+                }));
+                setManualErrors((current) => ({ ...current, justification: undefined }));
+              }}
               placeholder="Explain why this adjustment is supportable in underwriting."
               rows={3}
-              className={`w-full rounded-xl border px-3 py-1.5 text-sm text-slate-900 outline-none ring-0 transition focus:border-teal-500 ${
+              className={`w-full rounded-xl border px-3 ${
+                density === "compact" ? "py-1.5" : "py-2"
+              } text-sm text-slate-900 outline-none ring-0 transition focus:border-teal-500 ${
                 manualErrors.justification ? "border-rose-300 bg-rose-50" : "border-slate-200"
               }`}
             />
@@ -511,57 +676,65 @@ export function AddBackReviewPanel({
             type="button"
             onClick={createManualItem}
             disabled={isPending || !companyId}
-            className="h-fit self-end justify-self-end rounded-xl bg-accent px-5 py-2.5 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-60"
+            className={`h-fit self-end justify-self-end rounded-xl bg-accent ${
+              density === "compact" ? "px-4 py-2" : "px-5 py-2.5"
+            } text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-60`}
           >
             Add manual
           </button>
-        </div>
+            </div>
 
-        <div className="mt-3">
+            <div className="mt-3">
           <button
             type="button"
             onClick={() => setShowManualDetails((current) => !current)}
             className="inline-flex items-center gap-2 text-sm font-medium text-slate-700 hover:text-slate-900"
           >
-            <span className="text-xs text-slate-500">{showManualDetails ? "▾" : "▸"}</span>
+            <span className="text-xs text-slate-500">{showManualDetails ? "v" : ">"}</span>
             <span>More details</span>
           </button>
           {showManualDetails ? (
             <div className="mt-3 grid gap-3 border-t border-slate-200 pt-3 md:grid-cols-[1fr_auto] md:items-end">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">
-                Support reference
-              </label>
-              <input
-                value={manualDraft.supportingReference}
-                onChange={(event) =>
-                  setManualDraft((current) => ({
-                    ...current,
-                    supportingReference: event.target.value
-                  }))
-                }
-                placeholder="GL detail, memo, diligence note, or email"
-                className="w-full rounded-xl border border-slate-200 px-3 py-1.5 text-sm text-slate-900 outline-none ring-0 transition focus:border-teal-500"
-              />
-              <p className="mt-1 text-xs text-slate-500">
-                Optional documentation for the adjustment file.
-              </p>
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
-              Confidence
-              <p className="mt-1 text-sm font-medium text-slate-900">
-                {manualDraft.classificationConfidence}
-              </p>
-            </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">
+                  Support reference
+                </label>
+                <input
+                  value={manualDraft.supportingReference}
+                  onChange={(event) =>
+                    setManualDraft((current) => ({
+                      ...current,
+                      supportingReference: event.target.value
+                    }))
+                  }
+                  placeholder="GL detail, memo, diligence note, or email"
+                  className={`w-full rounded-xl border border-slate-200 px-3 ${
+                    density === "compact" ? "py-1.5" : "py-2"
+                  } text-sm text-slate-900 outline-none ring-0 transition focus:border-teal-500`}
+                />
+                <p className="mt-1 text-xs text-slate-500">
+                  Optional documentation for the adjustment file.
+                </p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                Confidence
+                <p className="mt-1 text-sm font-medium text-slate-900">
+                  {manualDraft.classificationConfidence}
+                </p>
+              </div>
             </div>
           ) : null}
-        </div>
+            </div>
+          </>
+        ) : null}
       </div>
 
       <div className="mt-5 space-y-2">
         {filteredItems.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-300 px-4 py-6 text-sm text-slate-500">
-            No add-backs match this filter yet.
+            {periodId
+              ? "No add-backs have been captured for the selected period yet."
+              : "No add-backs match this filter yet."}
           </div>
         ) : null}
 
@@ -573,16 +746,24 @@ export function AddBackReviewPanel({
           return (
             <div
               key={rowKey}
-              className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm"
+              className={`rounded-2xl border border-slate-200 bg-white ${
+                density === "compact" ? "px-3 py-2.5" : "px-4 py-3"
+              }`}
             >
-              <div className="flex flex-col gap-2.5 md:flex-row md:items-start md:justify-between">
+              <div
+                className={`${
+                  density === "compact"
+                    ? "grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-4 gap-y-1.5"
+                    : "flex flex-col gap-2.5 md:flex-row md:items-start md:justify-between"
+                }`}
+              >
                 <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-base font-semibold text-slate-900">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <p className={`${density === "compact" ? "text-sm leading-5" : "text-base"} font-semibold text-slate-900`}>
                       {item.description}
                     </p>
                     <span
-                      className={`rounded-full px-2 py-1 text-xs font-semibold ${statusTone(item.status)}`}
+                      className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${statusTone(item.status)}`}
                     >
                       {item.status}
                     </span>
@@ -594,39 +775,43 @@ export function AddBackReviewPanel({
                     </span>
                   </div>
 
-                  <p className="mt-1.5 text-xs text-slate-500">
-                    {item.periodLabel} • {getAddBackTypeLabel(item.type)}
-                    {item.entryAccountName ? ` • ${item.entryAccountName}` : ""}
+                  <p className="mt-1 text-[11px] uppercase tracking-[0.1em] text-slate-500">
+                    {item.periodLabel} · {getAddBackTypeLabel(item.type)}
+                    {item.entryAccountName ? ` · ${item.entryAccountName}` : ""}
                   </p>
 
-                  <p className="mt-1.5 text-sm text-slate-700">{item.justification}</p>
+                  <p className="mt-1 text-sm leading-5 text-slate-600">{item.justification}</p>
 
-                  <p className="mt-1.5 text-[11px] text-slate-400">
-                    {item.entryCategory ? `${item.entryCategory} • ` : ""}
-                    {item.entryStatementType ? `${item.entryStatementType} • ` : ""}
-                    {item.matchedBy ? `${item.matchedBy.replace("_", " ")} • ` : ""}
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    {item.entryCategory ? `${item.entryCategory} · ` : ""}
+                    {item.entryStatementType ? `${item.entryStatementType} · ` : ""}
+                    {item.matchedBy ? `${item.matchedBy.replace("_", " ")} · ` : ""}
                     {item.confidence ? `${item.confidence} confidence` : ""}
                   </p>
 
-                  {item.dependsOnLowConfidenceMapping ? (
-                    <p className="mt-1.5 text-[11px] font-medium text-amber-700">
-                      Suggested from a low-confidence mapping.
-                    </p>
-                  ) : null}
+                    {item.dependsOnLowConfidenceMapping ? (
+                      <p className="mt-1 text-[11px] font-medium text-amber-700">
+                        Suggested from a low-confidence mapping.
+                      </p>
+                    ) : null}
                 </div>
 
-                <div className="text-right">
-                  <p className="text-xl font-semibold text-slate-900">
+                <div className={`${density === "compact" ? "pt-0.5 text-right" : "text-right"}`}>
+                  <p className={`${density === "compact" ? "text-lg leading-none" : "text-xl"} font-semibold text-slate-900`}>
                     +{formatCurrency(item.amount)}
                   </p>
                 </div>
               </div>
 
               {isEditing ? (
-                <div className="mt-4 grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-2">
+                <div
+                  className={`mt-3 grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 ${
+                    density === "compact" ? "p-3" : "p-4"
+                  } md:grid-cols-2`}
+                >
                   <div>
                     <label className="mb-1 block text-sm font-medium text-slate-700">
-                      Type
+                      Category
                     </label>
                     <select
                       value={draft.type}
@@ -648,11 +833,7 @@ export function AddBackReviewPanel({
                     <select
                       value={draft.classificationConfidence}
                       onChange={(event) =>
-                        updateDraft(
-                          item,
-                          "classificationConfidence",
-                          event.target.value
-                        )
+                        updateDraft(item, "classificationConfidence", event.target.value)
                       }
                     >
                       {CONFIDENCE_OPTIONS.map((option) => (
@@ -681,9 +862,7 @@ export function AddBackReviewPanel({
                       type="number"
                       step="0.01"
                       value={draft.amount}
-                      onChange={(event) =>
-                        updateDraft(item, "amount", event.target.value)
-                      }
+                      onChange={(event) => updateDraft(item, "amount", event.target.value)}
                     />
                   </div>
                   <div>
@@ -707,7 +886,9 @@ export function AddBackReviewPanel({
                         updateDraft(item, "justification", event.target.value)
                       }
                       rows={3}
-                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none ring-0 transition focus:border-teal-500"
+                      className={`w-full rounded-xl border border-slate-200 px-3 ${
+                        density === "compact" ? "py-1.5" : "py-2"
+                      } text-sm text-slate-900 outline-none ring-0 transition focus:border-teal-500`}
                     />
                   </div>
                 </div>
@@ -720,7 +901,9 @@ export function AddBackReviewPanel({
                       type="button"
                       onClick={() => void updatePersistedItem(item, "accepted")}
                       disabled={isPending}
-                      className="rounded-xl bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-60"
+                      className={`rounded-xl bg-teal-600 ${
+                        density === "compact" ? "px-3 py-1.5" : "px-3 py-2"
+                      } text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-60`}
                     >
                       Accept
                     </button>
@@ -728,19 +911,21 @@ export function AddBackReviewPanel({
                       type="button"
                       onClick={() => void updatePersistedItem(item, "rejected")}
                       disabled={isPending}
-                      className="rounded-xl bg-slate-700 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+                      className={`rounded-xl bg-slate-700 ${
+                        density === "compact" ? "px-3 py-1.5" : "px-3 py-2"
+                      } text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60`}
                     >
                       Reject
                     </button>
                     <button
                       type="button"
                       onClick={() =>
-                        isEditing
-                          ? void updatePersistedItem(item)
-                          : setEditingKey(rowKey)
+                        isEditing ? void updatePersistedItem(item) : setEditingKey(rowKey)
                       }
                       disabled={isPending}
-                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                      className={`rounded-xl border border-slate-200 ${
+                        density === "compact" ? "px-3 py-1.5" : "px-3 py-2"
+                      } text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60`}
                     >
                       {isEditing ? "Save edits" : "Edit"}
                     </button>
@@ -749,7 +934,9 @@ export function AddBackReviewPanel({
                         type="button"
                         onClick={() => void deleteManualItem(item)}
                         disabled={isPending}
-                        className="rounded-xl border border-rose-200 px-3 py-2 text-sm font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-60"
+                        className={`rounded-xl border border-rose-200 ${
+                          density === "compact" ? "px-3 py-1.5" : "px-3 py-2"
+                        } text-sm font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-60`}
                       >
                         Delete
                       </button>
@@ -761,7 +948,9 @@ export function AddBackReviewPanel({
                       type="button"
                       onClick={() => void persistSuggestion(item, "accepted")}
                       disabled={isPending}
-                      className="rounded-xl bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-60"
+                      className={`rounded-xl bg-teal-600 ${
+                        density === "compact" ? "px-3 py-1.5" : "px-3 py-2"
+                      } text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-60`}
                     >
                       Accept
                     </button>
@@ -769,7 +958,9 @@ export function AddBackReviewPanel({
                       type="button"
                       onClick={() => void persistSuggestion(item, "rejected")}
                       disabled={isPending}
-                      className="rounded-xl bg-slate-700 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+                      className={`rounded-xl bg-slate-700 ${
+                        density === "compact" ? "px-3 py-1.5" : "px-3 py-2"
+                      } text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60`}
                     >
                       Reject
                     </button>
@@ -778,7 +969,9 @@ export function AddBackReviewPanel({
                       onClick={() =>
                         setEditingKey((current) => (current === rowKey ? null : rowKey))
                       }
-                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                      className={`rounded-xl border border-slate-200 ${
+                        density === "compact" ? "px-3 py-1.5" : "px-3 py-2"
+                      } text-sm font-medium text-slate-700 hover:bg-slate-50`}
                     >
                       {isEditing ? "Close edit" : "Edit"}
                     </button>
@@ -789,6 +982,17 @@ export function AddBackReviewPanel({
           );
         })}
       </div>
-    </section>
+    </>
   );
+
+  if (!showOuterCard) {
+    return content;
+  }
+
+  return <section className="rounded-[1.75rem] bg-white p-5 shadow-panel">{content}</section>;
 }
+
+
+
+
+

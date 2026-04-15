@@ -7,17 +7,21 @@ import type { EbitdaBridge } from "@/lib/types";
 
 type EbitdaBridgeProps = {
   bridge: EbitdaBridge | null;
+  showOuterCard?: boolean;
 };
 
-export function EbitdaBridge({ bridge }: EbitdaBridgeProps) {
+export function EbitdaBridge({
+  bridge,
+  showOuterCard = true
+}: EbitdaBridgeProps) {
   const [expandedType, setExpandedType] = useState<string | null>(null);
 
   if (!bridge) {
     return null;
   }
 
-  return (
-    <section className="rounded-[1.75rem] bg-white p-5 shadow-panel">
+  const content = (
+    <>
       <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
         <div>
           <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
@@ -130,8 +134,14 @@ export function EbitdaBridge({ bridge }: EbitdaBridgeProps) {
           </ul>
         </div>
       ) : null}
-    </section>
+    </>
   );
+
+  if (!showOuterCard) {
+    return <section>{content}</section>;
+  }
+
+  return <section className="rounded-[1.75rem] bg-white p-5 shadow-panel">{content}</section>;
 }
 
 function BridgeRow({
@@ -140,7 +150,7 @@ function BridgeRow({
   accent = "slate"
 }: {
   label: string;
-  value: number;
+  value: number | null;
   accent?: "slate" | "teal";
 }) {
   return (

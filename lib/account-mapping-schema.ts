@@ -6,6 +6,8 @@ type SchemaErrorLike = {
 const ACCOUNT_MAPPING_TOKENS = [
   "account_mappings",
   "account_name_key",
+  "normalized_label",
+  "source_type",
   "updated_at",
   "company_id"
 ];

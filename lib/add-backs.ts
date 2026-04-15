@@ -290,7 +290,7 @@ export function getCanonicalPeriodAdjustment(params: {
 
 export function calculateAdjustedEbitdaForPeriod(params: {
   periodId: string;
-  reportedEbitda: number;
+  reportedEbitda: number | null;
   addBacks: AddBack[];
   entries: FinancialEntry[];
 }) {
@@ -303,7 +303,10 @@ export function calculateAdjustedEbitdaForPeriod(params: {
   return {
     ...adjustment,
     reportedEbitda: params.reportedEbitda,
-    adjustedEbitda: params.reportedEbitda + adjustment.acceptedAddBackTotal
+    adjustedEbitda:
+      params.reportedEbitda === null
+        ? null
+        : params.reportedEbitda + adjustment.acceptedAddBackTotal
   };
 }
 
@@ -547,18 +550,19 @@ export function buildEbitdaBridge(params: {
   return {
     periodId: snapshot.periodId,
     periodLabel,
-    reportedEbitda: snapshot.ebitda,
+    reportedEbitda: snapshot.reportedEbitda ?? null,
     addBackTotal: canonicalAdjustment.acceptedAddBackTotal,
     adjustedEbitda:
-      readiness.status === "blocked"
+      readiness.status === "blocked" || snapshot.reportedEbitda === null
         ? null
         : calculateAdjustedEbitdaForPeriod({
             periodId: snapshot.periodId,
-            reportedEbitda: snapshot.ebitda,
+            reportedEbitda: snapshot.reportedEbitda ?? null,
             addBacks,
             entries
           }).adjustedEbitda,
-    canComputeAdjustedEbitda: readiness.status !== "blocked",
+    canComputeAdjustedEbitda:
+      readiness.status !== "blocked" && snapshot.reportedEbitda !== null,
     invalidReasons: readiness.blockingReasons,
     warnings: Array.from(
       new Set([...readiness.cautionReasons, ...warnings])

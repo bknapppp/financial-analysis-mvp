@@ -15,6 +15,7 @@ type RiskFlagsPanelProps = {
   readiness: DataReadiness;
   dataQuality: DataQualityReport;
   acceptedAddBackItems: AddBackReviewItem[];
+  blockers?: string[];
 };
 
 function severityTone(severity: RiskFlagSeverity) {
@@ -46,48 +47,41 @@ function severityLabel(severity: RiskFlagSeverity) {
 
 export function RiskFlagsPanel(props: RiskFlagsPanelProps) {
   const flags = buildRiskFlags(props);
-  const highCount = flags.filter((flag) => flag.severity === "high").length;
-  const mediumCount = flags.filter((flag) => flag.severity === "medium").length;
-  const lowCount = flags.filter((flag) => flag.severity === "low").length;
+  const topFlags = flags.slice(0, 3);
+  const gapItems = (props.blockers ?? []).slice(0, Math.max(0, 3 - topFlags.length));
 
   return (
     <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+      <div>
         <div>
           <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
-            Risk Flags
+            Key Risks & Gaps
           </p>
           <h2 className="mt-2 text-xl font-semibold text-slate-900">
-            Deterministic risk readout
+            Key Risks & Gaps
           </h2>
           <p className="mt-1 text-sm text-slate-500">
-            Interpret the existing underwriting, add-back, and data-quality outputs without changing the underlying calculations.
+            The highest-impact underwriting exceptions, ordered from most material to least material.
           </p>
-        </div>
-
-        <div className="grid gap-3 sm:grid-cols-3">
-          <SummaryPill label="High" value={highCount} tone="high" />
-          <SummaryPill label="Medium" value={mediumCount} tone="medium" />
-          <SummaryPill label="Low" value={lowCount} tone="low" />
         </div>
       </div>
 
-      {flags.length > 0 ? (
-        <div className="mt-5 space-y-3">
-          {flags.map((flag, index) => {
+      {topFlags.length > 0 || gapItems.length > 0 ? (
+        <div className="mt-5 divide-y divide-slate-200 rounded-2xl bg-slate-50">
+          {topFlags.map((flag, index) => {
             const tone = severityTone(flag.severity);
-            const isPrimary = index === 0 && flag.severity === "high";
+            const rank = index + 1;
 
             return (
               <article
                 key={`${flag.severity}-${flag.title}`}
-                className={`rounded-2xl border px-4 py-4 ${isPrimary ? "shadow-sm" : ""} ${tone.card}`}
+                className={`px-4 py-3 ${tone.card}`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    {isPrimary ? (
+                    {rank === 1 ? (
                       <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-rose-700">
-                        Primary Credit Concern
+                        Highest impact
                       </p>
                     ) : null}
                     <p className="text-base font-semibold text-slate-900">{flag.title}</p>
@@ -100,52 +94,39 @@ export function RiskFlagsPanel(props: RiskFlagsPanelProps) {
                   </span>
                 </div>
                 {flag.metric ? (
-                  <div className="mt-4 rounded-xl border border-white/80 bg-white/70 px-3 py-2">
-                    <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
-                      Metric
-                    </p>
-                    <p className="mt-1 text-sm font-medium text-slate-900">{flag.metric}</p>
-                  </div>
+                  <p className="mt-2 text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                    Metric:{" "}
+                    <span className="normal-case tracking-normal text-slate-700">
+                      {flag.metric}
+                    </span>
+                  </p>
                 ) : null}
               </article>
             );
           })}
+          {gapItems.map((item) => (
+            <article key={item} className="px-4 py-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">{item}</p>
+                  <p className="mt-1 text-sm text-slate-700">
+                    This gap is still blocking parts of the underwriting workflow from completing.
+                  </p>
+                </div>
+                <span className="rounded-full bg-slate-200 px-2.5 py-1 text-xs font-medium text-slate-700">
+                  Gap
+                </span>
+              </div>
+            </article>
+          ))}
         </div>
       ) : (
         <div className="mt-5 rounded-2xl border border-teal-200 bg-teal-50 px-4 py-4">
           <p className="text-sm font-medium text-slate-900">
             No material underwriting exceptions are currently triggered.
           </p>
-          <p className="mt-1 text-sm text-slate-600">
-            Current coverage, leverage, collateral, and earnings signals remain within the panel&apos;s defined thresholds.
-          </p>
         </div>
       )}
     </section>
-  );
-}
-
-function SummaryPill({
-  label,
-  value,
-  tone
-}: {
-  label: string;
-  value: number;
-  tone: RiskFlagSeverity;
-}) {
-  const toneClasses = severityTone(tone);
-
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
-          {label}
-        </p>
-        <span className={`rounded-full px-2 py-1 text-xs font-medium ${toneClasses.badge}`}>
-          {value}
-        </span>
-      </div>
-    </div>
   );
 }

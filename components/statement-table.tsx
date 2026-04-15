@@ -8,17 +8,21 @@ type StatementTableProps = {
   footerValueDisplay?: string | null;
   clickableLabels?: string[];
   onRowClick?: (label: string) => void;
+  showOuterCard?: boolean;
+  density?: "default" | "compact";
 };
 
 export function StatementTable({
   statement,
   footerValueDisplay = null,
   clickableLabels = [],
-  onRowClick
+  onRowClick,
+  showOuterCard = true,
+  density = "default"
 }: StatementTableProps) {
-  return (
-    <section className="rounded-[1.75rem] bg-white p-5 shadow-panel">
-      <div className="mb-4">
+  const content = (
+    <>
+      <div className="mb-3">
         <h2 className="text-lg font-semibold text-slate-900">{statement.title}</h2>
       </div>
 
@@ -26,10 +30,18 @@ export function StatementTable({
         <table className="min-w-full divide-y divide-slate-200 text-sm">
           <thead className="bg-slate-50">
             <tr>
-              <th className="px-4 py-3 text-left font-medium text-slate-500">
+              <th
+                className={`px-4 ${
+                  density === "compact" ? "py-2.5" : "py-3"
+                } text-left font-medium uppercase tracking-[0.12em] text-slate-500`}
+              >
                 Line item
               </th>
-              <th className="px-4 py-3 text-right font-medium text-slate-500">
+              <th
+                className={`px-4 ${
+                  density === "compact" ? "py-2.5" : "py-3"
+                } text-right font-medium uppercase tracking-[0.12em] text-slate-500`}
+              >
                 Amount
               </th>
             </tr>
@@ -42,14 +54,16 @@ export function StatementTable({
                 return (
                   <tr key={row.label}>
                     <td
-                      className={`px-4 py-3 ${
+                      className={`px-4 ${density === "compact" ? "py-2.5" : "py-3"} ${
                         row.rollupKey === "section_header"
                           ? "text-xs font-semibold uppercase tracking-[0.14em] text-slate-500"
                           : row.kind === "subtotal"
                           ? "font-semibold text-slate-900"
                           : row.kind === "metric"
                             ? "font-medium text-slate-800"
-                            : "text-slate-700"
+                            : density === "compact"
+                              ? "text-slate-600"
+                              : "text-slate-700"
                       }`}
                     >
                       {isClickable ? (
@@ -65,7 +79,7 @@ export function StatementTable({
                       )}
                     </td>
                     <td
-                      className={`px-4 py-3 text-right ${
+                      className={`px-4 ${density === "compact" ? "py-2.5" : "py-3"} text-right ${
                         row.rollupKey === "section_header"
                           ? "text-slate-400"
                           : row.kind === "subtotal"
@@ -91,16 +105,30 @@ export function StatementTable({
           </tbody>
           <tfoot className="bg-slate-50">
             <tr>
-              <td className="px-4 py-3 font-semibold text-slate-700">
+              <td
+                className={`px-4 ${
+                  density === "compact" ? "py-2.5" : "py-3"
+                } font-semibold text-slate-700`}
+              >
                 {statement.footerLabel}
               </td>
-              <td className="px-4 py-3 text-right font-semibold text-slate-900">
+              <td
+                className={`px-4 ${
+                  density === "compact" ? "py-2.5" : "py-3"
+                } text-right font-semibold text-slate-900`}
+              >
                 {footerValueDisplay ?? formatCurrency(statement.footerValue)}
               </td>
             </tr>
           </tfoot>
         </table>
       </div>
-    </section>
+    </>
   );
+
+  if (!showOuterCard) {
+    return <section>{content}</section>;
+  }
+
+  return <section className="rounded-[1.75rem] bg-white p-5 shadow-panel">{content}</section>;
 }
