@@ -32,11 +32,13 @@ type QuickFilter = "all" | "blocked" | "ready";
 
 const STATUS_ORDER: Record<PortfolioDealStatus, number> = {
   "Needs source data": 0,
-  "Needs mapping": 1,
-  "Needs underwriting inputs": 2,
-  "Underwriting in progress": 3,
-  "Ready for structure": 4,
-  "Ready for output": 5
+  "Needs workbook review": 1,
+  "Needs mapping": 2,
+  "Needs source completion": 3,
+  "Needs underwriting inputs": 4,
+  "Underwriting in progress": 5,
+  "Ready for structure": 6,
+  "Ready for output": 7
 };
 
 const MISSING_VALUE = "\u2014";
@@ -71,7 +73,7 @@ function statusTone(status: PortfolioDealStatus) {
     return "border-sky-200 bg-sky-50 text-sky-900";
   }
 
-  if (status === "Needs mapping") {
+  if (status === "Needs mapping" || status === "Needs source completion") {
     return "border-amber-200 bg-amber-50 text-amber-900";
   }
 
@@ -87,7 +89,7 @@ function rowTone(status: PortfolioDealStatus) {
     return "border-l-sky-300";
   }
 
-  if (status === "Needs mapping") {
+  if (status === "Needs mapping" || status === "Needs source completion") {
     return "border-l-amber-300";
   }
 
@@ -251,7 +253,12 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
         (row) => row.status === "Ready for structure" || row.status === "Ready for output"
       ).length,
       missingCriticalInputs: rows.filter((row) =>
-        ["Needs source data", "Needs underwriting inputs"].includes(row.status)
+        [
+          "Needs source data",
+          "Needs workbook review",
+          "Needs source completion",
+          "Needs underwriting inputs"
+        ].includes(row.status)
       ).length,
       highRiskDeals: rows.filter((row) => row.riskSeverity === "high").length,
       averageCompletion,
@@ -287,7 +294,9 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
       if (
         quickFilter === "blocked" &&
         row.status !== "Needs source data" &&
+        row.status !== "Needs workbook review" &&
         row.status !== "Needs mapping" &&
+        row.status !== "Needs source completion" &&
         row.status !== "Needs underwriting inputs"
       ) {
         return false;
@@ -312,6 +321,8 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
       if (
         summaryFilter === "missing_critical_inputs" &&
         row.status !== "Needs source data" &&
+        row.status !== "Needs workbook review" &&
+        row.status !== "Needs source completion" &&
         row.status !== "Needs underwriting inputs"
       ) {
         return false;
@@ -503,7 +514,9 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
             >
               <option value="all">All statuses</option>
               <option value="Needs source data">Needs source data</option>
+              <option value="Needs workbook review">Needs workbook review</option>
               <option value="Needs mapping">Needs mapping</option>
+              <option value="Needs source completion">Needs source completion</option>
               <option value="Needs underwriting inputs">Needs underwriting inputs</option>
               <option value="Underwriting in progress">Underwriting in progress</option>
               <option value="Ready for structure">Ready for structure</option>

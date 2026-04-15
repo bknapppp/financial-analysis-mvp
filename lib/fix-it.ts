@@ -9,6 +9,8 @@ type FixItTarget = {
   fieldId?: string;
   step?: string;
   tab?: string;
+  task?: string;
+  sheet?: string;
 };
 
 function buildHrefWithTarget(href: string, target: FixItTarget) {
@@ -34,6 +36,18 @@ function buildHrefWithTarget(href: string, target: FixItTarget) {
 
   if (target.tab) {
     url.searchParams.set("tab", target.tab);
+  }
+
+  if (target.task) {
+    url.searchParams.set("fixTask", target.task);
+  } else {
+    url.searchParams.delete("fixTask");
+  }
+
+  if (target.sheet) {
+    url.searchParams.set("fixSheet", target.sheet);
+  } else {
+    url.searchParams.delete("fixSheet");
   }
 
   url.hash = target.sectionId;
@@ -101,13 +115,24 @@ export function buildFixItHref(action: string, fallbackHref: string) {
     normalizedAction.includes("mapping") ||
     normalizedAction.includes("unmapped rows") ||
     normalizedAction.includes("low-confidence") ||
-    normalizedAction.includes("classification")
+    normalizedAction.includes("classification") ||
+    normalizedAction.includes("income statement") ||
+    normalizedAction.includes("balance sheet") ||
+    normalizedAction.includes("workbook") ||
+    normalizedAction.includes("sheet selection") ||
+    normalizedAction.includes("period mismatch") ||
+    normalizedAction.includes("review detected periods")
   ) {
     return buildHrefWithTarget(fallbackHref, {
       pathname: "/source-data",
       sectionId: SOURCE_DATA_UPLOAD_SECTION_ID,
       fieldId: SOURCE_DATA_FILE_FIELD_ID,
-      step: "1"
+      step:
+        normalizedAction.includes("period mismatch") ||
+        normalizedAction.includes("review detected periods") ||
+        normalizedAction.includes("periods before import")
+          ? "2"
+          : "1"
     });
   }
 

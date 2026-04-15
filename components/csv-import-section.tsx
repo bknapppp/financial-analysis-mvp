@@ -22,13 +22,19 @@ import {
   parseImportFile,
   type ImportColumnMapping,
   type ImportFieldKey,
-  type ParsedImportFile
+  type ParsedImportFile,
+  type ParsedImportSheet
 } from "@/lib/import-preview";
+import { deriveWorkbookContext, type WorkbookContext } from "@/lib/workbook-context";
 import {
   detectImportPeriods,
   matchDetectedPeriodsToExisting,
   normalizeImportedPeriod
 } from "@/lib/import-periods";
+import {
+  deriveWorkbookFixIts,
+  type WorkbookFixItTask
+} from "@/lib/workbook-fix-its";
 import { devLog } from "@/lib/debug";
 import type {
   AccountMapping,
@@ -55,6 +61,28 @@ type PreviewFilter =
   | "low_confidence"
   | "saved_mapping"
   | "rule_based";
+
+type ImportSummaryState = {
+  insertedCount: number;
+  rejectedRows: Array<{ rowNumber: number; accountName: string; reason: string }>;
+  autoMappedRows: number;
+  rowsNeedingReview: number;
+  missingCriticalCategories: string[];
+  workbookFollowUps: string[];
+  workbookFixIts: WorkbookFixItTask[];
+  nextActions: string[];
+  workbookContext: WorkbookContext | null;
+};
+
+type SheetPreviewRow = {
+  rowNumber: number;
+  primaryLabel: string;
+  values: string[];
+  isLikelyFinancialLine: boolean;
+  mappingSuggestion: string | null;
+  suggestionStrength: "saved" | "rule_based" | "source" | "review";
+  reviewStatus: "mapped" | "low_confidence" | "unmapped" | "not_parsed";
+};
 
 const CATEGORY_OPTIONS: NormalizedCategory[] = [
   "Revenue",
@@ -219,6 +247,116 @@ function buildCanonicalPreviewPeriod(params: {
   };
 }
 
+function summarizeMissingCriticalCategories(groupedRows: Array<{
+  category: string;
+  isExcluded?: boolean;
+}>) {
+  const includedCategories = new Set(
+    groupedRows
+      .filter((row) => !row.isExcluded)
+      .map((row) => row.category)
+      .filter(Boolean)
+  );
+  const missing: string[] = [];
+
+  if (!includedCategories.has("Revenue")) {
+    missing.push("Revenue");
+  }
+
+  if (!includedCategories.has("COGS")) {
+    missing.push("COGS");
+  }
+
+  if (!includedCategories.has("Operating Expenses")) {
+    missing.push("Operating Expenses");
+  }
+
+  const hasAssets = Array.from(includedCategories).some((category) =>
+    [
+      "Assets",
+      "current_assets",
+      "non_current_assets"
+    ].includes(category) || category.startsWith("current_assets.") || category.startsWith("non_current_assets.")
+  );
+  const hasLiabilities = Array.from(includedCategories).some((category) =>
+    [
+      "Liabilities",
+      "current_liabilities",
+      "non_current_liabilities"
+    ].includes(category) || category.startsWith("current_liabilities.") || category.startsWith("non_current_liabilities.")
+  );
+  const hasEquity = Array.from(includedCategories).some((category) =>
+    ["Equity", "equity"].includes(category) || category.startsWith("equity.")
+  );
+
+  if (!hasAssets || !hasLiabilities || !hasEquity) {
+    missing.push("Balance sheet components");
+  }
+
+  return missing;
+}
+
+function buildSheetPreviewRows(params: {
+  selectedSheet: ParsedImportSheet | null;
+  structurePreviewHeaders: string[];
+  structurePreviewRows: Array<Record<string, string>>;
+  previewRows: Array<{
+    rowNumber: number;
+    accountName: string;
+    category: string;
+    statementType: string;
+    matchedBy: string;
+    confidence: string;
+  }>;
+}) {
+  const { selectedSheet, structurePreviewHeaders, structurePreviewRows, previewRows } = params;
+  const previewByRowNumber = new Map(previewRows.map((row) => [row.rowNumber, row]));
+  const likelyLineItemRows = new Set(selectedSheet?.analysis.likelyLineItemRowNumbers ?? []);
+
+  return structurePreviewRows.slice(0, 25).map<SheetPreviewRow>((row, index) => {
+    const rowNumber = index + 1;
+    const parsedRow = previewByRowNumber.get(rowNumber) ?? null;
+    const primaryLabel =
+      structurePreviewHeaders
+        .map((header) => row[header] ?? "")
+        .find((value) => value.trim().length > 0) ?? `Row ${rowNumber}`;
+
+    const reviewStatus: SheetPreviewRow["reviewStatus"] = !parsedRow
+      ? "not_parsed"
+      : !parsedRow.category || !parsedRow.statementType
+        ? "unmapped"
+        : parsedRow.confidence === "low"
+          ? "low_confidence"
+          : "mapped";
+
+    const suggestionStrength: SheetPreviewRow["suggestionStrength"] = !parsedRow
+      ? "review"
+      : parsedRow.matchedBy === "memory" || parsedRow.matchedBy === "saved_mapping"
+        ? "saved"
+        : parsedRow.matchedBy === "keyword" || parsedRow.matchedBy === "keyword_rule"
+          ? "rule_based"
+          : parsedRow.matchedBy === "csv_value"
+            ? "source"
+            : "review";
+
+    const mappingSuggestion = !parsedRow
+      ? null
+      : parsedRow.category && parsedRow.statementType
+        ? `${parsedRow.category} • ${parsedRow.statementType}`
+        : "Needs mapping review";
+
+    return {
+      rowNumber,
+      primaryLabel,
+      values: structurePreviewHeaders.slice(0, 5).map((header) => row[header] || "—"),
+      isLikelyFinancialLine: likelyLineItemRows.has(rowNumber) || Boolean(parsedRow?.accountName),
+      mappingSuggestion,
+      suggestionStrength,
+      reviewStatus
+    };
+  });
+}
+
 export function CsvImportSection({
   companies,
   initialCompanyId,
@@ -263,10 +401,7 @@ export function CsvImportSection({
   const [setupMessage, setSetupMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [importSummary, setImportSummary] = useState<{
-    insertedCount: number;
-    rejectedRows: Array<{ rowNumber: number; accountName: string; reason: string }>;
-  } | null>(null);
+  const [importSummary, setImportSummary] = useState<ImportSummaryState | null>(null);
 
   async function loadCompanyContext(companyId: string) {
     try {
@@ -351,6 +486,43 @@ export function CsvImportSection({
       null
     );
   }, [parsedFile, selectedSheetName]);
+  const workbookContext = useMemo<WorkbookContext | null>(
+    () => (parsedFile ? deriveWorkbookContext(parsedFile.sheets) : null),
+    [parsedFile]
+  );
+  const sheetSelectionCards = useMemo(
+    () =>
+      parsedFile?.sheets.map((sheet) => ({
+        name: sheet.name,
+        rowCount: sheet.rows.length,
+        classification: sheet.analysis.classification,
+        periodDetection: sheet.analysis.periodDetection,
+        columnStructure: sheet.analysis.columnStructure,
+        lineItemHints: sheet.analysis.likelyFinancialLineItemHints,
+        workbookRole:
+          workbookContext?.primaryIncomeStatementSheetName === sheet.name
+            ? "primary_income_statement"
+            : workbookContext?.primaryBalanceSheetSheetName === sheet.name
+              ? "primary_balance_sheet"
+              : workbookContext?.primaryCashFlowSheetName === sheet.name
+                ? "primary_cash_flow"
+                : workbookContext?.ambiguousSheetNames.includes(sheet.name)
+                  ? "ambiguous"
+                  : workbookContext?.supportingSheetNames.includes(sheet.name)
+                    ? "supporting"
+                    : "other",
+        workbookReason: workbookContext?.selectionReasons[sheet.name] ?? null
+      })) ?? [],
+    [parsedFile, workbookContext]
+  );
+  const workbookFixIts = useMemo(
+    () =>
+      deriveWorkbookFixIts({
+        workbookContext,
+        companyId: selectedCompanyId || null
+      }),
+    [selectedCompanyId, workbookContext]
+  );
 
   const selectedPeriod = useMemo(
     () => periods.find((period) => period.id === selectedPeriodId) ?? null,
@@ -405,6 +577,11 @@ export function CsvImportSection({
 
     const activeSheet =
       parsedFile.sheets.find((sheet) => sheet.name === selectedSheetName) ??
+      (workbookContext?.defaultImportTargetSheetName
+        ? parsedFile.sheets.find(
+            (sheet) => sheet.name === workbookContext.defaultImportTargetSheetName
+          ) ?? null
+        : null) ??
       parsedFile.sheets[0] ??
       null;
 
@@ -414,7 +591,7 @@ export function CsvImportSection({
 
     setSelectedSheetName(activeSheet.name);
     setColumnMapping(buildInitialColumnMapping(activeSheet.headers));
-  }, [parsedFile, selectedSheetName]);
+  }, [parsedFile, selectedSheetName, workbookContext]);
 
   const previewRows = useMemo(
     () =>
@@ -432,6 +609,16 @@ export function CsvImportSection({
       selectedCompanyId,
       structurePreviewRows
     ]
+  );
+  const sheetPreviewRows = useMemo(
+    () =>
+      buildSheetPreviewRows({
+        selectedSheet,
+        structurePreviewHeaders,
+        structurePreviewRows,
+        previewRows
+      }),
+    [previewRows, selectedSheet, structurePreviewHeaders, structurePreviewRows]
   );
   const detectedPeriods = useMemo(() => {
     const detection = detectImportPeriods(previewRows);
@@ -634,8 +821,20 @@ export function CsvImportSection({
         return;
       }
 
+      const nextWorkbookContext = deriveWorkbookContext(nextParsedFile.sheets);
+      const preferredSheet =
+        (nextWorkbookContext.defaultImportTargetSheetName
+          ? nextParsedFile.sheets.find(
+              (sheet) => sheet.name === nextWorkbookContext.defaultImportTargetSheetName
+            )
+          : null) ??
+        nextParsedFile.sheets.find(
+          (sheet) => sheet.analysis.classification.status !== "needs_review"
+        ) ??
+        nextParsedFile.sheets[0];
+
       setParsedFile(nextParsedFile);
-      setSelectedSheetName(nextParsedFile.sheets[0]?.name ?? "");
+      setSelectedSheetName(preferredSheet?.name ?? "");
     } catch (error) {
       setParsedFile(null);
       setErrorMessage(
@@ -780,16 +979,56 @@ export function CsvImportSection({
       droppedRows
     });
 
-      const payload = {
-        companyId: selectedCompanyId,
-        periodId: periodFallbackMode === "existing" ? selectedPeriodId : "",
-        createPeriod:
-          periodFallbackMode === "new" && newPeriodLabel && newPeriodDate
+    const autoMappedRows = importRows.filter((row) =>
+      ["memory", "saved_mapping", "keyword", "keyword_rule"].includes(String(row.matchedBy))
+    ).length;
+    const rowsNeedingReview = groupedPreviewRows.filter(
+      (row) => !row.isExcluded && (row.confidence === "low" || !row.category || !row.statementType)
+    ).length;
+    const missingCriticalCategories = summarizeMissingCriticalCategories(groupedPreviewRows);
+    const workbookFollowUpNotes = [
+      ...(workbookContext?.gaps ?? []),
+      ...(workbookContext?.conflicts ?? []),
+      selectedSheet?.name === workbookContext?.primaryIncomeStatementSheetName
+        ? `Imported primary income statement from ${selectedSheet.name}.`
+        : selectedSheet?.name === workbookContext?.primaryBalanceSheetSheetName
+          ? `Imported primary balance sheet from ${selectedSheet.name}.`
+          : selectedSheet?.name === workbookContext?.primaryCashFlowSheetName
+            ? `Imported primary cash flow sheet from ${selectedSheet.name}.`
+            : selectedSheet
+              ? `Imported ${selectedSheet.name}; workbook-level primary statement selections remain available for follow-up.`
+              : null,
+      !workbookContext?.primaryBalanceSheetSheetName
+        ? "Balance sheet not detected in workbook context."
+        : null,
+      workbookContext?.periodStructureSummary === "mixed"
+        ? "Workbook primary statements use mixed period structures."
+        : null,
+      detectedPeriods.unresolvedRows.length > 0
+        ? `${detectedPeriods.unresolvedRows.length} row(s) still needed fallback period handling`
+        : null
+    ].filter((value): value is string => Boolean(value));
+    const workbookFollowUps = Array.from(new Set(workbookFollowUpNotes));
+    const nextActions = [
+      rowsNeedingReview > 0 ? "Complete mapping" : null,
+      "Review source data",
+      missingCriticalCategories.length > 0 ? "Fix missing categories" : null
+    ].filter((value): value is string => Boolean(value));
+    const importWorkbookFixIts = deriveWorkbookFixIts({
+      workbookContext,
+      companyId: selectedCompanyId || null
+    });
+
+    const payload = {
+      companyId: selectedCompanyId,
+      periodId: periodFallbackMode === "existing" ? selectedPeriodId : "",
+      createPeriod:
+        periodFallbackMode === "new" && newPeriodLabel && newPeriodDate
           ? {
               label: newPeriodLabel,
-                periodDate: newPeriodDate
-              }
-            : undefined,
+              periodDate: newPeriodDate
+            }
+          : undefined,
       rows: importRows
     };
 
@@ -813,14 +1052,28 @@ export function CsvImportSection({
       setErrorMessage(result.error ?? "Import failed.");
       setImportSummary({
         insertedCount: result.insertedCount ?? 0,
-        rejectedRows: Array.isArray(result.rejectedRows) ? result.rejectedRows : []
+        rejectedRows: Array.isArray(result.rejectedRows) ? result.rejectedRows : [],
+        autoMappedRows,
+        rowsNeedingReview,
+        missingCriticalCategories,
+        workbookFollowUps,
+        workbookFixIts: importWorkbookFixIts,
+        nextActions,
+        workbookContext
       });
       return;
     }
 
     const nextSummary = {
       insertedCount: result.insertedCount ?? 0,
-      rejectedRows: Array.isArray(result.rejectedRows) ? result.rejectedRows : []
+      rejectedRows: Array.isArray(result.rejectedRows) ? result.rejectedRows : [],
+      autoMappedRows,
+      rowsNeedingReview,
+      missingCriticalCategories,
+      workbookFollowUps,
+      workbookFixIts: importWorkbookFixIts,
+      nextActions,
+      workbookContext
     };
 
     setImportSummary(nextSummary);
@@ -869,6 +1122,7 @@ export function CsvImportSection({
 
   const importSummaryCards = [
     ["Accounts detected", String(previewSummary.accountsDetected)],
+    ["Periods detected", String(previewSummary.periodsDetected)],
     ["Review required", String(previewSummary.accountsUnderReview)],
     [
       "Unmapped",
@@ -921,10 +1175,13 @@ export function CsvImportSection({
       selectedCompanyId={selectedCompanyId}
       setSelectedCompanyId={setSelectedCompanyId}
       companies={companies}
+      workbookContext={workbookContext}
       parsedFile={parsedFile}
       selectedSheet={selectedSheet}
+      sheetSelectionCards={sheetSelectionCards}
       structurePreviewRows={structurePreviewRows}
       structurePreviewHeaders={structurePreviewHeaders}
+      sheetPreviewRows={sheetPreviewRows}
       selectedSheetName={selectedSheetName}
       setSelectedSheetName={setSelectedSheetName}
       companySetupSlot={companySetupSlot}
@@ -968,6 +1225,7 @@ export function CsvImportSection({
       handleImport={handleImport}
       isPending={isPending}
       importSummary={importSummary}
+      workbookFixIts={workbookFixIts}
       stepStatus={stepStatus}
     />
   );

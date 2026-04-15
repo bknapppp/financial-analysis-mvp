@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import {
   derivePortfolioDealState,
+  derivePortfolioReadiness,
   getPrimaryRiskSeverity,
-  isRecentlyUpdated
+  isRecentlyUpdated,
+  type PortfolioReadinessBlocker
 } from "./portfolio-deal-state.ts";
+import type { WorkbookFixItTask } from "./workbook-fix-its.ts";
 import type {
   DataReadiness,
   TaxSourceStatus,
@@ -71,23 +74,36 @@ const section = (
   ]
 });
 
+function workbookTask(overrides?: Partial<WorkbookFixItTask>): WorkbookFixItTask {
+  return {
+    key: "missing_balance_sheet",
+    label: "Upload or select a balance sheet",
+    reason: "Workbook context did not identify a primary balance sheet sheet.",
+    actionLabel: "Upload or select a balance sheet",
+    href: "/source-data?companyId=company-1&fixSection=source-data-upload&fixField=source-data-file&fixStep=1#source-data-upload",
+    severity: "critical",
+    ...overrides
+  };
+}
+
 {
-  const state = derivePortfolioDealState({
+  const readiness = derivePortfolioReadiness({
     companyId: "company-1",
     completionSummary: buildSummary({
-      sections: [section("financial_inputs", "blocked", "EBITDA basis available")]
+      sections: [
+        section("financial_inputs", "complete"),
+        section("mapping_completeness", "blocked", "Coverage supports usable outputs")
+      ]
     }),
     readiness: baseReadiness,
-    taxSourceStatus: baseTaxSourceStatus
+    taxSourceStatus: baseTaxSourceStatus,
+    workbookFixIts: [workbookTask()]
   });
 
-  assert.equal(state.status, "Needs source data");
-  assert.equal(state.currentBlocker, "Missing: EBITDA basis");
-  assert.equal(state.nextAction, "Upload financials");
-  assert.equal(
-    state.nextActionHref,
-    "/source-data?companyId=company-1&fixSection=source-data-upload&fixField=source-data-file&fixStep=1#source-data-upload"
-  );
+  assert.equal(readiness.stateKey, "needs_workbook_review");
+  assert.equal(readiness.status, "Needs workbook review");
+  assert.equal(readiness.primaryBlocker?.category, "workbook");
+  assert.equal(readiness.nextAction.label, "Upload or select a balance sheet");
 }
 
 {
@@ -106,10 +122,6 @@ const section = (
   assert.equal(state.status, "Needs mapping");
   assert.equal(state.currentBlocker, "Missing: Mapping");
   assert.equal(state.nextAction, "Complete mapping");
-  assert.equal(
-    state.nextActionHref,
-    "/source-data?companyId=company-1&fixSection=source-data-upload&fixField=source-data-file&fixStep=1#source-data-upload"
-  );
 }
 
 {
@@ -157,6 +169,77 @@ const section = (
     state.nextActionHref,
     "/deal/company-1?fixSection=underwriting-workbench&tab=overview#underwriting-workbench"
   );
+}
+
+{
+  const state = derivePortfolioDealState({
+    companyId: "company-1",
+    completionSummary: buildSummary({
+      sections: [section("financial_inputs", "in_progress", "Revenue available")]
+    }),
+    readiness: {
+      ...baseReadiness,
+      status: "blocked",
+      label: "Not reliable",
+      blockingReasons: ["Revenue coverage is incomplete"]
+    },
+    taxSourceStatus: {
+      ...baseTaxSourceStatus,
+      comparisonStatus: "partial"
+    }
+  });
+
+  assert.equal(state.status, "Needs source completion");
+  assert.equal(state.primaryBlocker?.category, "source_data");
+  assert.equal(state.nextAction, "Review source data");
+}
+
+{
+  const readiness = derivePortfolioReadiness({
+    companyId: "company-1",
+    completionSummary: buildSummary({
+      sections: [
+        section("financial_inputs", "complete"),
+        section("mapping_completeness", "complete"),
+        section("structure_inputs", "complete"),
+        section("underwriting_readiness", "complete")
+      ]
+    }),
+    readiness: {
+      ...baseReadiness,
+      cautionReasons: ["Classification still needs narrowing"]
+    },
+    taxSourceStatus: {
+      ...baseTaxSourceStatus,
+      comparisonStatus: "partial",
+      missingComponents: ["Matched tax EBITDA is incomplete"]
+    }
+  });
+
+  assert.equal(readiness.stateKey, "ready_for_structure");
+  assert.equal(readiness.nextAction.label, "Run structure");
+}
+
+{
+  const readiness = derivePortfolioReadiness({
+    companyId: "company-1",
+    completionSummary: buildSummary({
+      sections: [
+        section("financial_inputs", "complete"),
+        section("mapping_completeness", "complete")
+      ]
+    }),
+    readiness: {
+      ...baseReadiness,
+      blockingReasons: ["Source data still needs review", "Source data still needs review"]
+    },
+    taxSourceStatus: baseTaxSourceStatus
+  });
+
+  const matchingBlockers = readiness.blockers.filter(
+    (blocker: PortfolioReadinessBlocker) => blocker.label === "Missing: Source data still needs review"
+  );
+  assert.equal(matchingBlockers.length, 1);
 }
 
 assert.equal(getPrimaryRiskSeverity(["low", "medium"]), "medium");

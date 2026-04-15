@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import {
   Fragment,
   useEffect,
@@ -21,6 +22,9 @@ import {
   SOURCE_DATA_FILE_FIELD_ID,
   SOURCE_DATA_UPLOAD_SECTION_ID
 } from "@/lib/fix-it";
+import type { ParsedImportFile, ParsedImportSheet } from "@/lib/import-preview";
+import type { WorkbookContext } from "@/lib/workbook-context";
+import type { WorkbookFixItTask } from "@/lib/workbook-fix-its";
 import type {
   Company,
   NormalizedCategory,
@@ -45,10 +49,36 @@ type StepBasedImportFlowProps = {
   selectedCompanyId: string;
   setSelectedCompanyId: Dispatch<SetStateAction<string>>;
   companies: Company[];
-  parsedFile: any;
-  selectedSheet: any;
+  workbookContext: WorkbookContext | null;
+  parsedFile: ParsedImportFile | null;
+  selectedSheet: ParsedImportSheet | null;
+  sheetSelectionCards: Array<{
+    name: string;
+    rowCount: number;
+    classification: ParsedImportSheet["analysis"]["classification"];
+    periodDetection: ParsedImportSheet["analysis"]["periodDetection"];
+    columnStructure: ParsedImportSheet["analysis"]["columnStructure"];
+    lineItemHints: string[];
+    workbookRole:
+      | "primary_income_statement"
+      | "primary_balance_sheet"
+      | "primary_cash_flow"
+      | "ambiguous"
+      | "supporting"
+      | "other";
+    workbookReason: string | null;
+  }>;
   structurePreviewRows: any[];
   structurePreviewHeaders: string[];
+  sheetPreviewRows: Array<{
+    rowNumber: number;
+    primaryLabel: string;
+    values: string[];
+    isLikelyFinancialLine: boolean;
+    mappingSuggestion: string | null;
+    suggestionStrength: "saved" | "rule_based" | "source" | "review";
+    reviewStatus: "mapped" | "low_confidence" | "unmapped" | "not_parsed";
+  }>;
   selectedSheetName: string;
   setSelectedSheetName: Dispatch<SetStateAction<string>>;
   companySetupSlot?: ReactNode;
@@ -102,7 +132,15 @@ type StepBasedImportFlowProps = {
   importSummary: {
     insertedCount: number;
     rejectedRows: Array<{ rowNumber: number; accountName: string; reason: string }>;
+    autoMappedRows: number;
+    rowsNeedingReview: number;
+    missingCriticalCategories: string[];
+    workbookFollowUps: string[];
+    workbookFixIts: WorkbookFixItTask[];
+    nextActions: string[];
+    workbookContext: WorkbookContext | null;
   } | null;
+  workbookFixIts: WorkbookFixItTask[];
   stepStatus: {
     uploadComplete: boolean;
     structureComplete: boolean;
@@ -125,7 +163,7 @@ const COLUMN_FIELDS = [
 function matchedByClass(value: string) {
   if (value === "memory") return "bg-emerald-100 text-emerald-800";
   if (value === "saved_mapping") return "bg-teal-100 text-teal-800";
-  if (value === "keyword") return "bg-sky-100 text-sky-800";
+  if (value === "keyword" || value === "keyword_rule") return "bg-sky-100 text-sky-800";
   if (value === "csv_value") return "bg-violet-100 text-violet-800";
   return "bg-amber-100 text-amber-800";
 }
@@ -135,7 +173,7 @@ function formatMatchedBy(value: string, memoryScope?: "company" | "global" | nul
   if (value === "memory" && memoryScope === "global") return "From Saved Mapping (Global)";
   if (value === "memory") return "From Saved Mapping";
   if (value === "saved_mapping") return "Saved Mapping";
-  if (value === "keyword") return "Rule-Based";
+  if (value === "keyword" || value === "keyword_rule") return "Rule-Based";
   if (value === "csv_value") return "Source value";
   return "Under Review";
 }
@@ -156,7 +194,7 @@ function groupedPreviewStatus(row: {
   if (row.matchedBy === "memory" || row.matchedBy === "saved_mapping") {
     return "Saved Mapping";
   }
-  if (row.matchedBy === "keyword") return "Rule-Based";
+  if (row.matchedBy === "keyword" || row.matchedBy === "keyword_rule") return "Rule-Based";
   if (row.needsReview) return "Review Required";
   return "Confirmed";
 }
@@ -170,6 +208,89 @@ function statusClass(status: string) {
   if (status === "Saved Mapping") return "border border-emerald-200 bg-emerald-100 text-emerald-800";
   if (status === "Rule-Based") return "border border-sky-200 bg-sky-100 text-sky-800";
   return "border border-teal-200 bg-teal-100 text-teal-800";
+}
+
+function sheetClassificationClass(status: string) {
+  if (status === "likely_income_statement") {
+    return "bg-emerald-100 text-emerald-800";
+  }
+
+  if (status === "likely_balance_sheet") {
+    return "bg-sky-100 text-sky-800";
+  }
+
+  if (status === "likely_cash_flow") {
+    return "bg-violet-100 text-violet-800";
+  }
+
+  return "bg-amber-100 text-amber-800";
+}
+
+function periodStructureClass(structure: string) {
+  if (
+    structure === "annual" ||
+    structure === "monthly" ||
+    structure === "quarterly" ||
+    structure === "wide" ||
+    structure === "long"
+  ) {
+    return "bg-slate-900 text-white";
+  }
+
+  if (structure === "ttm") {
+    return "bg-violet-100 text-violet-800";
+  }
+
+  if (structure === "mixed") {
+    return "bg-amber-100 text-amber-800";
+  }
+
+  return "bg-slate-100 text-slate-600";
+}
+
+function previewSuggestionClass(strength: string) {
+  if (strength === "saved") return "bg-emerald-100 text-emerald-800";
+  if (strength === "rule_based") return "bg-sky-100 text-sky-800";
+  if (strength === "source") return "bg-violet-100 text-violet-800";
+  return "bg-amber-100 text-amber-800";
+}
+
+function previewStatusClass(status: string) {
+  if (status === "mapped") return "bg-teal-100 text-teal-800";
+  if (status === "low_confidence") return "bg-orange-100 text-orange-800";
+  if (status === "unmapped") return "bg-rose-100 text-rose-800";
+  return "bg-slate-100 text-slate-600";
+}
+
+function previewStatusLabel(status: string) {
+  if (status === "mapped") return "Mapped";
+  if (status === "low_confidence") return "Low confidence";
+  if (status === "unmapped") return "Unmapped";
+  return "Not parsed";
+}
+
+function workbookRoleLabel(role: StepBasedImportFlowProps["sheetSelectionCards"][number]["workbookRole"]) {
+  if (role === "primary_income_statement") return "Primary income statement";
+  if (role === "primary_balance_sheet") return "Primary balance sheet";
+  if (role === "primary_cash_flow") return "Primary cash flow";
+  if (role === "ambiguous") return "Ambiguous candidate";
+  if (role === "supporting") return "Supporting sheet";
+  return "Other sheet";
+}
+
+function workbookRoleClass(role: StepBasedImportFlowProps["sheetSelectionCards"][number]["workbookRole"]) {
+  if (role === "primary_income_statement") return "bg-emerald-100 text-emerald-800";
+  if (role === "primary_balance_sheet") return "bg-sky-100 text-sky-800";
+  if (role === "primary_cash_flow") return "bg-violet-100 text-violet-800";
+  if (role === "ambiguous") return "bg-amber-100 text-amber-800";
+  if (role === "supporting") return "bg-slate-100 text-slate-700";
+  return "bg-slate-50 text-slate-500";
+}
+
+function workbookFixItSeverityClass(severity: WorkbookFixItTask["severity"]) {
+  return severity === "critical"
+    ? "border-rose-200 bg-rose-50 text-rose-900"
+    : "border-amber-200 bg-amber-50 text-amber-900";
 }
 
 function canonicalPeriodKey(periodLabel: string, periodDate: string) {
@@ -193,10 +314,13 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
     selectedCompanyId,
     setSelectedCompanyId,
     companies,
+    workbookContext,
     parsedFile,
     selectedSheet,
+    sheetSelectionCards,
     structurePreviewRows,
     structurePreviewHeaders,
+    sheetPreviewRows,
     selectedSheetName,
     setSelectedSheetName,
     companySetupSlot,
@@ -240,6 +364,7 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
     handleImport,
     isPending,
     importSummary,
+    workbookFixIts,
     stepStatus
   } = props;
   const [focusedReviewOpen, setFocusedReviewOpen] = useState(false);
@@ -406,7 +531,7 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
             <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
               <div className="flex-1">
                 <label className="mb-1 block text-sm font-medium text-slate-700">
-                  Financial file
+                  Financial workbook
                 </label>
                 <input
                   id={SOURCE_DATA_FILE_FIELD_ID}
@@ -416,27 +541,210 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
                   onChange={handleFileUpload}
                   disabled={!selectedCompanyId}
                 />
+                <p className="mt-2 text-xs text-slate-500">
+                  Upload the workbook, inspect each detected sheet, then continue into guided structure and mapping review.
+                </p>
               </div>
 
-              {parsedFile && parsedFile.sheets.length > 1 ? (
-                <div className="w-full md:w-56">
-                  <label className="mb-1 block text-sm font-medium text-slate-700">
-                    Worksheet
-                  </label>
-                  <select
-                    value={selectedSheetName}
-                    onChange={(event) => setSelectedSheetName(event.target.value)}
-                  >
-                    {parsedFile.sheets.map((sheet: any) => (
-                      <option key={sheet.name} value={sheet.name}>
-                        {sheet.name}
-                      </option>
-                    ))}
-                  </select>
+              {parsedFile ? (
+                <div className="rounded-xl bg-white px-4 py-3 text-sm text-slate-600 ring-1 ring-slate-200">
+                  {parsedFile.kind === "xlsx" ? `${parsedFile.sheets.length} sheet(s) detected` : "Single import sheet detected"}
                 </div>
               ) : null}
             </div>
           </div>
+
+          {sheetSelectionCards.length > 0 ? (
+            <div className="mt-4">
+              {workbookContext ? (
+                <div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-semibold text-slate-900">Workbook interpretation</h4>
+                      <p className="mt-1 text-sm text-slate-600">{workbookContext.summary}</p>
+                    </div>
+                    <span
+                      className={`rounded-full px-3 py-1 text-xs font-medium ${
+                        workbookContext.confidenceLabel === "High confidence"
+                          ? "bg-teal-100 text-teal-800"
+                          : workbookContext.confidenceLabel === "Medium confidence"
+                            ? "bg-amber-100 text-amber-800"
+                            : "bg-rose-100 text-rose-800"
+                      }`}
+                    >
+                      {workbookContext.confidenceLabel}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                    <div className="rounded-2xl bg-white p-4 ring-1 ring-slate-200">
+                      <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                        Detected package
+                      </p>
+                      <p className="mt-2 text-sm text-slate-700">
+                        Income statement: {workbookContext.primaryIncomeStatementSheetName ?? "Not detected"}
+                      </p>
+                      <p className="mt-1 text-sm text-slate-700">
+                        Balance sheet: {workbookContext.primaryBalanceSheetSheetName ?? "Not detected"}
+                      </p>
+                      <p className="mt-1 text-sm text-slate-700">
+                        Cash flow: {workbookContext.primaryCashFlowSheetName ?? "Not detected"}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl bg-white p-4 ring-1 ring-slate-200">
+                      <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                        Workbook review items
+                      </p>
+                      <div className="mt-2 space-y-1 text-sm text-slate-700">
+                        {(workbookContext.conflicts.length > 0
+                          ? workbookContext.conflicts
+                          : workbookContext.gaps.length > 0
+                            ? workbookContext.gaps
+                            : ["Workbook package looks internally consistent enough to proceed."]
+                        )
+                          .slice(0, 3)
+                          .map((item) => (
+                            <p key={item}>{item}</p>
+                          ))}
+                      </div>
+                    </div>
+                  </div>
+                  {workbookFixIts.length > 0 ? (
+                    <div className="mt-3 rounded-2xl bg-white p-4 ring-1 ring-slate-200">
+                      <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                        Fix-It tasks
+                      </p>
+                      <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                        {workbookFixIts.map((task) => (
+                          <div
+                            key={task.key}
+                            className={`rounded-2xl border px-4 py-3 ${workbookFixItSeverityClass(task.severity)}`}
+                          >
+                            <p className="text-sm font-semibold">{task.label}</p>
+                            <p className="mt-1 text-sm opacity-90">{task.reason}</p>
+                            <Link
+                              href={task.href}
+                              className="mt-3 inline-flex rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-slate-900 ring-1 ring-slate-200 hover:bg-slate-50"
+                            >
+                              {task.actionLabel}
+                            </Link>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h4 className="text-sm font-semibold text-slate-900">Sheet inspection</h4>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Pick the sheet to import. Classification and period structure come from deterministic workbook heuristics.
+                  </p>
+                </div>
+                {parsedFile?.sheets.length && parsedFile.sheets.length > 1 ? (
+                  <div className="w-full max-w-xs">
+                    <label className="mb-1 block text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                      Active sheet
+                    </label>
+                    <select
+                      value={selectedSheetName}
+                      onChange={(event) => setSelectedSheetName(event.target.value)}
+                    >
+                      {sheetSelectionCards.map((sheet) => (
+                        <option key={sheet.name} value={sheet.name}>
+                          {sheet.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                {sheetSelectionCards.map((sheet) => {
+                  const isSelected = sheet.name === selectedSheetName;
+
+                  return (
+                    <button
+                      key={sheet.name}
+                      type="button"
+                      onClick={() => setSelectedSheetName(sheet.name)}
+                      className={`rounded-2xl border p-4 text-left transition ${
+                        isSelected
+                          ? "border-slate-900 bg-slate-900 text-white"
+                          : "border-slate-200 bg-white hover:border-slate-300"
+                      }`}
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <h5 className="text-sm font-semibold">{sheet.name}</h5>
+                          <p className={`mt-1 text-sm ${isSelected ? "text-slate-200" : "text-slate-500"}`}>
+                            {sheet.rowCount} parsed row(s)
+                          </p>
+                        </div>
+                        <span
+                          className={`rounded-full px-3 py-1 text-xs font-medium ${
+                            isSelected
+                              ? "bg-white/15 text-white"
+                              : sheetClassificationClass(sheet.classification.status)
+                          }`}
+                        >
+                          {sheet.classification.label}
+                        </span>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                        <span
+                          className={`rounded-full px-2.5 py-1 font-medium ${
+                            isSelected ? "bg-white/10 text-white" : workbookRoleClass(sheet.workbookRole)
+                          }`}
+                        >
+                          {workbookRoleLabel(sheet.workbookRole)}
+                        </span>
+                        <span
+                          className={`rounded-full px-2.5 py-1 font-medium ${
+                            isSelected ? "bg-white/10 text-white" : periodStructureClass(sheet.periodDetection.structure)
+                          }`}
+                        >
+                          {sheet.periodDetection.label}
+                        </span>
+                        <span
+                          className={`rounded-full px-2.5 py-1 ${
+                            isSelected ? "bg-white/10 text-slate-100" : "bg-slate-100 text-slate-700"
+                          }`}
+                        >
+                          {sheet.columnStructure.label}
+                        </span>
+                        {sheet.periodDetection.periods.slice(0, 3).map((period) => (
+                          <span
+                            key={`${sheet.name}-${period.label}`}
+                            className={`rounded-full px-2.5 py-1 ${
+                              isSelected ? "bg-white/10 text-slate-100" : "bg-slate-100 text-slate-700"
+                            }`}
+                          >
+                            {period.label}
+                          </span>
+                        ))}
+                      </div>
+                      <p className={`mt-3 text-sm ${isSelected ? "text-slate-200" : "text-slate-600"}`}>
+                        {sheet.classification.explanation}
+                      </p>
+                      {sheet.workbookReason ? (
+                        <p className={`mt-2 text-xs ${isSelected ? "text-slate-300" : "text-slate-500"}`}>
+                          {sheet.workbookReason}
+                        </p>
+                      ) : null}
+                      {sheet.lineItemHints.length > 0 ? (
+                        <p className={`mt-2 text-xs ${isSelected ? "text-slate-300" : "text-slate-500"}`}>
+                          Sample financial lines: {sheet.lineItemHints.slice(0, 3).join(", ")}
+                        </p>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
 
           <div className="mt-4 flex justify-end">
             <button
@@ -445,7 +753,7 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
               disabled={!stepStatus.uploadComplete}
               className="rounded-xl bg-ink px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
             >
-              Continue
+              Inspect selected sheet
             </button>
           </div>
         </section>
@@ -457,40 +765,194 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
             <StepHeading
               step="Step 2"
               title="Confirm Structure"
-              description="Review the selected sheet, detected headers, and a sample of parsed rows before mapping."
-              badge={`${parsedFile?.fileName || ""} • ${structurePreviewRows.length} row(s)`}
+              description="Review the selected sheet, verify the detected statement and period structure, and preview likely mappings before the import moves into focused review."
+              badge={`${parsedFile?.fileName || ""} • ${selectedSheet.analysis.previewRowCount} preview row(s)`}
             />
 
-            <div className="mt-4 flex flex-wrap gap-2">
-              {structurePreviewHeaders.map((header: string) => (
-                <span
-                  key={header}
-                  className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700"
-                >
-                  {header}
-                </span>
-              ))}
+            <div className="mt-4 grid gap-3 lg:grid-cols-3">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                  Sheet Type
+                </p>
+                <div className="mt-3 flex items-center gap-2">
+                  <span
+                    className={`rounded-full px-3 py-1 text-xs font-medium ${sheetClassificationClass(
+                      selectedSheet.analysis.classification.status
+                    )}`}
+                  >
+                    {selectedSheet.analysis.classification.label}
+                  </span>
+                  <span className="text-xs text-slate-500">
+                    {selectedSheet.analysis.classification.confidenceLabel}
+                  </span>
+                </div>
+                <p className="mt-3 text-sm text-slate-600">
+                  {selectedSheet.analysis.classification.explanation}
+                </p>
+                {selectedSheet.analysis.classification.matchedPatterns.length > 0 ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {selectedSheet.analysis.classification.matchedPatterns.map((pattern) => (
+                      <span
+                        key={pattern}
+                        className="rounded-full bg-white px-2.5 py-1 text-xs text-slate-700 ring-1 ring-slate-200"
+                      >
+                        {pattern}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                  Period Structure
+                </p>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <span
+                    className={`rounded-full px-3 py-1 text-xs font-medium ${periodStructureClass(
+                      selectedSheet.analysis.periodDetection.structure
+                    )}`}
+                  >
+                    {selectedSheet.analysis.periodDetection.label}
+                  </span>
+                  {selectedSheet.analysis.periodDetection.headerRowIndex ? (
+                    <span className="text-xs text-slate-500">
+                      Header row {selectedSheet.analysis.periodDetection.headerRowIndex}
+                    </span>
+                  ) : null}
+                </div>
+                <p className="mt-3 text-sm text-slate-600">
+                  {selectedSheet.analysis.periodDetection.explanation}
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {selectedSheet.analysis.periodDetection.periods.map((period) => (
+                    <span
+                      key={`${period.label}-${period.periodDate}`}
+                      className="rounded-full bg-white px-2.5 py-1 text-xs text-slate-700 ring-1 ring-slate-200"
+                    >
+                      {period.label}
+                    </span>
+                  ))}
+                  {selectedSheet.analysis.periodDetection.ttmHeaders.map((header) => (
+                    <span
+                      key={header}
+                      className="rounded-full bg-violet-100 px-2.5 py-1 text-xs text-violet-800"
+                    >
+                      {header}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                  Column Structure
+                </p>
+                <div className="mt-3">
+                  <span
+                    className={`rounded-full px-3 py-1 text-xs font-medium ${periodStructureClass(
+                      selectedSheet.analysis.columnStructure.type
+                    )}`}
+                  >
+                    {selectedSheet.analysis.columnStructure.label}
+                  </span>
+                </div>
+                <p className="mt-3 text-sm text-slate-600">
+                  {selectedSheet.analysis.columnStructure.explanation}
+                </p>
+                {selectedSheet.analysis.likelyFinancialLineItemHints.length > 0 ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {selectedSheet.analysis.likelyFinancialLineItemHints.map((hint) => (
+                      <span
+                        key={hint}
+                        className="rounded-full bg-white px-2.5 py-1 text-xs text-slate-700 ring-1 ring-slate-200"
+                      >
+                        {hint}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                  Parsed Headers
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {structurePreviewHeaders.map((header: string) => (
+                    <span
+                      key={header}
+                      className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-700 ring-1 ring-slate-200"
+                    >
+                      {header}
+                    </span>
+                  ))}
+                </div>
+              </div>
             </div>
 
             <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200">
               <table className="min-w-full divide-y divide-slate-200 text-sm">
                 <thead className="bg-slate-50">
                   <tr>
-                    {structurePreviewHeaders.slice(0, 6).map((header: string) => (
-                      <th key={header} className="px-3 py-2 text-left font-medium text-slate-500">
-                        {header}
-                      </th>
-                    ))}
+                    <th className="px-3 py-2 text-left font-medium text-slate-500">Row</th>
+                    <th className="px-3 py-2 text-left font-medium text-slate-500">Preview</th>
+                    <th className="px-3 py-2 text-left font-medium text-slate-500">Signals</th>
+                    <th className="px-3 py-2 text-left font-medium text-slate-500">Mapping suggestion</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
-                  {structurePreviewRows.slice(0, 8).map((row: any, index: number) => (
-                    <tr key={`${selectedSheet.name}-${index}`}>
-                      {structurePreviewHeaders.slice(0, 6).map((header: string) => (
-                        <td key={header} className="px-3 py-2 text-slate-700">
-                          {row[header] || "—"}
-                        </td>
-                      ))}
+                  {sheetPreviewRows.map((row) => (
+                    <tr
+                      key={`${selectedSheet.name}-${row.rowNumber}`}
+                      className={
+                        row.reviewStatus === "unmapped"
+                          ? "bg-rose-50/50"
+                          : row.reviewStatus === "low_confidence"
+                            ? "bg-orange-50/50"
+                            : row.isLikelyFinancialLine
+                              ? "bg-teal-50/30"
+                              : ""
+                      }
+                    >
+                      <td className="px-3 py-3 align-top text-slate-500">{row.rowNumber}</td>
+                      <td className="px-3 py-3 align-top">
+                        <div className="min-w-[14rem]">
+                          <p className="font-medium text-slate-900">{row.primaryLabel}</p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {row.values.join(" • ")}
+                          </p>
+                        </div>
+                      </td>
+                      <td className="px-3 py-3 align-top">
+                        <div className="flex flex-wrap gap-2">
+                          {row.isLikelyFinancialLine ? (
+                            <span className="rounded-full bg-teal-100 px-2.5 py-1 text-xs font-medium text-teal-800">
+                              Likely financial line item
+                            </span>
+                          ) : null}
+                          <span
+                            className={`rounded-full px-2.5 py-1 text-xs font-medium ${previewStatusClass(
+                              row.reviewStatus
+                            )}`}
+                          >
+                            {previewStatusLabel(row.reviewStatus)}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-3 py-3 align-top">
+                        {row.mappingSuggestion ? (
+                          <span
+                            className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${previewSuggestionClass(
+                              row.suggestionStrength
+                            )}`}
+                          >
+                            {row.mappingSuggestion}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-slate-500">No parseable mapping suggestion yet</span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -1068,6 +1530,21 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
             description="Confirm the final summary and import these financials into the review workflow."
           />
 
+          {workbookContext ? (
+            <div className="mt-4 grid gap-3 lg:grid-cols-4">
+              <SummaryMetric label="Workbook confidence" value={workbookContext.confidenceLabel} />
+              <SummaryMetric label="Selected sheet" value={selectedSheet.name} />
+              <SummaryMetric
+                label="Workbook package"
+                value={`IS: ${workbookContext.primaryIncomeStatementSheetName ?? "Missing"} • BS: ${workbookContext.primaryBalanceSheetSheetName ?? "Missing"}`}
+              />
+              <SummaryMetric
+                label="Detected structure"
+                value={`${selectedSheet.analysis.periodDetection.label} • ${selectedSheet.analysis.columnStructure.label}`}
+              />
+            </div>
+          ) : null}
+
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
             {importSummaryCards.map(([label, value]) => (
               <div
@@ -1105,11 +1582,102 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
           </div>
 
           {importSummary ? (
-            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-              <p className="font-medium">Inserted rows: {importSummary.insertedCount}</p>
-              <p className="mt-1 font-medium">
-                Rejected rows: {importSummary.rejectedRows.length}
-              </p>
+            <div className="mt-4 space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <SummaryMetric label="Rows imported" value={String(importSummary.insertedCount)} />
+                <SummaryMetric label="Rows auto-mapped" value={String(importSummary.autoMappedRows)} />
+                <SummaryMetric label="Rows needing review" value={String(importSummary.rowsNeedingReview)} />
+                <SummaryMetric label="Rejected rows" value={String(importSummary.rejectedRows.length)} />
+              </div>
+
+              <div className="grid gap-3 lg:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                    Missing critical categories
+                  </p>
+                  <p className="mt-2 text-sm text-slate-700">
+                    {importSummary.missingCriticalCategories.length > 0
+                      ? importSummary.missingCriticalCategories.join(", ")
+                      : "None detected in this import scope."}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                    Next actions
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {importSummary.nextActions.map((action) => (
+                      <span
+                        key={action}
+                        className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700"
+                      >
+                        {action}
+                      </span>
+                    ))}
+                  </div>
+                  <p className="mt-3 text-sm text-slate-600">
+                    Source Data summary, completion state, and fix-it navigation refresh immediately after a successful import.
+                  </p>
+                </div>
+              </div>
+
+              {importSummary.workbookFollowUps.length > 0 ? (
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                    Workbook follow-ups
+                  </p>
+                  <div className="mt-2 space-y-2">
+                    {importSummary.workbookFollowUps.map((item) => (
+                      <p key={item} className="text-sm text-slate-700">
+                        {item}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {importSummary.workbookFixIts.length > 0 ? (
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                    Workbook Fix-It actions
+                  </p>
+                  <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                    {importSummary.workbookFixIts.map((task) => (
+                      <div
+                        key={task.key}
+                        className={`rounded-2xl border px-4 py-3 ${workbookFixItSeverityClass(task.severity)}`}
+                      >
+                        <p className="text-sm font-semibold">{task.label}</p>
+                        <p className="mt-1 text-sm opacity-90">{task.reason}</p>
+                        <Link
+                          href={task.href}
+                          className="mt-3 inline-flex rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-slate-900 ring-1 ring-slate-200 hover:bg-slate-50"
+                        >
+                          {task.actionLabel}
+                        </Link>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-3 text-sm text-slate-600">
+                    These actions reuse the existing Source Data Fix-It routing so workbook blockers can be revisited from the same workflow.
+                  </p>
+                </div>
+              ) : null}
+
+              {importSummary.rejectedRows.length > 0 ? (
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                    Rejected rows
+                  </p>
+                  <div className="mt-2 space-y-2">
+                    {importSummary.rejectedRows.slice(0, 6).map((row) => (
+                      <p key={`${row.rowNumber}-${row.accountName}-${row.reason}`} className="text-sm text-slate-700">
+                        Row {row.rowNumber}: {row.accountName || "Untitled row"} ({row.reason})
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </div>
           ) : null}
         </section>
@@ -1139,6 +1707,15 @@ function StepHeading({
       {badge ? (
         <div className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-600">{badge}</div>
       ) : null}
+    </div>
+  );
+}
+
+function SummaryMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+      <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">{label}</p>
+      <p className="mt-2 text-xl font-semibold text-slate-900">{value}</p>
     </div>
   );
 }

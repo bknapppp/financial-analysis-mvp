@@ -190,7 +190,7 @@ function normalizeQuarterLabel(rawValue: string) {
 
 function normalizeYearLabel(rawValue: string) {
   const compact = rawValue.trim().replace(/\s+/g, " ");
-  const bareYear = compact.match(/^(?:(?:FY|CY)\s*)?('?[\d]{2,4})$/i);
+  const bareYear = compact.match(/^(?:(?:FY|CY)\s*)?('?[\d]{2,4})(?:A)?$/i);
 
   if (!bareYear) {
     return null;

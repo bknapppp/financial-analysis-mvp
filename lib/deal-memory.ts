@@ -140,7 +140,9 @@ type RealRiskFlag = {
 type RealPortfolioDealState = {
   status:
     | "Needs source data"
+    | "Needs workbook review"
     | "Needs mapping"
+    | "Needs source completion"
     | "Needs underwriting inputs"
     | "Underwriting in progress"
     | "Ready for structure"
@@ -459,7 +461,11 @@ function summarizeSnapshotReason(context: DealMemoryRuntimeContext) {
 function mapPortfolioStatusToStage(
   status: RealPortfolioDealState["status"]
 ): DealMemoryCurrentStage {
-  if (status === "Needs source data") {
+  if (
+    status === "Needs source data" ||
+    status === "Needs workbook review" ||
+    status === "Needs source completion"
+  ) {
     return "ingestion";
   }
 

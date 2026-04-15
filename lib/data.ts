@@ -12,7 +12,9 @@ import { buildDealDecision } from "@/lib/deal-decision";
 import {
   derivePortfolioDealState,
   getPrimaryRiskSeverity,
-  type PortfolioDealStatus
+  type PortfolioDealStatus,
+  type PortfolioReadinessBlockerCategory,
+  type PortfolioReadinessStateKey
 } from "@/lib/portfolio-deal-state";
 import { buildRiskFlags } from "@/lib/risk-flags";
 import { buildUnderwritingCompletion } from "@/lib/underwriting/completion";
@@ -22,7 +24,10 @@ export type DealScreenerRow = {
   companyId: string;
   companyName: string;
   industry: string | null;
+  readinessStateKey: PortfolioReadinessStateKey;
   status: PortfolioDealStatus;
+  blockerCount: number;
+  primaryBlockerCategory: PortfolioReadinessBlockerCategory | null;
   completionPercent: number;
   currentBlocker: string | null;
   nextAction: string;
@@ -185,7 +190,10 @@ function buildDealScreenerRow(params: {
     companyId: context.company.id,
     companyName: context.company.name,
     industry: context.company.industry,
+    readinessStateKey: portfolioState.stateKey,
     status: portfolioState.status,
+    blockerCount: portfolioState.blockers.length,
+    primaryBlockerCategory: portfolioState.primaryBlocker?.category ?? null,
     completionPercent: context.completionSummary.completionPercent,
     currentBlocker: portfolioState.currentBlocker,
     nextAction: portfolioState.nextAction,

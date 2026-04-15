@@ -28,6 +28,11 @@ expectPeriod(
 );
 
 expectPeriod(
+  { periodLabel: "2022A" },
+  { label: "2022", periodDate: "2022-01-01" }
+);
+
+expectPeriod(
   { periodLabel: "CY '15" },
   { label: "2015", periodDate: "2015-01-01" }
 );
