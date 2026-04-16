@@ -92,6 +92,63 @@ function buildHelpers(params?: {
   assert.equal(snapshot.revenue, null);
   assert.equal(snapshot.ebitdaMargin, null);
   assert.equal(snapshot.revenueBand, null);
+  assert.equal(snapshot.snapshotReason, "Quarterly refresh");
+}
+
+{
+  const snapshot = await buildDealMemorySnapshotWithHelpers(
+    "deal-revenue-unavailable",
+    buildHelpers({
+      financialOutputs: {
+        companyId: "company-1",
+        revenue: null,
+        ebitda: 500_000,
+        adjustedEbitda: 600_000,
+        industry: "HVAC",
+        reconciliationStatus: "balanced"
+      },
+      workflowState: {
+        companyId: "company-1",
+        completionPercent: 85,
+        currentStage: "underwriting",
+        snapshotReason: "Revenue available"
+      }
+    })
+  );
+
+  assert.equal(snapshot.snapshotReason, "Revenue unavailable");
+}
+
+{
+  const snapshot = await buildDealMemorySnapshotWithHelpers(
+    "deal-insufficient-financials",
+    buildHelpers({
+      financialOutputs: {
+        companyId: "company-1",
+        revenue: null,
+        ebitda: null,
+        adjustedEbitda: null,
+        industry: "HVAC",
+        reconciliationStatus: "unknown"
+      },
+      dataQualitySummary: {
+        sourceCompletenessScore: 15,
+        hasTaxReturns: false,
+        hasFinancialStatements: false,
+        reconciliationStatus: "unknown"
+      },
+      workflowState: {
+        companyId: "company-1",
+        completionPercent: 20,
+        currentStage: "ingestion",
+        snapshotReason: "Revenue available"
+      }
+    })
+  );
+
+  assert.equal(snapshot.revenue, null);
+  assert.equal(snapshot.ebitda, null);
+  assert.equal(snapshot.snapshotReason, "Insufficient financial data");
 }
 
 {
@@ -119,10 +176,7 @@ function buildHelpers(params?: {
 
   assert.equal(ineligibleSnapshot.isSnapshotReady, true);
   assert.equal(ineligibleSnapshot.isBenchmarkEligible, false);
-  assert.equal(
-    ineligibleSnapshot.snapshotReason,
-    "Industry is missing, so peer benchmarking would not be comparable."
-  );
+  assert.equal(ineligibleSnapshot.snapshotReason, "Quarterly refresh");
 }
 
 {

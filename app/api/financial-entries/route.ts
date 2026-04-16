@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { captureDealMemorySnapshotSafely } from "@/lib/deal-memory-capture";
 import {
   FINANCIAL_ENTRY_AUDIT_SELECT,
   FINANCIAL_ENTRY_BASE_SELECT,
@@ -93,6 +94,19 @@ export async function POST(request: NextRequest) {
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  const periodCompanyLookup = await supabase
+    .from("reporting_periods")
+    .select("company_id")
+    .eq("id", body.periodId)
+    .maybeSingle<{ company_id: string }>();
+
+  if (periodCompanyLookup.data?.company_id) {
+    await captureDealMemorySnapshotSafely(
+      periodCompanyLookup.data.company_id,
+      "financial-entries:create-manual-entry"
+    );
   }
 
   return NextResponse.json({ data }, { status: 201 });

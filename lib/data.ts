@@ -293,12 +293,32 @@ export async function getDashboardData(
 ): Promise<DashboardData> {
   try {
     const companies = await getCompanies();
+    if (process.env.NODE_ENV !== "production") {
+      console.info("getDashboardData fetched companies", {
+        requestedCompanyId: companyId ?? null,
+        companyIds: companies.map((item) => item.id)
+      });
+    }
     const company = companies.find((item) => item.id === companyId) ?? companies[0] ?? null;
+
+    if (process.env.NODE_ENV !== "production") {
+      console.info("getDashboardData resolved company", {
+        requestedCompanyId: companyId ?? null,
+        resolvedCompanyId: company?.id ?? null,
+        resolvedCompanyName: company?.name ?? null
+      });
+    }
 
     if (!company) {
       return buildEmptyDashboardData(companies);
     }
 
+    if (process.env.NODE_ENV !== "production") {
+      console.info("getDashboardData loading derived context", {
+        requestedCompanyId: companyId ?? null,
+        derivedContextLookupCompanyId: company.id
+      });
+    }
     const context = await getDealDerivedContext(company.id);
 
     if (!context) {

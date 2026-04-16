@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ADD_BACK_SELECT } from "@/lib/add-back-schema";
+import { captureDealMemorySnapshotSafely } from "@/lib/deal-memory-capture";
 import { getSupabaseServerClient } from "@/lib/supabase";
 import type {
   AddBackClassificationConfidence,
@@ -66,6 +67,17 @@ export async function PATCH(
       justification?: string;
       supportingReference?: string | null;
     };
+    const supabase = getSupabaseServerClient();
+    const existing = await supabase
+      .from("add_backs")
+      .select("company_id, status")
+      .eq("id", id)
+      .single<{ company_id: string; status: AddBackStatus }>();
+
+    if (existing.error) {
+      console.error("Failed to load add-back before update", { id, error: existing.error });
+      return NextResponse.json({ error: existing.error.message }, { status: 500 });
+    }
 
     const updates: Record<string, string | number | null> = {
       updated_at: new Date().toISOString()
@@ -137,7 +149,6 @@ export async function PATCH(
       updates.supporting_reference = body.supportingReference?.trim() || null;
     }
 
-    const supabase = getSupabaseServerClient();
     const { data, error } = await supabase
       .from("add_backs")
       .update(updates)
@@ -148,6 +159,18 @@ export async function PATCH(
     if (error) {
       console.error("Failed to update add-back", { id, error });
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    const nextStatus =
+      body.status !== undefined ? parseStatus(body.status) : existing.data.status;
+    const shouldCapture =
+      existing.data.status === "accepted" || nextStatus === "accepted";
+
+    if (shouldCapture) {
+      await captureDealMemorySnapshotSafely(
+        existing.data.company_id,
+        "add-backs:update-add-back"
+      );
     }
 
     return NextResponse.json({ data });
@@ -169,9 +192,9 @@ export async function DELETE(
     const supabase = getSupabaseServerClient();
     const existing = await supabase
       .from("add_backs")
-      .select("id, source")
+      .select("id, source, company_id, status")
       .eq("id", id)
-      .single<{ id: string; source: AddBackSource }>();
+      .single<{ id: string; source: AddBackSource; company_id: string; status: AddBackStatus }>();
 
     if (existing.error) {
       console.error("Failed to load add-back before delete", { id, error: existing.error });
@@ -190,6 +213,13 @@ export async function DELETE(
     if (error) {
       console.error("Failed to delete add-back", { id, error });
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    if (existing.data.status === "accepted") {
+      await captureDealMemorySnapshotSafely(
+        existing.data.company_id,
+        "add-backs:delete-accepted-add-back"
+      );
     }
 
     return NextResponse.json({ success: true });

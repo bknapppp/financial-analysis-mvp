@@ -99,3 +99,34 @@ export async function captureDealMemorySnapshot(
 ): Promise<CaptureDealMemorySnapshotResult> {
   return captureDealMemorySnapshotWithDependencies(dealId, defaultDependencies);
 }
+
+export async function captureDealMemorySnapshotSafely(
+  dealId: string,
+  context: string
+) {
+  try {
+    const result = await captureDealMemorySnapshot(dealId);
+
+    if (!result.success) {
+      console.error("Deal memory snapshot capture did not succeed", {
+        dealId,
+        context,
+        error: result.error
+      });
+    }
+
+    return result;
+  } catch (error) {
+    console.error("Deal memory snapshot capture failed gracefully", {
+      dealId,
+      context,
+      error
+    });
+
+    return {
+      success: false,
+      snapshot: null,
+      error
+    } satisfies CaptureDealMemorySnapshotResult;
+  }
+}

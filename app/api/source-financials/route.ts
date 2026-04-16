@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { captureDealMemorySnapshotSafely } from "@/lib/deal-memory-capture";
 import {
   getSourceFinancialContext,
   insertTaxReturnFinancialContext
@@ -157,6 +158,11 @@ export async function POST(request: NextRequest) {
         mappingExplanation: row.mappingExplanation ?? null
       }))
     });
+
+    await captureDealMemorySnapshotSafely(
+      companyId,
+      "source-financials:tax-return-ingestion-complete"
+    );
 
     return NextResponse.json({ data: result }, { status: 201 });
   } catch (error) {

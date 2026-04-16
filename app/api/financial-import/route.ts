@@ -16,6 +16,7 @@ import {
   normalizeImportedPeriod,
   normalizeStoredReportingPeriod
 } from "@/lib/import-periods";
+import { captureDealMemorySnapshotSafely } from "@/lib/deal-memory-capture";
 import { saveConfirmedMappingToMemory } from "@/lib/mapping-memory";
 import { getSupabaseServerClient } from "@/lib/supabase";
 import type {
@@ -685,6 +686,11 @@ export async function POST(request: NextRequest) {
         throw error;
       }
     }
+
+    await captureDealMemorySnapshotSafely(
+      companyId,
+      "financial-import:source-data-import-complete"
+    );
 
     return NextResponse.json({
       insertedCount: rowsToInsert.length,

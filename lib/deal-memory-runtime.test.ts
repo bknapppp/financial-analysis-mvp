@@ -141,6 +141,25 @@ function createRuntimeContext(): DealMemoryRuntimeContext {
 
 {
   const context = createRuntimeContext();
+  context.data.snapshot = {
+    ...context.data.snapshot,
+    periodId: "",
+    revenue: 0,
+    ebitda: null,
+    adjustedEbitda: null,
+    ebitdaMarginPercent: null
+  };
+
+  const financialOutputs = buildDealFinancialOutputsFromRuntime(context);
+  const dataQualitySummary = buildDealDataQualitySummaryFromRuntime(context);
+
+  assert.equal(financialOutputs.revenue, null);
+  assert.equal(financialOutputs.ebitda, null);
+  assert.equal(dataQualitySummary.snapshotReason, "Insufficient financial data");
+}
+
+{
+  const context = createRuntimeContext();
   context.data.readiness = {
     status: "blocked",
     label: "Not reliable",
@@ -166,10 +185,7 @@ function createRuntimeContext(): DealMemoryRuntimeContext {
   assert.equal(riskSummary.blockerCount, 2);
   assert.equal(workflowState.currentStage, "ingestion");
   assert.equal(dataQualitySummary.isSnapshotReady, false);
-  assert.equal(
-    dataQualitySummary.snapshotReason,
-    "Revenue available"
-  );
+  assert.equal(dataQualitySummary.snapshotReason, "Revenue available");
 }
 
 console.log("deal-memory runtime tests passed");

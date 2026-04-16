@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ADD_BACK_SELECT, isAddBacksSchemaError } from "@/lib/add-back-schema";
+import { captureDealMemorySnapshotSafely } from "@/lib/deal-memory-capture";
 import { getSupabaseServerClient } from "@/lib/supabase";
 import type {
   AddBack,
@@ -240,6 +241,16 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: error.message }, { status: 500 });
         }
 
+        const shouldCapture =
+          current.status === "accepted" || status === "accepted";
+
+        if (shouldCapture && typeof companyId === "string") {
+          await captureDealMemorySnapshotSafely(
+            companyId,
+            "add-backs:update-existing-add-back"
+          );
+        }
+
         return NextResponse.json({ data }, { status: 200 });
       }
     }
@@ -272,6 +283,13 @@ export async function POST(request: NextRequest) {
 
       console.error("Failed to create add-back", { companyId, periodId, error });
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    if (status === "accepted" && typeof companyId === "string") {
+      await captureDealMemorySnapshotSafely(
+        companyId,
+        "add-backs:create-accepted-add-back"
+      );
     }
 
     return NextResponse.json({ data }, { status: 201 });

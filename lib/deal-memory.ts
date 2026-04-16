@@ -458,6 +458,33 @@ function summarizeSnapshotReason(context: DealMemoryRuntimeContext) {
   return null;
 }
 
+function deriveFinancialSnapshotReason(params: {
+  explicitReason: string | null | undefined;
+  workflowReason: string | null | undefined;
+  revenue: number | null;
+  ebitda: number | null;
+  adjustedEbitda: number | null;
+}) {
+  const normalizedExplicitReason = normalizeText(params.explicitReason);
+  const normalizedWorkflowReason = normalizeText(params.workflowReason);
+  const fallbackReason =
+    normalizedExplicitReason ?? normalizedWorkflowReason ?? null;
+
+  if (fallbackReason && fallbackReason !== "Revenue available") {
+    return fallbackReason;
+  }
+
+  if (isFiniteNumber(params.revenue)) {
+    return "Revenue available";
+  }
+
+  if (isFiniteNumber(params.ebitda) || isFiniteNumber(params.adjustedEbitda)) {
+    return "Revenue unavailable";
+  }
+
+  return "Insufficient financial data";
+}
+
 function mapPortfolioStatusToStage(
   status: RealPortfolioDealState["status"]
 ): DealMemoryCurrentStage {
@@ -675,7 +702,13 @@ export function buildDealDataQualitySummaryFromRuntime(
     reconciliationStatus: financialOutputs.reconciliationStatus,
     isSnapshotReady,
     isBenchmarkEligible: benchmarkEligibility.eligible,
-    snapshotReason: summarizeSnapshotReason(context) ?? benchmarkEligibility.reason
+    snapshotReason: deriveFinancialSnapshotReason({
+      explicitReason: summarizeSnapshotReason(context),
+      workflowReason: null,
+      revenue: financialOutputs.revenue ?? null,
+      ebitda: financialOutputs.ebitda ?? null,
+      adjustedEbitda: financialOutputs.adjustedEbitda ?? null
+    })
   };
 }
 
@@ -700,7 +733,22 @@ async function loadDealMemoryRuntimeContext(
 
     const data = (await getDashboardData(dealId)) as DealMemoryRuntimeData;
 
+    if (process.env.NODE_ENV !== "production") {
+      console.info("loadDealMemoryRuntimeContext dashboard data", {
+        inputDealId: dealId,
+        company: data.company ?? null,
+        companyId: data.company?.id ?? null
+      });
+    }
+
     if (!data.company || data.company.id !== dealId) {
+      if (process.env.NODE_ENV !== "production") {
+        console.error("loadDealMemoryRuntimeContext company mismatch", {
+          inputDealId: dealId,
+          company: data.company ?? null,
+          companyId: data.company?.id ?? null
+        });
+      }
       throw new Error(`Unable to load deal memory context for ${dealId}.`);
     }
 
@@ -897,17 +945,13 @@ export async function buildDealMemorySnapshotWithHelpers(
         ? dataQualitySummary.isBenchmarkEligible
         : benchmarkEligibility.eligible,
     financialsConfidence,
-    snapshotReason:
-      typeof dataQualitySummary.isBenchmarkEligible === "boolean" &&
-      typeof dataQualitySummary.snapshotReason === "string"
-        ? normalizeText(dataQualitySummary.snapshotReason)
-        : (typeof dataQualitySummary.isBenchmarkEligible === "boolean"
-            ? dataQualitySummary.isBenchmarkEligible
-            : benchmarkEligibility.eligible)
-          ? normalizeText(dataQualitySummary.snapshotReason) ??
-            normalizeText(workflowState.snapshotReason) ??
-            benchmarkEligibility.reason
-          : normalizeText(dataQualitySummary.snapshotReason) ?? benchmarkEligibility.reason
+    snapshotReason: deriveFinancialSnapshotReason({
+      explicitReason: dataQualitySummary.snapshotReason,
+      workflowReason: workflowState.snapshotReason,
+      revenue,
+      ebitda,
+      adjustedEbitda
+    })
   };
 }
 
