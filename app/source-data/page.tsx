@@ -5,7 +5,6 @@ import { EntryForm } from "@/components/entry-form";
 import { PeriodForm } from "@/components/period-form";
 import { SourceDataSummaryPanel } from "@/components/source-data-summary-panel";
 import { SourceReconciliationCard } from "@/components/source-reconciliation-card";
-import { UnderwritingCompletionPanel } from "@/components/underwriting-completion-panel";
 import { getDashboardData } from "@/lib/data";
 
 export const revalidate = 60;
@@ -21,6 +20,7 @@ export default async function SourceDataPage({
   const companyId = data.company?.id ?? null;
   const overviewHref = companyId ? `/deal/${companyId}` : "/";
   const financialsHref = companyId ? `/financials?companyId=${companyId}` : "/financials";
+  const underwritingHref = companyId ? `/deal/${companyId}/underwriting` : "/";
   const sourceDataHref = companyId ? `/source-data?companyId=${companyId}` : "/source-data";
 
   return (
@@ -35,6 +35,7 @@ export default async function SourceDataPage({
                 allDealsHref="/deals"
                 overviewHref={overviewHref}
                 financialsHref={financialsHref}
+                underwritingHref={underwritingHref}
                 sourceDataHref={sourceDataHref}
               />
               <p className="text-xs font-medium uppercase tracking-[0.24em] text-slate-500">
@@ -45,7 +46,7 @@ export default async function SourceDataPage({
                 Source Data
               </h1>
               <p className="mt-3 text-sm text-slate-600 md:text-base">
-                Complete company setup, upload financial data, and handle targeted manual adjustments outside the main review workflow.
+                Ingestion, mapping, and reconciliation for the reported source package.
               </p>
             </div>
 
@@ -54,10 +55,6 @@ export default async function SourceDataPage({
 
         <section>
           <div className="space-y-6">
-            <UnderwritingCompletionPanel
-              companyId={data.company?.id ?? null}
-              summary={data.completionSummary}
-            />
             <SourceDataSummaryPanel data={data} />
             <SourceReconciliationCard
               companyId={data.company?.id ?? null}

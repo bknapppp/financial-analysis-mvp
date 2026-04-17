@@ -202,7 +202,7 @@ export function CreditScenarioPanel({
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
-            Income Statement Analysis
+            Credit Analysis
           </p>
           <h2 className="mt-2 text-lg font-semibold text-slate-900">
             Underwriting Workbench
@@ -336,6 +336,19 @@ export function CreditScenarioPanel({
               <p className="mt-1 text-sm text-slate-500">
                 Once loan amount, rate, term, amortization, and collateral value are entered, the workbench will calculate annual debt service, coverage, leverage, and LTV against the selected EBITDA basis.
               </p>
+            </section>
+          ) : null}
+
+          {scenario.adverseSignals.length > 0 ? (
+            <section className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4">
+              <p className="text-sm font-medium text-slate-900">
+                Adverse credit signals
+              </p>
+              <div className="mt-2 space-y-1 text-sm text-slate-700">
+                {scenario.adverseSignals.map((signal) => (
+                  <p key={signal}>{signal}</p>
+                ))}
+              </div>
             </section>
           ) : null}
 

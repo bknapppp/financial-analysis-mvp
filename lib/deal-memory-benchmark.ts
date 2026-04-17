@@ -72,7 +72,7 @@ type GetBenchmarkPeerSetDependencies = {
 };
 
 const defaultDependencies: GetBenchmarkPeerSetDependencies = {
-  getSupabaseClient: () => getSupabaseServerClient() as DealMemoryBenchmarkClient,
+  getSupabaseClient: () => getSupabaseServerClient() as unknown as DealMemoryBenchmarkClient,
   logger: console
 };
 
@@ -114,7 +114,10 @@ function sortPeers(
 function selectPeers(params: {
   currentSnapshot: DealMemoryInsertRow | null;
   candidates: DealMemoryInsertRow[];
-}) {
+}): {
+  peers: DealMemoryInsertRow[];
+  filtersApplied: BenchmarkPeerFiltersApplied;
+} {
   const { currentSnapshot, candidates } = params;
 
   if (!currentSnapshot) {

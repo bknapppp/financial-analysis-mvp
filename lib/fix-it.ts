@@ -55,6 +55,18 @@ function buildHrefWithTarget(href: string, target: FixItTarget) {
   return `${url.pathname}${url.search}${url.hash}`;
 }
 
+function extractCompanyIdFromHref(href: string) {
+  const url = new URL(href, "https://fix-it.local");
+  const companyIdFromQuery = url.searchParams.get("companyId");
+
+  if (companyIdFromQuery) {
+    return companyIdFromQuery;
+  }
+
+  const match = url.pathname.match(/^\/deal\/([^/]+)/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
 function getUnderwritingFieldId(action: string) {
   const normalizedAction = action.toLowerCase();
 
@@ -94,6 +106,9 @@ function getUnderwritingFieldId(action: string) {
 
 export function buildFixItHref(action: string, fallbackHref: string) {
   const normalizedAction = action.toLowerCase();
+  const companyId = extractCompanyIdFromHref(fallbackHref);
+  const underwritingHref = companyId ? `/deal/${companyId}/underwriting` : fallbackHref;
+  const sourceDataHref = companyId ? `/source-data?companyId=${companyId}` : "/source-data";
 
   if (
     normalizedAction.includes("review add-backs") ||
@@ -101,9 +116,8 @@ export function buildFixItHref(action: string, fallbackHref: string) {
     normalizedAction.includes("add-back layer") ||
     normalizedAction.includes("addback layer")
   ) {
-    return buildHrefWithTarget(fallbackHref, {
-      sectionId: ADD_BACK_LAYER_SECTION_ID,
-      tab: "financials"
+    return buildHrefWithTarget(underwritingHref, {
+      sectionId: ADD_BACK_LAYER_SECTION_ID
     });
   }
 
@@ -123,8 +137,7 @@ export function buildFixItHref(action: string, fallbackHref: string) {
     normalizedAction.includes("period mismatch") ||
     normalizedAction.includes("review detected periods")
   ) {
-    return buildHrefWithTarget(fallbackHref, {
-      pathname: "/source-data",
+    return buildHrefWithTarget(sourceDataHref, {
       sectionId: SOURCE_DATA_UPLOAD_SECTION_ID,
       fieldId: SOURCE_DATA_FILE_FIELD_ID,
       step:
@@ -144,10 +157,9 @@ export function buildFixItHref(action: string, fallbackHref: string) {
     normalizedAction.includes("prepare output") ||
     normalizedAction.includes("continue underwriting")
   ) {
-    return buildHrefWithTarget(fallbackHref, {
+    return buildHrefWithTarget(underwritingHref, {
       sectionId: UNDERWRITING_WORKBENCH_SECTION_ID,
-      fieldId: underwritingFieldId,
-      tab: "overview"
+      fieldId: underwritingFieldId
     });
   }
 

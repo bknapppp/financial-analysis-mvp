@@ -501,16 +501,16 @@ export function CsvImportSection({
         lineItemHints: sheet.analysis.likelyFinancialLineItemHints,
         workbookRole:
           workbookContext?.primaryIncomeStatementSheetName === sheet.name
-            ? "primary_income_statement"
+            ? ("primary_income_statement" as const)
             : workbookContext?.primaryBalanceSheetSheetName === sheet.name
-              ? "primary_balance_sheet"
+              ? ("primary_balance_sheet" as const)
               : workbookContext?.primaryCashFlowSheetName === sheet.name
-                ? "primary_cash_flow"
+                ? ("primary_cash_flow" as const)
                 : workbookContext?.ambiguousSheetNames.includes(sheet.name)
-                  ? "ambiguous"
+                  ? ("ambiguous" as const)
                   : workbookContext?.supportingSheetNames.includes(sheet.name)
-                    ? "supporting"
-                    : "other",
+                    ? ("supporting" as const)
+                    : ("other" as const),
         workbookReason: workbookContext?.selectionReasons[sheet.name] ?? null
       })) ?? [],
     [parsedFile, workbookContext]
@@ -986,17 +986,18 @@ export function CsvImportSection({
       (row) => !row.isExcluded && (row.confidence === "low" || !row.category || !row.statementType)
     ).length;
     const missingCriticalCategories = summarizeMissingCriticalCategories(groupedPreviewRows);
+    const selectedSheetName = selectedSheet?.name ?? null;
     const workbookFollowUpNotes = [
       ...(workbookContext?.gaps ?? []),
       ...(workbookContext?.conflicts ?? []),
-      selectedSheet?.name === workbookContext?.primaryIncomeStatementSheetName
-        ? `Imported primary income statement from ${selectedSheet.name}.`
-        : selectedSheet?.name === workbookContext?.primaryBalanceSheetSheetName
-          ? `Imported primary balance sheet from ${selectedSheet.name}.`
-          : selectedSheet?.name === workbookContext?.primaryCashFlowSheetName
-            ? `Imported primary cash flow sheet from ${selectedSheet.name}.`
-            : selectedSheet
-              ? `Imported ${selectedSheet.name}; workbook-level primary statement selections remain available for follow-up.`
+      selectedSheetName === workbookContext?.primaryIncomeStatementSheetName
+        ? `Imported primary income statement from ${selectedSheetName}.`
+        : selectedSheetName === workbookContext?.primaryBalanceSheetSheetName
+          ? `Imported primary balance sheet from ${selectedSheetName}.`
+          : selectedSheetName === workbookContext?.primaryCashFlowSheetName
+            ? `Imported primary cash flow sheet from ${selectedSheetName}.`
+            : selectedSheetName
+              ? `Imported ${selectedSheetName}; workbook-level primary statement selections remain available for follow-up.`
               : null,
       !workbookContext?.primaryBalanceSheetSheetName
         ? "Balance sheet not detected in workbook context."

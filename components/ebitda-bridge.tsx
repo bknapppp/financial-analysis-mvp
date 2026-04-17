@@ -48,7 +48,13 @@ export function EbitdaBridge({
       </div>
 
       <div className="mt-5 space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-        <BridgeRow label="Canonical EBITDA" value={bridge.reportedEbitda} />
+        <BridgeRow label="Canonical EBITDA" value={bridge.canonicalEbitda} />
+        {bridge.reportedEbitdaReference !== null ? (
+          <BridgeRow
+            label="Reported EBITDA (Reference)"
+            value={bridge.reportedEbitdaReference}
+          />
+        ) : null}
         {bridge.groups.map((group) => {
           const isExpanded = expandedType === group.type;
 

@@ -32,7 +32,7 @@ type GetLatestDealMemoryDependencies = {
 };
 
 const defaultDependencies: GetLatestDealMemoryDependencies = {
-  getSupabaseClient: () => getSupabaseServerClient() as DealMemoryReadClient,
+  getSupabaseClient: () => getSupabaseServerClient() as unknown as DealMemoryReadClient,
   logger: console
 };
 

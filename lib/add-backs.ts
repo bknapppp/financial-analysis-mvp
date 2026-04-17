@@ -290,7 +290,7 @@ export function getCanonicalPeriodAdjustment(params: {
 
 export function calculateAdjustedEbitdaForPeriod(params: {
   periodId: string;
-  reportedEbitda: number | null;
+  canonicalEbitda: number | null;
   addBacks: AddBack[];
   entries: FinancialEntry[];
 }) {
@@ -302,11 +302,11 @@ export function calculateAdjustedEbitdaForPeriod(params: {
 
   return {
     ...adjustment,
-    reportedEbitda: params.reportedEbitda,
+    canonicalEbitda: params.canonicalEbitda,
     adjustedEbitda:
-      params.reportedEbitda === null
+      params.canonicalEbitda === null
         ? null
-        : params.reportedEbitda + adjustment.acceptedAddBackTotal
+        : params.canonicalEbitda + adjustment.acceptedAddBackTotal
   };
 }
 
@@ -550,19 +550,20 @@ export function buildEbitdaBridge(params: {
   return {
     periodId: snapshot.periodId,
     periodLabel,
-    reportedEbitda: snapshot.reportedEbitda ?? null,
+    canonicalEbitda: snapshot.ebitda,
+    reportedEbitdaReference: snapshot.reportedEbitda ?? null,
     addBackTotal: canonicalAdjustment.acceptedAddBackTotal,
     adjustedEbitda:
-      readiness.status === "blocked" || snapshot.reportedEbitda === null
+      readiness.status === "blocked" || snapshot.ebitda === null
         ? null
         : calculateAdjustedEbitdaForPeriod({
             periodId: snapshot.periodId,
-            reportedEbitda: snapshot.reportedEbitda ?? null,
+            canonicalEbitda: snapshot.ebitda,
             addBacks,
             entries
           }).adjustedEbitda,
     canComputeAdjustedEbitda:
-      readiness.status !== "blocked" && snapshot.reportedEbitda !== null,
+      readiness.status !== "blocked" && snapshot.ebitda !== null,
     invalidReasons: readiness.blockingReasons,
     warnings: Array.from(
       new Set([...readiness.cautionReasons, ...warnings])

@@ -38,13 +38,13 @@ export function UnderwritingCompletionPanel({
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="max-w-3xl">
           <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
-            Next Steps
+            Underwriting Actions
           </p>
           <h2 className="mt-2 text-xl font-semibold text-slate-900">
-            Next Steps
+            Missing Inputs
           </h2>
           <p className="mt-2 text-sm text-slate-600">
-            Ordered actions tied to the missing inputs and workflow gaps that still prevent a fuller underwriting read.
+            Ordered actions tied to the missing inputs and workflow gaps that still prevent a complete underwriting output.
           </p>
         </div>
         <span
@@ -69,7 +69,7 @@ export function UnderwritingCompletionPanel({
               <div>
                 {companyId ? (
                   <Link
-                    href={buildFixItHref(item, `/deal/${companyId}`)}
+                    href={buildFixItHref(item, `/deal/${companyId}/underwriting`)}
                     className="inline-flex rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-slate-900 hover:bg-slate-100"
                   >
                     {item}

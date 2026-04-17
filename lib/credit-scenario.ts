@@ -12,7 +12,7 @@ function isPositiveNumber(value: number | null | undefined): value is number {
 
 function formatMultiple(value: number | null) {
   if (value === null || !Number.isFinite(value)) {
-    return "Insufficient data";
+    return "Not meaningful";
   }
 
   return `${value.toFixed(2)}x`;
@@ -20,7 +20,7 @@ function formatMultiple(value: number | null) {
 
 function formatOptionalCurrency(value: number | null) {
   if (value === null || !Number.isFinite(value)) {
-    return "Insufficient data";
+    return "Not meaningful";
   }
 
   return formatCurrency(value);
@@ -28,7 +28,7 @@ function formatOptionalCurrency(value: number | null) {
 
 function formatRatioPercent(value: number | null) {
   if (value === null || !Number.isFinite(value)) {
-    return "Insufficient data";
+    return "Not meaningful";
   }
 
   return formatPercent(value * 100);
@@ -171,6 +171,8 @@ export function buildCreditScenario(params: {
           years: validTermYears
         })
       : null;
+  const hasEbitdaInput = ebitda !== null && ebitda !== undefined && Number.isFinite(ebitda);
+  const hasNonPositiveEbitda = hasEbitdaInput && (ebitda as number) <= 0;
 
   const dscr =
     isPositiveNumber(ebitda ?? null) && isPositiveNumber(annualDebtService)
@@ -188,6 +190,21 @@ export function buildCreditScenario(params: {
     validLoanAmount !== null && validCollateralValue !== null
       ? validLoanAmount / validCollateralValue
       : null;
+  const adverseSignals: string[] = [];
+
+  if (hasEbitdaInput && (ebitda as number) < 0) {
+    adverseSignals.push("Negative EBITDA");
+    adverseSignals.push("Coverage not meaningful due to non-positive earnings");
+    if (annualDebtService !== null) {
+      adverseSignals.push("Debt service not supported");
+    }
+  } else if (hasEbitdaInput && (ebitda as number) === 0) {
+    adverseSignals.push("Zero EBITDA");
+    adverseSignals.push("Coverage not meaningful due to non-positive earnings");
+    if (annualDebtService !== null) {
+      adverseSignals.push("Debt service not supported");
+    }
+  }
 
   return {
     annualInterestExpense,
@@ -195,27 +212,34 @@ export function buildCreditScenario(params: {
     annualDebtService,
     balanceAtMaturity,
     canComputeDebtService,
+    adverseSignals,
     metrics: {
       dscr: buildMetric({
         label: "DSCR",
         value: dscr,
         display: formatMultiple(dscr),
-        description: "EBITDA / Annual Debt Service",
-        status: evaluateDscr(dscr)
+        description: hasNonPositiveEbitda
+          ? "Not meaningful with non-positive EBITDA"
+          : "EBITDA / Annual Debt Service",
+        status: hasNonPositiveEbitda ? "weak" : evaluateDscr(dscr)
       }),
       debtToEbitda: buildMetric({
         label: "Debt / EBITDA",
         value: debtToEbitda,
         display: formatMultiple(debtToEbitda),
-        description: "Loan Amount / EBITDA",
-        status: evaluateDebtToEbitda(debtToEbitda)
+        description: hasNonPositiveEbitda
+          ? "Not meaningful with non-positive EBITDA"
+          : "Loan Amount / EBITDA",
+        status: hasNonPositiveEbitda ? "weak" : evaluateDebtToEbitda(debtToEbitda)
       }),
       interestCoverage: buildMetric({
         label: "Interest Coverage",
         value: interestCoverage,
         display: formatMultiple(interestCoverage),
-        description: "EBITDA / Annual Interest Expense",
-        status: evaluateInterestCoverage(interestCoverage)
+        description: hasNonPositiveEbitda
+          ? "Not meaningful with non-positive EBITDA"
+          : "EBITDA / Annual Interest Expense",
+        status: hasNonPositiveEbitda ? "weak" : evaluateInterestCoverage(interestCoverage)
       }),
       ltv: buildMetric({
         label: "LTV",

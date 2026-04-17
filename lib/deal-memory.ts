@@ -379,9 +379,7 @@ function summarizeAcceptedAddbacks(addbackSummary: DealAddbackSummary) {
       : null;
   const explicitValue = isFiniteNumber(addbackSummary.addbackValue)
     ? addbackSummary.addbackValue
-    : addbackSummary.addbackValue === 0
-      ? 0
-      : null;
+    : null;
 
   if (explicitCount !== null || explicitTypes !== null || explicitValue !== null) {
     return {
@@ -766,18 +764,18 @@ async function loadDealMemoryRuntimeContext(
       ebitda: data.snapshot.adjustedEbitda
     });
     const riskFlags = buildRiskFlags({
-      snapshot: data.snapshot,
-      creditScenario,
-      readiness: data.readiness,
-      dataQuality: data.dataQuality,
-      acceptedAddBackItems
+      snapshot: data.snapshot as never,
+      creditScenario: creditScenario as never,
+      readiness: data.readiness as never,
+      dataQuality: data.dataQuality as never,
+      acceptedAddBackItems: acceptedAddBackItems as never
     }) as RealRiskFlag[];
     const portfolioState = derivePortfolioDealState({
       companyId: data.company.id,
-      completionSummary: data.completionSummary,
-      readiness: data.readiness,
-      taxSourceStatus: data.taxSourceStatus,
-      snapshot: data.snapshot
+      completionSummary: data.completionSummary as never,
+      readiness: data.readiness as never,
+      taxSourceStatus: data.taxSourceStatus as never,
+      snapshot: data.snapshot as never
     }) as RealPortfolioDealState;
 
     return {

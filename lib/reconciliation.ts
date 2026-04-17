@@ -113,16 +113,18 @@ export function buildReconciliationReport(params: {
     entries: periodEntries
   });
 
-  pushFormulaIssue({
-    issues,
-    key: "gross_profit_formula",
-    section: "income_statement",
-    metric: "Gross Profit",
-    expected: snapshot.revenue - snapshot.cogs,
-    actual: snapshot.grossProfit,
-    message: "Revenue less COGS does not reconcile to Gross Profit within tolerance.",
-    rule: RECONCILIATION_TOLERANCES.grossProfit
-  });
+  if (hasValue(snapshot.grossProfit)) {
+    pushFormulaIssue({
+      issues,
+      key: "gross_profit_formula",
+      section: "income_statement",
+      metric: "Gross Profit",
+      expected: snapshot.revenue - snapshot.cogs,
+      actual: snapshot.grossProfit,
+      message: "Revenue less COGS does not reconcile to Gross Profit within tolerance.",
+      rule: RECONCILIATION_TOLERANCES.grossProfit
+    });
+  }
 
   if (snapshot.incomeStatementMetricDebug?.ebitda.source === "bottom_up" && hasValue(snapshot.ebitda)) {
     pushFormulaIssue({

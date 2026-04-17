@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { FinancialsView } from "@/components/financials-view";
+import { OverviewView } from "@/components/financials-view";
 import { getDashboardData } from "@/lib/data";
 import {
   computeBenchmarkSummary,
@@ -316,7 +316,7 @@ export default async function DealWorkspacePage({
           </div>
         </div>
       </section>
-      <FinancialsView data={data} />
+      <OverviewView data={data} />
     </>
   );
 }

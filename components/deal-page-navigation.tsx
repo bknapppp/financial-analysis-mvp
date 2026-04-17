@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-type DealSection = "Overview" | "Financials" | "Source Data";
+type DealSection = "Overview" | "Financials" | "Underwriting" | "Source Data";
 
 type DealPageNavigationProps = {
   companyName: string;
@@ -8,6 +8,7 @@ type DealPageNavigationProps = {
   allDealsHref: string;
   overviewHref: string;
   financialsHref: string;
+  underwritingHref: string;
   sourceDataHref: string;
 };
 
@@ -17,11 +18,13 @@ export function DealPageNavigation({
   allDealsHref,
   overviewHref,
   financialsHref,
+  underwritingHref,
   sourceDataHref
 }: DealPageNavigationProps) {
   const sectionLinks: Array<{ label: DealSection; href: string }> = [
     { label: "Overview", href: overviewHref },
     { label: "Financials", href: financialsHref },
+    { label: "Underwriting", href: underwritingHref },
     { label: "Source Data", href: sourceDataHref }
   ];
 

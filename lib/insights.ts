@@ -83,8 +83,11 @@ export function generateInsights(snapshots: PeriodSnapshot[]): Insight[] {
     });
   }
 
-  const marginDelta = current.grossMarginPercent - previous.grossMarginPercent;
-  if (marginDelta < -3) {
+  const marginDelta =
+    current.grossMarginPercent !== null && previous.grossMarginPercent !== null
+      ? current.grossMarginPercent - previous.grossMarginPercent
+      : null;
+  if (marginDelta !== null && marginDelta < -3) {
     insights.push({
       type: "margin_compression",
       message: `Gross margin ${signedPointsText(marginDelta)} vs prior period`

@@ -149,7 +149,7 @@ export function UnderwritingSnapshotPanel({
         <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
           <div>
             <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
-              Deal Overview
+              Underwriting Snapshot
             </p>
             <p className="mt-1 text-sm text-slate-600 md:text-base">
               Compact underwriting snapshot for the selected period.

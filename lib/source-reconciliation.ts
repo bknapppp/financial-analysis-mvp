@@ -23,7 +23,7 @@ const HIGH_ADDBACK_THRESHOLD_PCT = 0.25;
 export type SourceReconciliationFlag = {
   type:
     | "tax_revenue_lower_than_reported"
-    | "tax_ebitda_lower_than_reported"
+    | "tax_ebitda_lower_than_computed"
     | "tax_ebitda_much_lower_than_adjusted"
     | "high_addback_percentage";
   metric: "Revenue" | "EBITDA" | "Add-backs";
@@ -44,12 +44,13 @@ export type SourceReconciliationResult = {
     deltaPct: number | null;
   };
   ebitda: {
-    reported: number | null;
+    computed: number | null;
+    reportedReference: number | null;
     adjusted: number | null;
     tax: number | null;
   };
   comparisons: {
-    reportedVsTax: {
+    computedVsTax: {
       delta: number | null;
       deltaPct: number | null;
     };
@@ -60,7 +61,7 @@ export type SourceReconciliationResult = {
   };
   addbacks: {
     amount: number | null;
-    pctOfReported: number | null;
+    pctOfComputed: number | null;
   };
   coverage: {
     hasReportedFinancials: boolean;
@@ -108,7 +109,8 @@ export function buildSourceReconciliation(params: {
   periodId: string;
   reportedPeriod: ReportingPeriod | null;
   reportedRevenue: number | null;
-  reportedEbitda: number | null;
+  computedEbitda: number | null;
+  reportedEbitdaReference?: number | null;
   adjustedEbitda: number | null;
   taxResult: TaxDerivedEbitdaResult | null;
 }): SourceReconciliationResult {
@@ -117,12 +119,12 @@ export function buildSourceReconciliation(params: {
     params.reportedRevenue,
     params.taxResult?.components.rawSigned.netRevenue ?? null
   );
-  const reportedVsTaxDelta = safeDelta(
-    params.reportedEbitda,
+  const computedVsTaxDelta = safeDelta(
+    params.computedEbitda,
     params.taxResult?.taxDerivedEBITDA ?? null
   );
-  const reportedVsTaxDeltaPct = safeDeltaPct(
-    params.reportedEbitda,
+  const computedVsTaxDeltaPct = safeDeltaPct(
+    params.computedEbitda,
     params.taxResult?.taxDerivedEBITDA ?? null
   );
   const adjustedVsTaxDelta = safeDelta(
@@ -134,14 +136,14 @@ export function buildSourceReconciliation(params: {
     params.taxResult?.taxDerivedEBITDA ?? null
   );
   const addbacksAmount =
-    params.reportedEbitda !== null && params.adjustedEbitda !== null
-      ? params.adjustedEbitda - params.reportedEbitda
+    params.computedEbitda !== null && params.adjustedEbitda !== null
+      ? params.adjustedEbitda - params.computedEbitda
       : null;
-  const addbacksPctOfReported =
-    params.reportedEbitda !== null &&
-    params.reportedEbitda !== 0 &&
+  const addbacksPctOfComputed =
+    params.computedEbitda !== null &&
+    params.computedEbitda !== 0 &&
     addbacksAmount !== null
-      ? addbacksAmount / params.reportedEbitda
+      ? addbacksAmount / params.computedEbitda
       : null;
 
   const flags: SourceReconciliationFlag[] = [];
@@ -161,16 +163,16 @@ export function buildSourceReconciliation(params: {
   }
 
   if (
-    reportedVsTaxDeltaPct !== null &&
-    reportedVsTaxDelta !== null &&
-    reportedVsTaxDeltaPct > EBITDA_DELTA_THRESHOLD_PCT &&
+    computedVsTaxDeltaPct !== null &&
+    computedVsTaxDelta !== null &&
+    computedVsTaxDeltaPct > EBITDA_DELTA_THRESHOLD_PCT &&
     (params.taxResult?.taxDerivedEBITDA ?? null) !== null
   ) {
     flags.push({
-      type: "tax_ebitda_lower_than_reported",
+      type: "tax_ebitda_lower_than_computed",
       metric: "EBITDA",
-      value: reportedVsTaxDelta,
-      explanation: "Tax-derived EBITDA is materially lower than reported EBITDA."
+      value: computedVsTaxDelta,
+      explanation: "Tax-derived EBITDA is materially lower than canonical EBITDA."
     });
   }
 
@@ -189,15 +191,15 @@ export function buildSourceReconciliation(params: {
   }
 
   if (
-    addbacksPctOfReported !== null &&
+    addbacksPctOfComputed !== null &&
     addbacksAmount !== null &&
-    addbacksPctOfReported > HIGH_ADDBACK_THRESHOLD_PCT
+    addbacksPctOfComputed > HIGH_ADDBACK_THRESHOLD_PCT
   ) {
     flags.push({
       type: "high_addback_percentage",
       metric: "Add-backs",
       value: addbacksAmount,
-      explanation: "Accepted add-backs represent a high percentage of reported EBITDA."
+      explanation: "Accepted add-backs represent a high percentage of canonical EBITDA."
     });
   }
 
@@ -214,14 +216,15 @@ export function buildSourceReconciliation(params: {
       deltaPct: revenueDeltaPct
     },
     ebitda: {
-      reported: params.reportedEbitda,
+      computed: params.computedEbitda,
+      reportedReference: params.reportedEbitdaReference ?? null,
       adjusted: params.adjustedEbitda,
       tax: params.taxResult?.taxDerivedEBITDA ?? null
     },
     comparisons: {
-      reportedVsTax: {
-        delta: reportedVsTaxDelta,
-        deltaPct: reportedVsTaxDeltaPct
+      computedVsTax: {
+        delta: computedVsTaxDelta,
+        deltaPct: computedVsTaxDeltaPct
       },
       adjustedVsTax: {
         delta: adjustedVsTaxDelta,
@@ -230,11 +233,11 @@ export function buildSourceReconciliation(params: {
     },
     addbacks: {
       amount: addbacksAmount,
-      pctOfReported: addbacksPctOfReported
+      pctOfComputed: addbacksPctOfComputed
     },
     coverage: {
       hasReportedFinancials:
-        params.reportedRevenue !== null || params.reportedEbitda !== null,
+        params.reportedRevenue !== null || params.computedEbitda !== null,
       hasTaxData: params.taxResult !== null && params.taxResult.entryCount > 0,
       hasAdjustedEBITDA: params.adjustedEbitda !== null
     },
@@ -365,7 +368,8 @@ export async function getSourceReconciliationForContext(params: {
     periodId: params.periodId,
     reportedPeriod,
     reportedRevenue: reportedSnapshot?.revenue ?? null,
-    reportedEbitda: reportedSnapshot?.ebitda ?? null,
+    computedEbitda: reportedSnapshot?.ebitda ?? null,
+    reportedEbitdaReference: reportedSnapshot?.reportedEbitda ?? null,
     adjustedEbitda: reportedSnapshot?.adjustedEbitda ?? null,
     taxResult
   });

@@ -269,7 +269,7 @@ export type PeriodSnapshot = {
   periodDate?: string;
   revenue: number;
   cogs: number;
-  grossProfit: number;
+  grossProfit: number | null;
   operatingExpenses: number;
   depreciationAndAmortization?: number;
   nonOperating?: number;
@@ -281,7 +281,7 @@ export type PeriodSnapshot = {
   ebitda: number | null;
   acceptedAddBacks: number;
   adjustedEbitda: number | null;
-  grossMarginPercent: number;
+  grossMarginPercent: number | null;
   ebitdaMarginPercent: number | null;
   adjustedEbitdaMarginPercent: number | null;
   currentAssets: number;
@@ -420,6 +420,7 @@ export type CreditScenarioResult = {
   annualDebtService: number | null;
   balanceAtMaturity: number | null;
   canComputeDebtService: boolean;
+  adverseSignals: string[];
   metrics: {
     dscr: CreditScenarioMetric;
     debtToEbitda: CreditScenarioMetric;
@@ -576,7 +577,7 @@ export type TaxSourceStatus = {
   missingComponents: string[];
   notes: string[];
   revenueDeltaPercent: number | null;
-  reportedEbitdaDeltaPercent: number | null;
+  computedEbitdaDeltaPercent: number | null;
   adjustedEbitdaDeltaPercent: number | null;
 };
 
@@ -691,7 +692,8 @@ export type EbitdaBridgeCategoryGroup = {
 export type EbitdaBridge = {
   periodId: string;
   periodLabel: string;
-  reportedEbitda: number | null;
+  canonicalEbitda: number | null;
+  reportedEbitdaReference: number | null;
   addBackTotal: number;
   adjustedEbitda: number | null;
   canComputeAdjustedEbitda: boolean;
@@ -710,7 +712,7 @@ export type NormalizedPeriodOutput = {
   reportedEbitda: number | null;
   acceptedAddBacks: number;
   adjustedEbitda: number | null;
-  grossMarginPercent: number;
+  grossMarginPercent: number | null;
   reportedEbitdaMarginPercent: number | null;
   adjustedEbitdaMarginPercent: number | null;
   reportedEbitdaGrowthPercent: number | null;

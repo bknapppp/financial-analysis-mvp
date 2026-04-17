@@ -117,6 +117,10 @@ function hasLargeSwing(value: number | null) {
   return value !== null && Number.isFinite(value) && Math.abs(value) > 200;
 }
 
+function hasValue(value: number | null | undefined): value is number {
+  return value !== null && value !== undefined && Number.isFinite(value);
+}
+
 function scoreLabel(score: number): "High" | "Medium" | "Low" {
   if (score >= 80) return "High";
   if (score >= 55) return "Medium";
@@ -195,8 +199,9 @@ export function buildDataQualityReport({
 
   if (latestSnapshot) {
     if (
-      latestSnapshot.grossMarginPercent < 0 ||
-      latestSnapshot.grossMarginPercent > 100
+      hasValue(latestSnapshot.grossMarginPercent) &&
+      (latestSnapshot.grossMarginPercent < 0 ||
+        latestSnapshot.grossMarginPercent > 100)
     ) {
       sanityIssues.push({
         message: "Gross margin is outside a normal 0% to 100% range — classifications may need review.",

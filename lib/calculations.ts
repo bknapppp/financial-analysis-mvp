@@ -57,6 +57,13 @@ function calculateMarginPercent(value: number | null, revenue: number) {
   return (value / revenue) * 100;
 }
 
+function metricOrNull(params: {
+  total: number;
+  source: "components" | "subtotal_fallback" | "none";
+}) {
+  return params.source === "none" ? null : params.total;
+}
+
 function computeOperatingExpensesExcludingDa(params: {
   operatingExpenses: number;
   operatingExpensesSource?: PeriodSnapshot["incomeStatementDebug"] extends infer T
@@ -173,6 +180,14 @@ function calculateSnapshotForPeriod(
 
   const revenue = incomeStatementDebug.revenue.total;
   const cogs = incomeStatementDebug.cogs.total;
+  const canonicalRevenue = metricOrNull({
+    total: revenue,
+    source: incomeStatementDebug.revenue.source
+  });
+  const canonicalCogs = metricOrNull({
+    total: cogs,
+    source: incomeStatementDebug.cogs.source
+  });
   const depreciationAndAmortization =
     incomeStatementDebug.depreciationAndAmortization.total;
   const operatingExpenses = computeOperatingExpensesExcludingDa({
@@ -199,12 +214,15 @@ function calculateSnapshotForPeriod(
     )
   );
 
-  const grossProfit = revenue - cogs;
+  const grossProfit =
+    canonicalRevenue !== null && canonicalCogs !== null
+      ? canonicalRevenue - canonicalCogs
+      : null;
   const canComputeEbit =
     incomeStatementDebug.revenue.source !== "none" &&
     incomeStatementDebug.cogs.source !== "none" &&
     incomeStatementDebug.operatingExpenses.source !== "none";
-  const computedEbit = grossProfit - operatingExpenses;
+  const computedEbit = grossProfit === null ? null : grossProfit - operatingExpenses;
   const ebit = canComputeEbit
     ? computedEbit
     : incomeStatementDebug.operatingIncome.source !== "none"
@@ -289,16 +307,25 @@ function calculateSnapshotForPeriod(
   };
   const adjustment = calculateAdjustedEbitdaForPeriod({
     periodId: period.id,
-    reportedEbitda: ebitda,
+    canonicalEbitda: ebitda,
     addBacks: periodAddBacks,
     entries: periodEntries
   });
   const acceptedAddBacks = adjustment.acceptedAddBackTotal;
   const adjustedEbitda = adjustment.adjustedEbitda;
   const workingCapital = currentAssets - currentLiabilities;
-  const grossMarginPercent = revenue === 0 ? 0 : (grossProfit / revenue) * 100;
-  const ebitdaMarginPercent = calculateMarginPercent(ebitda, revenue);
-  const adjustedEbitdaMarginPercent = calculateMarginPercent(adjustedEbitda, revenue);
+  const grossMarginPercent =
+    grossProfit === null || canonicalRevenue === null
+      ? null
+      : canonicalRevenue === 0
+        ? null
+        : (grossProfit / canonicalRevenue) * 100;
+  const ebitdaMarginPercent =
+    canonicalRevenue === null ? null : calculateMarginPercent(ebitda, canonicalRevenue);
+  const adjustedEbitdaMarginPercent =
+    canonicalRevenue === null
+      ? null
+      : calculateMarginPercent(adjustedEbitda, canonicalRevenue);
   const ebitdaExplainability = buildEbitdaExplainability({
     netIncome,
     nonOperating,
@@ -381,7 +408,9 @@ export function buildSnapshots(
         previous.adjustedEbitda
       ),
       grossMarginChange:
-        snapshot.grossMarginPercent - previous.grossMarginPercent,
+        hasValue(snapshot.grossMarginPercent) && hasValue(previous.grossMarginPercent)
+          ? snapshot.grossMarginPercent - previous.grossMarginPercent
+          : null,
       ebitdaMarginChange:
         hasValue(snapshot.ebitdaMarginPercent) && hasValue(previous.ebitdaMarginPercent)
           ? snapshot.ebitdaMarginPercent - previous.ebitdaMarginPercent

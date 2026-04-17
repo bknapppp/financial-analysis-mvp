@@ -35,7 +35,7 @@ type CaptureDealMemoryDependencies = {
 
 const defaultDependencies: CaptureDealMemoryDependencies = {
   buildDealMemorySnapshot,
-  getSupabaseClient: () => getSupabaseServerClient() as DealMemoryInsertClient,
+  getSupabaseClient: () => getSupabaseServerClient() as unknown as DealMemoryInsertClient,
   logger: console
 };
 

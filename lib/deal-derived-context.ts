@@ -44,7 +44,7 @@ export const EMPTY_SNAPSHOT: PeriodSnapshot = {
   periodDate: "",
   revenue: 0,
   cogs: 0,
-  grossProfit: 0,
+  grossProfit: null,
   operatingExpenses: 0,
   ebit: null,
   reportedOperatingIncome: null,
@@ -52,7 +52,7 @@ export const EMPTY_SNAPSHOT: PeriodSnapshot = {
   ebitda: null,
   acceptedAddBacks: 0,
   adjustedEbitda: null,
-  grossMarginPercent: 0,
+  grossMarginPercent: null,
   ebitdaMarginPercent: null,
   adjustedEbitdaMarginPercent: null,
   currentAssets: 0,
@@ -131,7 +131,7 @@ export function buildEmptyTaxSourceStatus(): TaxSourceStatus {
     missingComponents: [],
     notes: [],
     revenueDeltaPercent: null,
-    reportedEbitdaDeltaPercent: null,
+    computedEbitdaDeltaPercent: null,
     adjustedEbitdaDeltaPercent: null
   };
 }
@@ -339,7 +339,7 @@ export function buildTaxSourceStatus(params: {
   comparisonMissingComponents: string[];
   comparisonNotes: string[];
   revenueDeltaPercent: number | null;
-  reportedEbitdaDeltaPercent: number | null;
+  computedEbitdaDeltaPercent: number | null;
   adjustedEbitdaDeltaPercent: number | null;
 }): TaxSourceStatus {
   const { taxContext } = params;
@@ -373,7 +373,7 @@ export function buildTaxSourceStatus(params: {
     missingComponents: params.comparisonMissingComponents,
     notes: params.comparisonNotes,
     revenueDeltaPercent: params.revenueDeltaPercent,
-    reportedEbitdaDeltaPercent: params.reportedEbitdaDeltaPercent,
+    computedEbitdaDeltaPercent: params.computedEbitdaDeltaPercent,
     adjustedEbitdaDeltaPercent: params.adjustedEbitdaDeltaPercent
   };
 }
@@ -526,7 +526,7 @@ const getDealDerivedContextCached = cache(
       comparisonMissingComponents: [],
       comparisonNotes: [],
       revenueDeltaPercent: sourceReconciliation?.revenue.deltaPct ?? null,
-      reportedEbitdaDeltaPercent: sourceReconciliation?.comparisons.reportedVsTax.deltaPct ?? null,
+      computedEbitdaDeltaPercent: sourceReconciliation?.comparisons.computedVsTax.deltaPct ?? null,
       adjustedEbitdaDeltaPercent: sourceReconciliation?.comparisons.adjustedVsTax.deltaPct ?? null
     });
 

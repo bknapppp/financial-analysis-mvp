@@ -23,7 +23,11 @@ export function SourceDataSummaryPanel({ data }: SourceDataSummaryPanelProps) {
   const lowConfidenceRows = selectedEntries.filter(
     (entry) => entry.confidence === "low"
   ).length;
-  const blockers = data.completionSummary.blockers.slice(0, 4);
+  const sourceQueue = [
+    ...data.readiness.blockingReasons,
+    ...data.readiness.cautionReasons,
+    ...data.taxSourceStatus.missingComponents
+  ].slice(0, 4);
 
   return (
     <section className="grid gap-4 xl:grid-cols-2">
@@ -123,35 +127,20 @@ export function SourceDataSummaryPanel({ data }: SourceDataSummaryPanelProps) {
           <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
             Reconciliation readiness: {formatComparisonStatus(data)}
           </div>
-          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-            Required underwriting inputs still missing:{" "}
-            {data.completionSummary.missingItems
-              .filter((item) =>
-                [
-                  "Loan amount",
-                  "Interest rate",
-                  "Term",
-                  "Amortization",
-                  "Purchase price / collateral support"
-                ].includes(item)
-              )
-              .join(", ") || "None"}
-          </div>
         </div>
       </section>
 
       <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel">
         <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
-          Next Actions
+          Source Review Queue
         </p>
         <h2 className="mt-2 text-xl font-semibold text-slate-900">
-          Workflow owner view
+          Open Source Items
         </h2>
         <div className="mt-4 space-y-2">
-          {(blockers.length > 0
-            ? blockers
-            : data.completionSummary.nextActions.slice(0, 4)
-          ).map((item) => (
+          {(sourceQueue.length > 0
+            ? sourceQueue
+            : ["No open source reconciliation items are currently surfaced."]).map((item) => (
             <div
               key={item}
               className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"

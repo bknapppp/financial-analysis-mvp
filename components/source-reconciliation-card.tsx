@@ -7,7 +7,7 @@ import { formatCurrency, formatPercent } from "@/lib/formatters";
 type SourceReconciliationFlag = {
   type:
     | "tax_revenue_lower_than_reported"
-    | "tax_ebitda_lower_than_reported"
+    | "tax_ebitda_lower_than_computed"
     | "tax_ebitda_much_lower_than_adjusted"
     | "high_addback_percentage";
   metric: "Revenue" | "EBITDA" | "Add-backs";
@@ -28,12 +28,13 @@ type SourceReconciliationData = {
     deltaPct: number | null;
   };
   ebitda: {
-    reported: number | null;
+    computed: number | null;
+    reportedReference: number | null;
     adjusted: number | null;
     tax: number | null;
   };
   comparisons: {
-    reportedVsTax: {
+    computedVsTax: {
       delta: number | null;
       deltaPct: number | null;
     };
@@ -44,7 +45,7 @@ type SourceReconciliationData = {
   };
   addbacks: {
     amount: number | null;
-    pctOfReported: number | null;
+    pctOfComputed: number | null;
   };
   coverage: {
     hasReportedFinancials: boolean;
@@ -95,8 +96,8 @@ function flagLabel(type: SourceReconciliationFlag["type"]) {
     return "Tax revenue below reported";
   }
 
-  if (type === "tax_ebitda_lower_than_reported") {
-    return "Tax EBITDA below reported";
+  if (type === "tax_ebitda_lower_than_computed") {
+    return "Tax EBITDA below computed";
   }
 
   if (type === "tax_ebitda_much_lower_than_adjusted") {
@@ -221,7 +222,7 @@ function EmptyState({ onAddTaxSource }: { onAddTaxSource: () => void }) {
           No tax-source data for the selected period.
         </p>
         <p className="text-sm text-slate-600">
-          Add a tax source to compare reported financials against tax-derived results.
+          Add a tax source to compare canonical financial outputs against tax-derived results.
         </p>
       </div>
       <div className="mt-3">
@@ -321,7 +322,7 @@ export function SourceReconciliationCard({
               Source Reconciliation
             </h2>
             <p className="mt-1 text-[12px] text-slate-500">
-              Based on reported financials vs tax-return-derived results
+              Based on canonical financial outputs vs tax-return-derived results
             </p>
           </div>
           {showManageButton ? (
@@ -355,12 +356,12 @@ export function SourceReconciliationCard({
                 />
                 <MetricBlock
                   title="EBITDA"
-                  primaryLabel="Reported"
-                  primaryValue={data.ebitda.reported}
+                  primaryLabel="Computed"
+                  primaryValue={data.ebitda.computed}
                   comparisonLabel="Tax"
                   comparisonValue={data.ebitda.tax}
-                  deltaValue={data.comparisons.reportedVsTax.delta}
-                  deltaPctValue={data.comparisons.reportedVsTax.deltaPct}
+                  deltaValue={data.comparisons.computedVsTax.delta}
+                  deltaPctValue={data.comparisons.computedVsTax.deltaPct}
                 />
                 <MetricBlock
                   title="Adjusted EBITDA"
@@ -404,7 +405,7 @@ export function SourceReconciliationCard({
                         />
                         <DetailRow
                           label="Share"
-                          value={`${formatPercentValue(data.addbacks.pctOfReported)} of reported EBITDA`}
+                          value={`${formatPercentValue(data.addbacks.pctOfComputed)} of computed EBITDA`}
                         />
                       </div>
                     </div>
@@ -419,6 +420,10 @@ export function SourceReconciliationCard({
                         <DetailRow
                           label="Reported financials"
                           value={coverageIcon(data.coverage.hasReportedFinancials)}
+                        />
+                        <DetailRow
+                          label="Reported EBITDA reference"
+                          value={formatCurrencyValue(data.ebitda.reportedReference)}
                         />
                         <DetailRow
                           label="Tax data"
@@ -496,12 +501,13 @@ function buildEmptyReconciliation(
       deltaPct: null
     },
     ebitda: {
-      reported: null,
+      computed: null,
+      reportedReference: null,
       adjusted: null,
       tax: null
     },
     comparisons: {
-      reportedVsTax: {
+      computedVsTax: {
         delta: null,
         deltaPct: null
       },
@@ -512,7 +518,7 @@ function buildEmptyReconciliation(
     },
     addbacks: {
       amount: null,
-      pctOfReported: null
+      pctOfComputed: null
     },
     coverage: {
       hasReportedFinancials: false,
