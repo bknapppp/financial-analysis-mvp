@@ -585,21 +585,27 @@ function buildCoverage(params: {
   components: TaxEbitdaComponents;
   presentComponents: Set<FoundComponentKey>;
 }) {
-  const { entryCount, components, presentComponents } = params;
+  const { entryCount, presentComponents } = params;
   const found = FOUND_COMPONENT_KEYS.filter((key) => presentComponents.has(key));
   const missing = FOUND_COMPONENT_KEYS.filter((key) => !presentComponents.has(key));
   const notes: string[] = [];
 
   if (!presentComponents.has("depreciation")) {
-    notes.push("Depreciation was not present in the tax-source entries and was treated as zero.");
+    notes.push("Depreciation is not separately evidenced in the tax-source entries.");
   }
 
   if (!presentComponents.has("amortization")) {
-    notes.push("Amortization was not present in the tax-source entries and was treated as zero.");
+    notes.push("Amortization is not separately evidenced in the tax-source entries.");
   }
 
   if (!presentComponents.has("cogs")) {
-    notes.push("COGS was not present in the tax-source entries; gross profit and EBITDA were computed without a COGS deduction.");
+    notes.push("COGS is missing from the tax-source entries, so tax-derived EBITDA is not complete.");
+  }
+
+  if (!presentComponents.has("operatingExpensesBeforeDandA")) {
+    notes.push(
+      "Operating expenses are missing from the tax-source entries, so tax-derived EBITDA is not complete."
+    );
   }
 
   if (entryCount === 0) {
@@ -614,14 +620,16 @@ function buildCoverage(params: {
     };
   }
 
-  const computable =
+  const hasRevenueStructure =
     presentComponents.has("grossRevenue") || presentComponents.has("contraRevenue");
-  const status =
-    computable &&
+  const computable =
+    hasRevenueStructure &&
     presentComponents.has("cogs") &&
-    presentComponents.has("operatingExpensesBeforeDandA")
+    presentComponents.has("operatingExpensesBeforeDandA");
+  const status =
+    computable
       ? ("complete" as const)
-      : computable
+      : hasRevenueStructure
         ? ("partial" as const)
         : ("insufficient" as const);
 
@@ -634,7 +642,7 @@ function buildCoverage(params: {
       status === "complete"
         ? "Tax-derived EBITDA was computed from a reasonably structured tax-source dataset."
         : status === "partial"
-          ? "Tax-derived EBITDA was computed with partial tax-source coverage; review missing components before relying on it."
+          ? "Tax-derived EBITDA is unavailable because tax-source coverage is partial."
           : "Tax-derived EBITDA could not be computed because revenue structure is missing.",
     notes
   };

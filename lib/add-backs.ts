@@ -213,12 +213,12 @@ export type CanonicalAcceptedAddBackLine = {
   type: AddBackType;
   description: string;
   amount: number;
-  source: AddBackSource | "legacy_fallback";
+  source: AddBackSource;
 };
 
 export type CanonicalPeriodAdjustment = {
   periodId: string;
-  source: "persisted" | "legacy_fallback";
+  source: "persisted";
   usesLegacyFallback: boolean;
   acceptedAddBackTotal: number;
   lines: CanonicalAcceptedAddBackLine[];
@@ -229,7 +229,7 @@ export function getCanonicalPeriodAdjustment(params: {
   addBacks: AddBack[];
   entries: FinancialEntry[];
 }) {
-  const { periodId, addBacks, entries } = params;
+  const { periodId, addBacks } = params;
   const periodAddBacks = addBacks.filter((item) => item.period_id === periodId);
   const acceptedAddBacks = periodAddBacks.filter(
     (item) => item.status === "accepted"
@@ -255,36 +255,12 @@ export function getCanonicalPeriodAdjustment(params: {
     };
   }
 
-  const legacyLines = entries
-    .filter((entry) => entry.period_id === periodId && entry.addback_flag)
-    .map((entry) => ({
-      id: null,
-      linkedEntryId: entry.id,
-      type: "accounting_normalization" as const,
-      description: entry.account_name,
-      amount: Number(entry.amount),
-      source: "legacy_fallback" as const
-    }));
-
-  if (periodAddBacks.length > 0 && legacyLines.length === 0) {
-    return {
-      periodId,
-      source: "persisted" as const,
-      usesLegacyFallback: false,
-      acceptedAddBackTotal: 0,
-      lines: []
-    };
-  }
-
   return {
     periodId,
-    source: "legacy_fallback" as const,
-    usesLegacyFallback: legacyLines.length > 0,
-    acceptedAddBackTotal: legacyLines.reduce(
-      (total, item) => total + Number(item.amount),
-      0
-    ),
-    lines: legacyLines
+    source: "persisted" as const,
+    usesLegacyFallback: false,
+    acceptedAddBackTotal: 0,
+    lines: []
   };
 }
 
@@ -484,49 +460,11 @@ export function buildEbitdaBridge(params: {
   const acceptedItems = reviewItems.filter(
     (item) => item.periodId === snapshot.periodId && item.status === "accepted"
   );
-  const bridgeItems = canonicalAdjustment.usesLegacyFallback
-    ? canonicalAdjustment.lines.map((line) => {
-        const linkedEntry =
-          line.linkedEntryId !== null
-            ? entries.find((entry) => entry.id === line.linkedEntryId) ?? null
-            : null;
-
-        return {
-          id: null,
-          companyId: linkedEntry ? periods.find((period) => period.id === linkedEntry.period_id)?.company_id ?? "" : "",
-          periodId: snapshot.periodId,
-          periodLabel,
-          linkedEntryId: line.linkedEntryId,
-          entryAccountName: linkedEntry?.account_name ?? line.description,
-          entryCategory: linkedEntry?.category ?? null,
-          entryStatementType: linkedEntry?.statement_type ?? null,
-          addbackFlag: linkedEntry?.addback_flag ?? true,
-          matchedBy: linkedEntry?.matched_by ?? null,
-          confidence: linkedEntry?.confidence ?? null,
-          mappingExplanation:
-            linkedEntry?.mapping_explanation ??
-            "Legacy add-back flag used for backward compatibility.",
-          type: line.type,
-          description: line.description,
-          amount: line.amount,
-          classificationConfidence: "medium" as const,
-          source: "user" as const,
-          status: "accepted" as const,
-          justification: "Legacy add-back flag used for backward compatibility.",
-          supportingReference: null,
-          isPersisted: false,
-          dependsOnLowConfidenceMapping: linkedEntry?.confidence === "low"
-        };
-      })
-    : acceptedItems;
+  const bridgeItems = acceptedItems;
   const warnings: string[] = [];
 
   if (bridgeItems.some((item) => item.dependsOnLowConfidenceMapping)) {
     warnings.push("Some accepted add-backs rely on low-confidence mappings.");
-  }
-
-  if (canonicalAdjustment.usesLegacyFallback) {
-    warnings.push("Adjusted EBITDA currently uses legacy add-back flags for this period.");
   }
 
   const groups = Object.entries(

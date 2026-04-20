@@ -272,14 +272,14 @@ export type PeriodSnapshot = {
   periodId: string;
   label: string;
   periodDate?: string;
-  revenue: number;
-  cogs: number;
+  revenue: number | null;
+  cogs: number | null;
   grossProfit: number | null;
-  operatingExpenses: number;
-  depreciationAndAmortization?: number;
-  nonOperating?: number;
-  taxExpense?: number;
-  netIncome?: number;
+  operatingExpenses: number | null;
+  depreciationAndAmortization?: number | null;
+  nonOperating?: number | null;
+  taxExpense?: number | null;
+  netIncome?: number | null;
   ebit?: number | null;
   reportedOperatingIncome?: number | null;
   reportedEbitda?: number | null;
@@ -325,6 +325,9 @@ export type IncomeStatementAggregationFamilyDebug = {
   excludedLabels: string[];
   componentCount: number;
   subtotalCount: number;
+  detailTotal: number | null;
+  subtotalTotal: number | null;
+  detailCoverageRatio: number | null;
 };
 
 export type IncomeStatementAggregationDebug = Record<

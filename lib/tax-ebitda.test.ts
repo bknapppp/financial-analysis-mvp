@@ -166,11 +166,11 @@ const partialResult = calculateTaxDerivedEbitda({
   entries: partialEntries
 });
 
-assert.equal(partialResult.taxDerivedEBITDA, 900000);
+assert.equal(partialResult.taxDerivedEBITDA, null);
 assert.equal(partialResult.coverage.status, "partial");
 assert.ok(partialResult.coverage.missingComponents.includes("cogs"));
 assert.ok(
-  partialResult.coverage.notes.some((note) => note.includes("Depreciation"))
+  partialResult.coverage.notes.some((note) => note.includes("not complete"))
 );
 
 const fy2022 = await buildSourceEntriesFromFixture({

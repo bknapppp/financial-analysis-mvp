@@ -111,6 +111,8 @@ const CATEGORY_SUBTOTAL_LABELS: Record<IncomeStatementAggregationFamilyKey, Set<
   ])
 };
 
+const DETAIL_COVERAGE_THRESHOLD = 0.95;
+
 function shouldExcludeFamilyRow(params: {
   family: IncomeStatementAggregationFamilyKey;
   accountName: string | null | undefined;
@@ -206,15 +208,31 @@ function buildFamilyDebug(params: {
           return left.account_name.localeCompare(right.account_name);
         })[0]
       : null;
-  const selectedRows =
+  const detailTotal =
     componentRows.length > 0
-      ? componentRows
-      : selectedSubtotalRow
-        ? [selectedSubtotalRow]
-        : [];
+      ? componentRows.reduce((sum, entry) => sum + Number(entry.amount), 0)
+      : null;
+  const subtotalTotal = selectedSubtotalRow ? Number(selectedSubtotalRow.amount) : null;
+  const detailCoverageRatio =
+    detailTotal === null || subtotalTotal === null
+      ? null
+      : subtotalTotal === 0
+        ? detailTotal === 0
+          ? 1
+          : 0
+        : Math.min(Math.abs(detailTotal) / Math.abs(subtotalTotal), 1);
+  const shouldPreferDetail =
+    componentRows.length > 0 &&
+    (selectedSubtotalRow === null ||
+      (detailCoverageRatio !== null && detailCoverageRatio >= DETAIL_COVERAGE_THRESHOLD));
+  const selectedRows = shouldPreferDetail
+    ? componentRows
+    : selectedSubtotalRow
+      ? [selectedSubtotalRow]
+      : [];
   const excludedRows = params.rows.filter((entry) => !selectedRows.includes(entry));
   const source: IncomeStatementAggregationSource =
-    componentRows.length > 0
+    shouldPreferDetail
       ? "components"
       : subtotalRows.length > 0
         ? "subtotal_fallback"
@@ -226,7 +244,10 @@ function buildFamilyDebug(params: {
     selectedLabels: selectedRows.map((entry) => entry.account_name),
     excludedLabels: excludedRows.map((entry) => entry.account_name),
     componentCount: componentRows.length,
-    subtotalCount: subtotalRows.length
+    subtotalCount: subtotalRows.length,
+    detailTotal,
+    subtotalTotal,
+    detailCoverageRatio
   };
 }
 

@@ -51,10 +51,10 @@ function createAddBack(params: {
     entries: [createEntry({ id: "entry-1", amount: 40, addbackFlag: true })]
   });
 
-  assert.equal(adjustment.source, "legacy_fallback");
-  assert.equal(adjustment.usesLegacyFallback, true);
-  assert.equal(adjustment.acceptedAddBackTotal, 40);
-  assert.equal(adjustment.lines.length, 1);
+  assert.equal(adjustment.source, "persisted");
+  assert.equal(adjustment.usesLegacyFallback, false);
+  assert.equal(adjustment.acceptedAddBackTotal, 0);
+  assert.equal(adjustment.lines.length, 0);
 }
 
 {

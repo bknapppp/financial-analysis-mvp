@@ -183,6 +183,26 @@ assert.equal(missingAdjustedResult.ebitda.adjusted, null);
 assert.equal(missingAdjustedResult.coverage.hasAdjustedEBITDA, false);
 assert.equal(missingAdjustedResult.comparisons.adjustedVsTax.delta, null);
 
+const missingComputedResult = buildSourceReconciliation({
+  companyId: "company-1",
+  periodId: "reported-period-1",
+  reportedPeriod: {
+    id: "reported-period-1",
+    company_id: "company-1",
+    label: "FY2023",
+    period_date: "2023-12-31",
+    created_at: "2026-04-09T00:00:00.000Z"
+  },
+  reportedRevenue: 5200000,
+  reconstructedEbitda: null,
+  reportedEbitdaReference: 950000,
+  adjustedEbitda: null,
+  taxResult: baseTaxResult
+});
+assert.equal(missingComputedResult.comparisons.computedVsTax.delta, null);
+assert.equal(missingComputedResult.addbacks.amount, null);
+assert.equal(missingComputedResult.addbacks.pctOfComputed, null);
+
 const zeroRevenueResult = buildSourceReconciliation({
   companyId: "company-1",
   periodId: "reported-period-2",

@@ -127,7 +127,7 @@ function snapshotFromEntries(entries: FinancialEntry[], addBacks: AddBack[] = []
   assert.equal(snapshot.revenue, 1000);
   assert.equal(snapshot.cogs, 350);
   assert.equal(snapshot.operatingExpenses, 500);
-  assert.equal(snapshot.depreciationAndAmortization, 0);
+  assert.equal(snapshot.depreciationAndAmortization, null);
   assert.equal(snapshot.grossProfit, 650);
   assert.equal(snapshot.ebit, 150);
   assert.equal(snapshot.ebitda, null);
@@ -160,6 +160,23 @@ function snapshotFromEntries(entries: FinancialEntry[], addBacks: AddBack[] = []
   ]);
   assert.deepEqual(snapshot.incomeStatementDebug?.operatingExpenses.excludedLabels, [
     "Total Expenses"
+  ]);
+}
+
+{
+  const snapshot = snapshotFromEntries([
+    createNamedIncomeEntry("Revenue", "Revenue", 1000),
+    createNamedIncomeEntry("COGS", "COGS", 300),
+    createNamedIncomeEntry("Operating Expenses", "Operating Expenses", 500),
+    createNamedIncomeEntry("G&A", "Operating Expenses", 120),
+    createNamedIncomeEntry("Sales & Marketing", "Operating Expenses", 180)
+  ]);
+
+  assert.equal(snapshot.operatingExpenses, 500);
+  assert.equal(snapshot.incomeStatementDebug?.operatingExpenses.source, "subtotal_fallback");
+  assert.equal(snapshot.incomeStatementDebug?.operatingExpenses.detailCoverageRatio, 0.6);
+  assert.deepEqual(snapshot.incomeStatementDebug?.operatingExpenses.selectedLabels, [
+    "Operating Expenses"
   ]);
 }
 
@@ -197,6 +214,43 @@ function snapshotFromEntries(entries: FinancialEntry[], addBacks: AddBack[] = []
 
   assert.equal(snapshot.acceptedAddBacks, 25);
   assert.equal(snapshot.adjustedEbitda, 325);
+}
+
+{
+  const snapshot = snapshotFromEntries(
+    [
+      createNamedIncomeEntry("Revenue", "Revenue", 1000),
+      createNamedIncomeEntry("COGS", "COGS", 400),
+      createNamedIncomeEntry("G&A", "Operating Expenses", 120),
+      createNamedIncomeEntry("Sales & Marketing", "Operating Expenses", 180),
+      createNamedIncomeEntry("Depreciation", "Depreciation / Amortization", 50),
+      createNamedIncomeEntry("Interest Expense", "Non-operating", 20),
+      createNamedIncomeEntry("Tax Expense", "Tax Expense", 30),
+      createNamedIncomeEntry("Net Income", "Net Income", 200)
+    ],
+    [
+      {
+        id: "addback-rejected-1",
+        company_id: "company-1",
+        period_id: period.id,
+        linked_entry_id: null,
+        type: "owner_related",
+        description: "Rejected owner vehicle",
+        amount: 25,
+        classification_confidence: "high",
+        source: "user",
+        status: "rejected",
+        justification: "Rejected normalization.",
+        supporting_reference: null,
+        created_at: "2026-01-01T00:00:00.000Z",
+        updated_at: "2026-01-01T00:00:00.000Z"
+      }
+    ]
+  );
+
+  assert.equal(snapshot.acceptedAddBacks, 0);
+  assert.equal(snapshot.ebitda, 300);
+  assert.equal(snapshot.adjustedEbitda, 300);
 }
 
 {
@@ -287,6 +341,36 @@ function snapshotFromEntries(entries: FinancialEntry[], addBacks: AddBack[] = []
   assert.equal(snapshot.ebitda, null);
   assert.equal(snapshot.reportedEbitda, null);
   assert.equal(snapshot.adjustedEbitda, null);
+}
+
+{
+  const snapshot = snapshotFromEntries([
+    createNamedIncomeEntry("Revenue", "Revenue", 1000),
+    createNamedIncomeEntry("Operating Expenses", "Operating Expenses", 300),
+    createNamedIncomeEntry("Net Income", "Net Income", 200),
+    createNamedIncomeEntry("Interest Expense", "Non-operating", 20),
+    createNamedIncomeEntry("Tax Expense", "Tax Expense", 30),
+    createNamedIncomeEntry("Depreciation", "Depreciation / Amortization", 50)
+  ]);
+
+  assert.equal(snapshot.cogs, null);
+  assert.equal(snapshot.grossProfit, null);
+  assert.equal(snapshot.grossMarginPercent, null);
+}
+
+{
+  const snapshot = snapshotFromEntries([
+    createNamedIncomeEntry("Revenue", "Revenue", 1000),
+    createNamedIncomeEntry("COGS", "COGS", 400),
+    createNamedIncomeEntry("Net Income", "Net Income", 200),
+    createNamedIncomeEntry("Interest Expense", "Non-operating", 20),
+    createNamedIncomeEntry("Tax Expense", "Tax Expense", 30),
+    createNamedIncomeEntry("Depreciation", "Depreciation / Amortization", 50)
+  ]);
+
+  assert.equal(snapshot.operatingExpenses, null);
+  assert.equal(snapshot.ebit, null);
+  assert.equal(snapshot.ebitda, 300);
 }
 
 {
