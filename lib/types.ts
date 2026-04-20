@@ -585,8 +585,20 @@ export type TaxSourceStatus = {
   missingComponents: string[];
   notes: string[];
   revenueDeltaPercent: number | null;
+  reportedEbitdaDeltaPercent?: number | null;
   computedEbitdaDeltaPercent: number | null;
   adjustedEbitdaDeltaPercent: number | null;
+  requiredComponentsFound?: string[];
+  taxCoverageStatus?: "not_loaded" | "complete" | "partial" | "insufficient";
+  comparisonContext?: {
+    reportedRevenue: number | null;
+    taxRevenue: number | null;
+    computedEbitda: number | null;
+    reportedEbitdaReference: number | null;
+    adjustedEbitda: number | null;
+    taxEbitda: number | null;
+    taxEbitdaIncludingInterest: number | null;
+  } | null;
 };
 
 export type DiligenceIssueSourceType = "system" | "manual";

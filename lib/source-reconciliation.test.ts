@@ -125,6 +125,8 @@ assert.equal(fullResult.ebitda.computed, 900000);
 assert.equal(fullResult.ebitda.reportedReference, 950000);
 assert.equal(fullResult.ebitda.adjusted, 1400000);
 assert.equal(fullResult.ebitda.tax, 1250000);
+assert.equal(fullResult.comparisons.reportedReferenceVsTax.delta, -300000);
+assert.equal(fullResult.comparisons.reportedReferenceVsTax.deltaPct, -300000 / 950000);
 assert.equal(fullResult.comparisons.computedVsTax.delta, -350000);
 assert.equal(fullResult.comparisons.adjustedVsTax.delta, 150000);
 assert.equal(fullResult.addbacks.amount, 500000);
@@ -132,6 +134,17 @@ assert.equal(fullResult.addbacks.pctOfComputed, 500000 / 900000);
 assert.equal(fullResult.coverage.hasReportedFinancials, true);
 assert.equal(fullResult.coverage.hasTaxData, true);
 assert.equal(fullResult.coverage.hasAdjustedEBITDA, true);
+assert.equal(fullResult.coverage.hasReportedEbitdaReference, true);
+assert.equal(fullResult.explainability.taxCoverageStatus, "complete");
+assert.deepEqual(fullResult.explainability.requiredComponentsFound, [
+  "grossRevenue",
+  "cogs",
+  "operatingExpensesBeforeDandA",
+  "depreciation",
+  "interest"
+]);
+assert.equal(fullResult.explainability.comparisonContext?.reportedEbitdaReference, 950000);
+assert.equal(fullResult.explainability.comparisonContext?.taxEbitda, 1250000);
 assert.ok(
   fullResult.flags.some((flag) => flag.type === "tax_revenue_lower_than_reported")
 );
@@ -160,6 +173,9 @@ const missingTaxResult = buildSourceReconciliation({
 assert.equal(missingTaxResult.revenue.tax, null);
 assert.equal(missingTaxResult.ebitda.tax, null);
 assert.equal(missingTaxResult.coverage.hasTaxData, false);
+assert.equal(missingTaxResult.coverage.hasReportedEbitdaReference, true);
+assert.equal(missingTaxResult.explainability.taxCoverageStatus, "not_loaded");
+assert.equal(missingTaxResult.explainability.comparisonContext, null);
 assert.equal(missingTaxResult.flags.length, 1);
 assert.equal(missingTaxResult.flags[0]?.type, "high_addback_percentage");
 

@@ -15,8 +15,12 @@ function hasValue(value: number | null | undefined): value is number {
   return value !== null && value !== undefined && Number.isFinite(value);
 }
 
-function calculateMarginPercent(value: number | null, revenue: number) {
+function calculateMarginPercent(value: number | null, revenue: number | null) {
   if (!hasValue(value)) {
+    return null;
+  }
+
+  if (!hasValue(revenue)) {
     return null;
   }
 
@@ -115,13 +119,13 @@ function buildIncomeStatement(snapshot: PeriodSnapshot): Extract<
     {
       key: "depreciation_and_amortization",
       label: "Depreciation / Amortization",
-      value: snapshot.depreciationAndAmortization ?? 0,
+      value: snapshot.depreciationAndAmortization,
       kind: "line_item"
     },
     {
       key: "ebit",
       label: "EBIT",
-      value: snapshot.ebit ?? null,
+      value: snapshot.ebit,
       kind: "subtotal",
       rollupKey: "ebit"
     }
@@ -141,19 +145,19 @@ function buildIncomeStatement(snapshot: PeriodSnapshot): Extract<
     {
       key: "non_operating",
       label: "Non-operating",
-      value: snapshot.nonOperating ?? 0,
+      value: snapshot.nonOperating,
       kind: "line_item"
     },
     {
       key: "tax_expense",
       label: "Tax Expense",
-      value: snapshot.taxExpense ?? 0,
+      value: snapshot.taxExpense,
       kind: "line_item"
     },
     {
       key: "net_income",
       label: "Net Income",
-      value: snapshot.netIncome ?? 0,
+      value: snapshot.netIncome,
       kind: "subtotal",
       rollupKey: "net_income"
     },

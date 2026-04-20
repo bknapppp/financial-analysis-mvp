@@ -50,6 +50,10 @@ export type SourceReconciliationResult = {
     tax: number | null;
   };
   comparisons: {
+    reportedReferenceVsTax: {
+      delta: number | null;
+      deltaPct: number | null;
+    };
     computedVsTax: {
       delta: number | null;
       deltaPct: number | null;
@@ -67,6 +71,22 @@ export type SourceReconciliationResult = {
     hasReportedFinancials: boolean;
     hasTaxData: boolean;
     hasAdjustedEBITDA: boolean;
+    hasReportedEbitdaReference: boolean;
+  };
+  explainability: {
+    taxCoverageStatus: TaxDerivedEbitdaResult["coverage"]["status"] | "not_loaded";
+    requiredComponentsFound: string[];
+    missingComponents: string[];
+    notes: string[];
+    comparisonContext: {
+      reportedRevenue: number | null;
+      taxRevenue: number | null;
+      computedEbitda: number | null;
+      reportedEbitdaReference: number | null;
+      adjustedEbitda: number | null;
+      taxEbitda: number | null;
+      taxEbitdaIncludingInterest: number | null;
+    } | null;
   };
   flags: SourceReconciliationFlag[];
   traceability: {
@@ -121,6 +141,14 @@ export function buildSourceReconciliation(params: {
   );
   const computedVsTaxDelta = safeDelta(
     params.reconstructedEbitda,
+    params.taxResult?.taxDerivedEBITDA ?? null
+  );
+  const reportedReferenceVsTaxDeltaPct = safeDeltaPct(
+    params.reportedEbitdaReference ?? null,
+    params.taxResult?.taxDerivedEBITDA ?? null
+  );
+  const reportedReferenceVsTaxDelta = safeDelta(
+    params.reportedEbitdaReference ?? null,
     params.taxResult?.taxDerivedEBITDA ?? null
   );
   const computedVsTaxDeltaPct = safeDeltaPct(
@@ -222,6 +250,10 @@ export function buildSourceReconciliation(params: {
       tax: params.taxResult?.taxDerivedEBITDA ?? null
     },
     comparisons: {
+      reportedReferenceVsTax: {
+        delta: reportedReferenceVsTaxDelta,
+        deltaPct: reportedReferenceVsTaxDeltaPct
+      },
       computedVsTax: {
         delta: computedVsTaxDelta,
         deltaPct: computedVsTaxDeltaPct
@@ -239,7 +271,27 @@ export function buildSourceReconciliation(params: {
       hasReportedFinancials:
         params.reportedRevenue !== null || params.reconstructedEbitda !== null,
       hasTaxData: params.taxResult !== null && params.taxResult.entryCount > 0,
-      hasAdjustedEBITDA: params.adjustedEbitda !== null
+      hasAdjustedEBITDA: params.adjustedEbitda !== null,
+      hasReportedEbitdaReference: (params.reportedEbitdaReference ?? null) !== null
+    },
+    explainability: {
+      taxCoverageStatus: params.taxResult?.coverage.status ?? "not_loaded",
+      requiredComponentsFound: params.taxResult?.coverage.requiredComponentsFound ?? [],
+      missingComponents: params.taxResult?.coverage.missingComponents ?? [],
+      notes: params.taxResult?.coverage.notes ?? [],
+      comparisonContext:
+        params.taxResult === null
+          ? null
+          : {
+              reportedRevenue: params.reportedRevenue,
+              taxRevenue: params.taxResult.components.rawSigned.netRevenue,
+              computedEbitda: params.reconstructedEbitda,
+              reportedEbitdaReference: params.reportedEbitdaReference ?? null,
+              adjustedEbitda: params.adjustedEbitda,
+              taxEbitda: params.taxResult.taxDerivedEBITDA,
+              taxEbitdaIncludingInterest:
+                params.taxResult.taxDerivedEBITDAIncludingInterest
+            }
     },
     flags,
     traceability: {

@@ -119,7 +119,7 @@ export function buildReconciliationReport(params: {
       key: "gross_profit_formula",
       section: "income_statement",
       metric: "Gross Profit",
-      expected: snapshot.revenue - snapshot.cogs,
+      expected: snapshot.revenue! - snapshot.cogs!,
       actual: snapshot.grossProfit,
       message: "Revenue less COGS does not reconcile to Gross Profit within tolerance.",
       rule: RECONCILIATION_TOLERANCES.grossProfit
@@ -133,10 +133,10 @@ export function buildReconciliationReport(params: {
       section: "income_statement",
       metric: "EBITDA",
       expected:
-        (snapshot.netIncome ?? 0) +
-        (snapshot.nonOperating ?? 0) +
-        (snapshot.taxExpense ?? 0) +
-        (snapshot.depreciationAndAmortization ?? 0),
+        snapshot.netIncome! +
+        snapshot.nonOperating! +
+        snapshot.taxExpense! +
+        snapshot.depreciationAndAmortization!,
       actual: snapshot.ebitda,
       message:
         "Net Income plus Non-operating, Tax Expense, and Depreciation / Amortization does not reconcile to EBITDA within tolerance.",

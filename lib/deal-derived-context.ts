@@ -23,8 +23,8 @@ import {
 import { buildNormalizedPeriodOutputs } from "./normalized-outputs.ts";
 import { getSourceReconciliationForContext } from "./source-reconciliation.ts";
 import { getSupabaseServerClient } from "./supabase.ts";
+import { buildEmptyTaxSourceStatus, buildTaxSourceStatus } from "./tax-source-status.ts";
 import { buildUnderwritingAnalysis } from "./underwriting/analysis.ts";
-import { countBroadClassifications } from "./underwriting/completion.ts";
 import type {
   AccountMapping,
   AddBack,
@@ -43,10 +43,14 @@ export const EMPTY_SNAPSHOT: PeriodSnapshot = {
   periodId: "",
   label: "No period loaded",
   periodDate: "",
-  revenue: 0,
-  cogs: 0,
+  revenue: null,
+  cogs: null,
   grossProfit: null,
-  operatingExpenses: 0,
+  operatingExpenses: null,
+  depreciationAndAmortization: null,
+  nonOperating: null,
+  taxExpense: null,
+  netIncome: null,
   ebit: null,
   reportedOperatingIncome: null,
   reportedEbitda: null,
@@ -117,25 +121,7 @@ export type DealDerivedContext = DealCoreDerivedContext & {
   completionSummary: DashboardData["completionSummary"];
 };
 
-export function buildEmptyTaxSourceStatus(): TaxSourceStatus {
-  return {
-    documentCount: 0,
-    periodCount: 0,
-    rowCount: 0,
-    mappedLineCount: 0,
-    lowConfidenceLineCount: 0,
-    broadClassificationCount: 0,
-    hasMatchingPeriod: false,
-    matchingPeriodLabel: null,
-    comparisonStatus: "not_loaded",
-    comparisonComputable: false,
-    missingComponents: [],
-    notes: [],
-    revenueDeltaPercent: null,
-    computedEbitdaDeltaPercent: null,
-    adjustedEbitdaDeltaPercent: null
-  };
-}
+export { buildEmptyTaxSourceStatus, buildTaxSourceStatus } from "./tax-source-status.ts";
 
 function getSelectedSnapshot(params: {
   snapshots: PeriodSnapshot[];
@@ -333,52 +319,6 @@ export function buildDealCoreDerivedContext(params: {
   };
 }
 
-export function buildTaxSourceStatus(params: {
-  taxContext: SourceFinancialContext;
-  matchedPeriodLabel: string | null;
-  comparisonComputable: boolean;
-  comparisonMissingComponents: string[];
-  comparisonNotes: string[];
-  revenueDeltaPercent: number | null;
-  computedEbitdaDeltaPercent: number | null;
-  adjustedEbitdaDeltaPercent: number | null;
-}): TaxSourceStatus {
-  const { taxContext } = params;
-  const comparisonStatus =
-    taxContext.entries.length === 0
-      ? "not_loaded"
-      : params.comparisonComputable
-        ? "ready"
-        : "partial";
-
-  return {
-    documentCount: taxContext.documents.length,
-    periodCount: taxContext.periods.length,
-    rowCount: taxContext.entries.length,
-    mappedLineCount: taxContext.entries.filter(
-      (entry) => Boolean(entry.category) && Boolean(entry.statement_type)
-    ).length,
-    lowConfidenceLineCount: taxContext.entries.filter(
-      (entry) => entry.confidence === "low"
-    ).length,
-    broadClassificationCount: countBroadClassifications(
-      taxContext.entries.map((entry) => ({
-        ...entry,
-        period_id: entry.source_period_id
-      })) as FinancialEntry[]
-    ),
-    hasMatchingPeriod: Boolean(params.matchedPeriodLabel),
-    matchingPeriodLabel: params.matchedPeriodLabel,
-    comparisonStatus,
-    comparisonComputable: params.comparisonComputable,
-    missingComponents: params.comparisonMissingComponents,
-    notes: params.comparisonNotes,
-    revenueDeltaPercent: params.revenueDeltaPercent,
-    computedEbitdaDeltaPercent: params.computedEbitdaDeltaPercent,
-    adjustedEbitdaDeltaPercent: params.adjustedEbitdaDeltaPercent
-  };
-}
-
 export function buildDealDerivedContextFromCore(params: {
   core: DealCoreDerivedContext;
   taxSourceStatus: TaxSourceStatus;
@@ -517,12 +457,25 @@ const getDealDerivedContextCached = cache(
       matchedPeriodLabel: sourceReconciliation?.taxPeriodLabel ?? null,
       comparisonComputable:
         sourceReconciliation?.coverage.hasTaxData === true &&
+        sourceReconciliation.coverage.hasReportedEbitdaReference === true &&
         sourceReconciliation.ebitda.tax !== null,
-      comparisonMissingComponents: [],
-      comparisonNotes: [],
+      comparisonMissingComponents: sourceReconciliation
+        ? [
+            ...sourceReconciliation.explainability.missingComponents,
+            ...(sourceReconciliation.coverage.hasReportedEbitdaReference
+              ? []
+              : ["Reported EBITDA reference is missing for the matched period."])
+          ]
+        : [],
+      comparisonNotes: sourceReconciliation?.explainability.notes ?? [],
       revenueDeltaPercent: sourceReconciliation?.revenue.deltaPct ?? null,
+      reportedEbitdaDeltaPercent:
+        sourceReconciliation?.comparisons.reportedReferenceVsTax.deltaPct ?? null,
       computedEbitdaDeltaPercent: sourceReconciliation?.comparisons.computedVsTax.deltaPct ?? null,
-      adjustedEbitdaDeltaPercent: sourceReconciliation?.comparisons.adjustedVsTax.deltaPct ?? null
+      adjustedEbitdaDeltaPercent: sourceReconciliation?.comparisons.adjustedVsTax.deltaPct ?? null,
+      requiredComponentsFound: sourceReconciliation?.explainability.requiredComponentsFound ?? [],
+      taxCoverageStatus: sourceReconciliation?.explainability.taxCoverageStatus ?? "not_loaded",
+      comparisonContext: sourceReconciliation?.explainability.comparisonContext ?? null
     });
 
     return buildDealDerivedContextFromCore({
