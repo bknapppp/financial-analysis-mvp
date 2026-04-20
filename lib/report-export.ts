@@ -276,7 +276,12 @@ export function buildReportSections(data: DashboardData): ReportSection[] {
       title: "EBITDA Bridge",
       sheetName: "EBITDA Bridge",
       columns: ["Line Item", "Value", "Notes"],
-      keyRowLabels: ["Reported EBITDA", "Accepted Add-Backs", "Adjusted EBITDA"],
+      keyRowLabels: [
+        "Canonical EBITDA",
+        "Reported EBITDA (Reference)",
+        "Accepted Add-Backs",
+        "Adjusted EBITDA"
+      ],
       rows: !data.ebitdaBridge
         ? [[
             textCell("No bridge available"),
@@ -284,7 +289,16 @@ export function buildReportSections(data: DashboardData): ReportSection[] {
             textCell("No bridge data available for the selected period")
           ]]
         : [
-            [textCell("Reported EBITDA"), numberCell(data.ebitdaBridge.reportedEbitda), textCell("")],
+            [
+              textCell("Canonical EBITDA"),
+              numberCell(data.ebitdaBridge.canonicalEbitda),
+              textCell("")
+            ],
+            [
+              textCell("Reported EBITDA (Reference)"),
+              numberCell(data.ebitdaBridge.reportedEbitdaReference),
+              textCell("")
+            ],
             ...(data.ebitdaBridge.groups.length === 0
               ? [[
                   textCell("Accepted Add-Backs"),

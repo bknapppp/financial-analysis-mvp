@@ -111,7 +111,8 @@ const fullResult = buildSourceReconciliation({
     created_at: "2026-04-09T00:00:00.000Z"
   },
   reportedRevenue: 5200000,
-  reportedEbitda: 900000,
+  reconstructedEbitda: 900000,
+  reportedEbitdaReference: 950000,
   adjustedEbitda: 1400000,
   taxResult: baseTaxResult
 });
@@ -120,13 +121,14 @@ assert.equal(fullResult.revenue.reported, 5200000);
 assert.equal(fullResult.revenue.tax, 4600000);
 assert.equal(fullResult.revenue.delta, 600000);
 assert.equal(fullResult.revenue.deltaPct, 600000 / 5200000);
-assert.equal(fullResult.ebitda.reported, 900000);
+assert.equal(fullResult.ebitda.computed, 900000);
+assert.equal(fullResult.ebitda.reportedReference, 950000);
 assert.equal(fullResult.ebitda.adjusted, 1400000);
 assert.equal(fullResult.ebitda.tax, 1250000);
-assert.equal(fullResult.comparisons.reportedVsTax.delta, -350000);
+assert.equal(fullResult.comparisons.computedVsTax.delta, -350000);
 assert.equal(fullResult.comparisons.adjustedVsTax.delta, 150000);
 assert.equal(fullResult.addbacks.amount, 500000);
-assert.equal(fullResult.addbacks.pctOfReported, 500000 / 900000);
+assert.equal(fullResult.addbacks.pctOfComputed, 500000 / 900000);
 assert.equal(fullResult.coverage.hasReportedFinancials, true);
 assert.equal(fullResult.coverage.hasTaxData, true);
 assert.equal(fullResult.coverage.hasAdjustedEBITDA, true);
@@ -150,7 +152,8 @@ const missingTaxResult = buildSourceReconciliation({
     created_at: "2026-04-09T00:00:00.000Z"
   },
   reportedRevenue: 5200000,
-  reportedEbitda: 900000,
+  reconstructedEbitda: 900000,
+  reportedEbitdaReference: 950000,
   adjustedEbitda: 1400000,
   taxResult: null
 });
@@ -171,7 +174,8 @@ const missingAdjustedResult = buildSourceReconciliation({
     created_at: "2026-04-09T00:00:00.000Z"
   },
   reportedRevenue: 5200000,
-  reportedEbitda: 900000,
+  reconstructedEbitda: 900000,
+  reportedEbitdaReference: 950000,
   adjustedEbitda: null,
   taxResult: baseTaxResult
 });
@@ -190,7 +194,8 @@ const zeroRevenueResult = buildSourceReconciliation({
     created_at: "2026-04-09T00:00:00.000Z"
   },
   reportedRevenue: 0,
-  reportedEbitda: 0,
+  reconstructedEbitda: 0,
+  reportedEbitdaReference: 0,
   adjustedEbitda: 0,
   taxResult: {
     ...baseTaxResult,
@@ -213,11 +218,12 @@ const zeroRevenueResult = buildSourceReconciliation({
   }
 });
 assert.equal(zeroRevenueResult.revenue.deltaPct, null);
-assert.equal(zeroRevenueResult.comparisons.reportedVsTax.deltaPct, null);
+assert.equal(zeroRevenueResult.comparisons.computedVsTax.deltaPct, null);
 
 const reportedSnapshot = {
   revenue: 5200000,
   ebitda: 900000,
+  reportedEbitda: 950000,
   adjustedEbitda: 1400000
 };
 const reportedSnapshotBefore = JSON.stringify(reportedSnapshot);
@@ -232,7 +238,8 @@ void buildSourceReconciliation({
     created_at: "2026-04-09T00:00:00.000Z"
   },
   reportedRevenue: reportedSnapshot.revenue,
-  reportedEbitda: reportedSnapshot.ebitda,
+  reconstructedEbitda: reportedSnapshot.ebitda,
+  reportedEbitdaReference: reportedSnapshot.reportedEbitda,
   adjustedEbitda: reportedSnapshot.adjustedEbitda,
   taxResult: baseTaxResult
 });

@@ -109,7 +109,7 @@ export function buildSourceReconciliation(params: {
   periodId: string;
   reportedPeriod: ReportingPeriod | null;
   reportedRevenue: number | null;
-  computedEbitda: number | null;
+  reconstructedEbitda: number | null;
   reportedEbitdaReference?: number | null;
   adjustedEbitda: number | null;
   taxResult: TaxDerivedEbitdaResult | null;
@@ -120,11 +120,11 @@ export function buildSourceReconciliation(params: {
     params.taxResult?.components.rawSigned.netRevenue ?? null
   );
   const computedVsTaxDelta = safeDelta(
-    params.computedEbitda,
+    params.reconstructedEbitda,
     params.taxResult?.taxDerivedEBITDA ?? null
   );
   const computedVsTaxDeltaPct = safeDeltaPct(
-    params.computedEbitda,
+    params.reconstructedEbitda,
     params.taxResult?.taxDerivedEBITDA ?? null
   );
   const adjustedVsTaxDelta = safeDelta(
@@ -136,14 +136,14 @@ export function buildSourceReconciliation(params: {
     params.taxResult?.taxDerivedEBITDA ?? null
   );
   const addbacksAmount =
-    params.computedEbitda !== null && params.adjustedEbitda !== null
-      ? params.adjustedEbitda - params.computedEbitda
+    params.reconstructedEbitda !== null && params.adjustedEbitda !== null
+      ? params.adjustedEbitda - params.reconstructedEbitda
       : null;
   const addbacksPctOfComputed =
-    params.computedEbitda !== null &&
-    params.computedEbitda !== 0 &&
+    params.reconstructedEbitda !== null &&
+    params.reconstructedEbitda !== 0 &&
     addbacksAmount !== null
-      ? addbacksAmount / params.computedEbitda
+      ? addbacksAmount / params.reconstructedEbitda
       : null;
 
   const flags: SourceReconciliationFlag[] = [];
@@ -216,7 +216,7 @@ export function buildSourceReconciliation(params: {
       deltaPct: revenueDeltaPct
     },
     ebitda: {
-      computed: params.computedEbitda,
+      computed: params.reconstructedEbitda,
       reportedReference: params.reportedEbitdaReference ?? null,
       adjusted: params.adjustedEbitda,
       tax: params.taxResult?.taxDerivedEBITDA ?? null
@@ -237,7 +237,7 @@ export function buildSourceReconciliation(params: {
     },
     coverage: {
       hasReportedFinancials:
-        params.reportedRevenue !== null || params.computedEbitda !== null,
+        params.reportedRevenue !== null || params.reconstructedEbitda !== null,
       hasTaxData: params.taxResult !== null && params.taxResult.entryCount > 0,
       hasAdjustedEBITDA: params.adjustedEbitda !== null
     },
@@ -368,7 +368,7 @@ export async function getSourceReconciliationForContext(params: {
     periodId: params.periodId,
     reportedPeriod,
     reportedRevenue: reportedSnapshot?.revenue ?? null,
-    computedEbitda: reportedSnapshot?.ebitda ?? null,
+    reconstructedEbitda: reportedSnapshot?.ebitda ?? null,
     reportedEbitdaReference: reportedSnapshot?.reportedEbitda ?? null,
     adjustedEbitda: reportedSnapshot?.adjustedEbitda ?? null,
     taxResult

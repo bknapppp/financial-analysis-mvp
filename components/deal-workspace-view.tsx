@@ -31,15 +31,13 @@ import { RiskFlagsPanel } from "@/components/risk-flags-panel";
 import { StatementTable } from "@/components/statement-table";
 import { UnderwritingCompletionPanel } from "@/components/underwriting-completion-panel";
 import { UnderwritingSnapshotPanel } from "@/components/underwriting-snapshot-panel";
-import { buildCreditScenario } from "@/lib/credit-scenario";
 import { buildDealState } from "@/lib/deal-state";
 import { getDealStageDisplay, getDealStageLabel } from "@/lib/deal-stage";
 import { groupDiligenceIssues } from "@/lib/diligence-issue-groups";
 import { devLog } from "@/lib/debug";
 import { ADD_BACK_LAYER_SECTION_ID } from "@/lib/fix-it";
 import { formatCurrency, formatPercent } from "@/lib/formatters";
-import { buildUnderwritingCompletion, getMissingCreditScenarioInputs } from "@/lib/underwriting/completion";
-import { buildInvestmentOverview } from "@/lib/underwriting/investment-overview";
+import { buildUnderwritingAnalysis } from "@/lib/underwriting/analysis";
 import type {
   DashboardData,
   NormalizedPeriodOutput,
@@ -548,20 +546,26 @@ export function DealWorkspaceView({ data, section }: DealWorkspaceViewProps) {
     () => parseCreditScenarioInputValues(underwritingInputValues),
     [underwritingInputValues]
   );
-  const underwritingScenario = useMemo(
+  const underwritingAnalysis = useMemo(
     () =>
-      buildCreditScenario({
-        inputs: parsedUnderwritingInputs,
-        ebitda:
-          underwritingEbitdaBasis === "adjusted"
-            ? effectiveSnapshot.adjustedEbitda
-            : effectiveSnapshot.ebitda
+      buildUnderwritingAnalysis({
+        snapshot: effectiveSnapshot,
+        entries: data.entries,
+        dataQuality: data.dataQuality,
+        taxSourceStatus: data.taxSourceStatus,
+        reconciliation: data.reconciliation,
+        underwritingInputs: parsedUnderwritingInputs,
+        ebitdaBasis: underwritingEbitdaBasis
       }),
-    [effectiveSnapshot, parsedUnderwritingInputs, underwritingEbitdaBasis]
-  );
-  const missingUnderwritingInputs = useMemo(
-    () => getMissingCreditScenarioInputs(parsedUnderwritingInputs),
-    [parsedUnderwritingInputs]
+    [
+      data.dataQuality,
+      data.entries,
+      data.reconciliation,
+      data.taxSourceStatus,
+      effectiveSnapshot,
+      parsedUnderwritingInputs,
+      underwritingEbitdaBasis
+    ]
   );
   const acceptedAddBackItemsForSnapshot = useMemo(
     () =>
@@ -572,48 +576,12 @@ export function DealWorkspaceView({ data, section }: DealWorkspaceViewProps) {
     [data.addBackReviewItems, effectiveSnapshot.periodId]
   );
   const completionSummary = useMemo(
-    () =>
-      buildUnderwritingCompletion({
-        snapshot: effectiveSnapshot,
-        entries: data.entries,
-        dataQuality: data.dataQuality,
-        taxSourceStatus: data.taxSourceStatus,
-        underwritingInputs: parsedUnderwritingInputs,
-        creditScenario: underwritingScenario,
-        reconciliation: data.reconciliation
-      }),
-    [
-      data.dataQuality,
-      data.entries,
-      data.taxSourceStatus,
-      effectiveSnapshot,
-      parsedUnderwritingInputs,
-      underwritingScenario
-    ]
+    () => underwritingAnalysis.completionSummary,
+    [underwritingAnalysis]
   );
   const investmentOverview = useMemo(
-    () =>
-      buildInvestmentOverview({
-        snapshot: effectiveSnapshot,
-        acceptedAddBackTotal: effectiveSnapshot.acceptedAddBacks ?? 0,
-        ebitdaBasis: underwritingEbitdaBasis,
-        underwritingInputs: parsedUnderwritingInputs,
-        creditScenario: underwritingScenario,
-        dataQuality: data.dataQuality,
-        reconciliation: data.reconciliation,
-        taxSourceStatus: data.taxSourceStatus,
-        completionSummary
-      }),
-    [
-      completionSummary,
-      data.dataQuality,
-      data.reconciliation,
-      data.taxSourceStatus,
-      effectiveSnapshot,
-      parsedUnderwritingInputs,
-      underwritingEbitdaBasis,
-      underwritingScenario
-    ]
+    () => underwritingAnalysis.investmentOverview,
+    [underwritingAnalysis]
   );
   const dealState = useMemo(
     () =>
@@ -621,14 +589,14 @@ export function DealWorkspaceView({ data, section }: DealWorkspaceViewProps) {
         completionSummary,
         dataQuality: data.dataQuality,
         reconciliation: data.reconciliation,
-        creditScenario: underwritingScenario
+        creditScenario: underwritingAnalysis.creditScenario
       }),
     [
       completionSummary,
       data.dataQuality,
       data.reconciliation,
       effectiveSnapshot,
-      underwritingScenario
+      underwritingAnalysis
     ]
   );
   const activeIssues = useMemo(
@@ -1052,9 +1020,9 @@ export function DealWorkspaceView({ data, section }: DealWorkspaceViewProps) {
             <section>
               <UnderwritingSnapshotPanel
                 snapshot={effectiveSnapshot}
-                scenario={underwritingScenario}
+                scenario={underwritingAnalysis.creditScenario}
                 ebitdaBasis={underwritingEbitdaBasis}
-                missingInputs={missingUnderwritingInputs}
+                missingInputs={underwritingAnalysis.missingInputs}
               />
             </section>
 
@@ -1083,15 +1051,15 @@ export function DealWorkspaceView({ data, section }: DealWorkspaceViewProps) {
               onInputValuesChange={setUnderwritingInputValues}
               ebitdaBasis={underwritingEbitdaBasis}
               onEbitdaBasisChange={setUnderwritingEbitdaBasis}
-              scenario={underwritingScenario}
-              missingInputs={missingUnderwritingInputs}
+              scenario={underwritingAnalysis.creditScenario}
+              missingInputs={underwritingAnalysis.missingInputs}
             />
 
             <section className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
               <InvestmentOverviewPanel overview={investmentOverview} detailHref={sourceDataHref} />
               <RiskFlagsPanel
                 snapshot={effectiveSnapshot}
-                creditScenario={underwritingScenario}
+                creditScenario={underwritingAnalysis.creditScenario}
                 readiness={data.readiness}
                 dataQuality={data.dataQuality}
                 acceptedAddBackItems={acceptedAddBackItemsForSnapshot}
@@ -1100,7 +1068,13 @@ export function DealWorkspaceView({ data, section }: DealWorkspaceViewProps) {
             </section>
 
             {companyId ? (
-              <DealNextActionsPanel companyId={companyId} dealState={dealState} />
+              <DealNextActionsPanel
+                companyId={companyId}
+                actions={dealState.actions}
+                issues={dealState.issues}
+                completeness={dealState.completeness}
+                trustScore={dealState.trustScore}
+              />
             ) : null}
 
             <DiligenceFeedbackPanel

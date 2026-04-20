@@ -88,7 +88,7 @@ function buildEbitdaExplainability(params: {
   nonOperating: number;
   taxExpense: number;
   depreciationAndAmortization: number;
-  reportedEbitda: number;
+  reportedEbitda: number | null;
   incomeStatementDebug: NonNullable<PeriodSnapshot["incomeStatementDebug"]>;
   incomeStatementMetricDebug: IncomeStatementMetricDebug;
 }): EbitdaExplainability {
@@ -130,30 +130,13 @@ function buildEbitdaExplainability(params: {
     };
   }
 
-  if (source === "reported_fallback") {
-    return {
-      basis: "reported_fallback",
-      basisLabel: "Using reported EBITDA (fallback)",
-      note: "Canonical EBITDA is falling back to the reported EBITDA line because full bottom-up inputs are not available.",
-      netIncome: incomeStatementDebug.netIncome.source !== "none" ? netIncome : null,
-      interestAddBack: incomeStatementDebug.nonOperating.source !== "none" ? nonOperating : null,
-      taxAddBack: incomeStatementDebug.taxExpense.source !== "none" ? taxExpense : null,
-      depreciationAndAmortizationAddBack:
-        incomeStatementDebug.depreciationAndAmortization.source !== "none"
-          ? depreciationAndAmortization
-          : null,
-      computedEbitda: null,
-      reportedEbitda,
-      selectedLabels: incomeStatementMetricDebug.ebitda.selectedLabels,
-      excludedLabels: incomeStatementMetricDebug.ebitda.excludedLabels,
-      missingComponents
-    };
-  }
-
   return {
     basis: "incomplete",
     basisLabel: "Insufficient bottom-up inputs",
-    note: "EBITDA is unavailable because the current period does not contain enough bottom-up inputs or a reported EBITDA fallback.",
+    note:
+      reportedEbitda !== null
+        ? "Canonical EBITDA is unavailable because the current period does not contain enough bottom-up inputs. A reported EBITDA reference exists, but it is not used as canonical EBITDA."
+        : "Canonical EBITDA is unavailable because the current period does not contain enough bottom-up inputs.",
     netIncome: incomeStatementDebug.netIncome.source !== "none" ? netIncome : null,
     interestAddBack: incomeStatementDebug.nonOperating.source !== "none" ? nonOperating : null,
     taxAddBack: incomeStatementDebug.taxExpense.source !== "none" ? taxExpense : null,
@@ -199,7 +182,10 @@ function calculateSnapshotForPeriod(
   const taxExpense = incomeStatementDebug.taxExpense.total;
   const netIncome = incomeStatementDebug.netIncome.total;
   const reportedOperatingIncome = incomeStatementDebug.operatingIncome.total;
-  const reportedEbitda = incomeStatementDebug.ebitda.total;
+  const reportedEbitda = metricOrNull({
+    total: incomeStatementDebug.ebitda.total,
+    source: incomeStatementDebug.ebitda.source
+  });
   const leafBalanceSheetEntries = periodEntries.filter(
     (entry) =>
       entry.statement_type === "balance_sheet" &&
@@ -238,19 +224,12 @@ function calculateSnapshotForPeriod(
     incomeStatementDebug.nonOperating.source !== "none" &&
     incomeStatementDebug.taxExpense.source !== "none" &&
     incomeStatementDebug.depreciationAndAmortization.source !== "none";
-  const computedEbitda =
-    netIncome + nonOperating + taxExpense + depreciationAndAmortization;
-  const ebitda = canComputeEbitdaBottomUp
-    ? computedEbitda
-    : incomeStatementDebug.ebitda.source !== "none"
-      ? reportedEbitda
-      : null;
+  const computedEbitda = canComputeEbitdaBottomUp
+    ? netIncome + nonOperating + taxExpense + depreciationAndAmortization
+    : null;
+  const ebitda = computedEbitda;
   const ebitdaSource: IncomeStatementMetricDebug["ebitda"]["source"] =
-    canComputeEbitdaBottomUp
-      ? "bottom_up"
-      : incomeStatementDebug.ebitda.source !== "none"
-        ? "reported_fallback"
-        : "none";
+    canComputeEbitdaBottomUp ? "bottom_up" : "none";
   const incomeStatementMetricDebug: IncomeStatementMetricDebug = {
     ebit: {
       source: ebitSource,
@@ -289,9 +268,7 @@ function calculateSnapshotForPeriod(
               incomeStatementDebug.taxExpense.selectedLabels,
               incomeStatementDebug.depreciationAndAmortization.selectedLabels
             )
-          : ebitdaSource === "reported_fallback"
-            ? incomeStatementDebug.ebitda.selectedLabels
-            : [],
+          : [],
       excludedLabels:
         ebitdaSource === "bottom_up"
           ? mergeLabels(
@@ -300,9 +277,7 @@ function calculateSnapshotForPeriod(
               incomeStatementDebug.taxExpense.excludedLabels,
               incomeStatementDebug.depreciationAndAmortization.excludedLabels
             )
-          : ebitdaSource === "reported_fallback"
-            ? incomeStatementDebug.ebitda.excludedLabels
-            : []
+          : []
     }
   };
   const adjustment = calculateAdjustedEbitdaForPeriod({

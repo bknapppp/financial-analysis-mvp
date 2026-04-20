@@ -804,6 +804,17 @@ export type InvestmentOverviewSummary = {
   sections: InvestmentOverviewSection[];
 };
 
+export type UnderwritingAnalysis = {
+  ebitdaBasis: UnderwritingEbitdaBasis;
+  selectedEbitda: number | null;
+  underwritingInputs: CreditScenarioInputs;
+  missingInputs: string[];
+  acceptedAddBackTotal: number;
+  creditScenario: CreditScenarioResult;
+  completionSummary: UnderwritingCompletionSummary;
+  investmentOverview: InvestmentOverviewSummary;
+};
+
 export type AddBackSuggestion = {
   companyId: string;
   periodId: string;

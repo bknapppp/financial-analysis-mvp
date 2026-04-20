@@ -216,6 +216,92 @@ assert.equal(emptyResult.taxDerivedEBITDA, null);
 assert.equal(emptyResult.taxDerivedEBITDAIncludingInterest, null);
 assert.equal(emptyResult.coverage.computable, false);
 assert.equal(emptyResult.coverage.status, "insufficient");
+assert.equal(emptyResult.normalization.normalizedTaxEBITDA, null);
+
+const explicitZeroComponentResult = calculateTaxDerivedEbitda({
+  companyId,
+  sourcePeriodId: "zero-components-period",
+  period: {
+    label: "Zero Components",
+    period_date: "2023-12-31"
+  },
+  entries: [
+    {
+      id: "zero-1",
+      account_name: "Gross receipts",
+      statement_type: "income",
+      amount: 0,
+      category: "Revenue",
+      addback_flag: false,
+      matched_by: "keyword_rule",
+      confidence: "high",
+      mapping_explanation: "Zero revenue line is explicitly present.",
+      created_at: "2026-04-09T00:00:00.000Z",
+      source_period_id: "zero-components-period",
+      source_document_id: "zero-doc",
+      source_type: "tax_return",
+      source_file_name: "zero.json",
+      upload_id: "zero-upload",
+      source_period_label: "Tax Year 2023",
+      source_year: 2023,
+      source_currency: "USD",
+      source_confidence: "unknown"
+    },
+    {
+      id: "zero-2",
+      account_name: "Cost of goods sold",
+      statement_type: "income",
+      amount: 0,
+      category: "COGS",
+      addback_flag: false,
+      matched_by: "keyword_rule",
+      confidence: "high",
+      mapping_explanation: "Zero COGS line is explicitly present.",
+      created_at: "2026-04-09T00:00:00.000Z",
+      source_period_id: "zero-components-period",
+      source_document_id: "zero-doc",
+      source_type: "tax_return",
+      source_file_name: "zero.json",
+      upload_id: "zero-upload",
+      source_period_label: "Tax Year 2023",
+      source_year: 2023,
+      source_currency: "USD",
+      source_confidence: "unknown"
+    },
+    {
+      id: "zero-3",
+      account_name: "Rent",
+      statement_type: "income",
+      amount: 0,
+      category: "Operating Expenses",
+      addback_flag: false,
+      matched_by: "keyword_rule",
+      confidence: "high",
+      mapping_explanation: "Zero operating expense line is explicitly present.",
+      created_at: "2026-04-09T00:00:00.000Z",
+      source_period_id: "zero-components-period",
+      source_document_id: "zero-doc",
+      source_type: "tax_return",
+      source_file_name: "zero.json",
+      upload_id: "zero-upload",
+      source_period_label: "Tax Year 2023",
+      source_year: 2023,
+      source_currency: "USD",
+      source_confidence: "unknown"
+    }
+  ]
+});
+assert.equal(explicitZeroComponentResult.taxDerivedEBITDA, 0);
+assert.equal(explicitZeroComponentResult.coverage.computable, true);
+assert.equal(explicitZeroComponentResult.coverage.status, "complete");
+assert.ok(explicitZeroComponentResult.coverage.requiredComponentsFound.includes("grossRevenue"));
+assert.ok(explicitZeroComponentResult.coverage.requiredComponentsFound.includes("cogs"));
+assert.ok(
+  explicitZeroComponentResult.coverage.requiredComponentsFound.includes(
+    "operatingExpensesBeforeDandA"
+  )
+);
+assert.ok(!explicitZeroComponentResult.coverage.missingComponents.includes("cogs"));
 
 const explicitSignConventionResult = calculateTaxDerivedEbitda({
   companyId,

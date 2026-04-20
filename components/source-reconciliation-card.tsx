@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { focusFixItTarget } from "@/components/fix-it-focus";
 import { TaxSourceDrawer } from "@/components/tax-source-drawer";
+import { SOURCE_DATA_RECONCILIATION_SECTION_ID } from "@/lib/fix-it";
 import { formatCurrency, formatPercent } from "@/lib/formatters";
 
 type SourceReconciliationFlag = {
@@ -242,9 +245,23 @@ export function SourceReconciliationCard({
   companyId,
   periodId
 }: SourceReconciliationCardProps) {
+  const searchParams = useSearchParams();
   const [state, setState] = useState<LoadState>({ status: "idle" });
   const [refreshKey, setRefreshKey] = useState(0);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const requestedFixSection = searchParams.get("fixSection");
+
+  useEffect(() => {
+    if (requestedFixSection !== SOURCE_DATA_RECONCILIATION_SECTION_ID) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      focusFixItTarget(SOURCE_DATA_RECONCILIATION_SECTION_ID, null);
+    }, 150);
+
+    return () => window.clearTimeout(timer);
+  }, [requestedFixSection]);
 
   useEffect(() => {
     if (!companyId || !periodId) {
@@ -312,7 +329,11 @@ export function SourceReconciliationCard({
 
   return (
     <>
-      <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel">
+      <section
+        id={SOURCE_DATA_RECONCILIATION_SECTION_ID}
+        data-fix-section={SOURCE_DATA_RECONCILIATION_SECTION_ID}
+        className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel"
+      >
         <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">

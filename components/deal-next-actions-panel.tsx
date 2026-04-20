@@ -1,11 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { buildDealActionHref, type DealState } from "@/lib/deal-state";
+import { buildDealActionHref, type DealAction, type DealIssue } from "@/lib/deal-state";
 
 type DealNextActionsPanelProps = {
   companyId: string;
-  dealState: DealState;
+  actions: DealAction[];
+  issues: DealIssue[];
+  completeness: number;
+  trustScore: number;
 };
 
 function severityClasses(severity: "blocker" | "warning") {
@@ -16,24 +19,20 @@ function severityClasses(severity: "blocker" | "warning") {
 
 export function DealNextActionsPanel({
   companyId,
-  dealState
+  actions,
+  issues,
+  completeness,
+  trustScore
 }: DealNextActionsPanelProps) {
-  const actionsWithIssues = dealState.actions
+  const actionsWithIssues = actions
     .map((action) => ({
       action,
-      issue: dealState.issues.find((issue) => issue.id === action.issueId) ?? null
+      issue: issues.find((issue) => issue.id === action.issueId) ?? null
     }))
-    .filter(
-      (item): item is { action: DealState["actions"][number]; issue: DealState["issues"][number] } =>
-        item.issue !== null
-    );
+    .filter((item): item is { action: DealAction; issue: DealIssue } => item.issue !== null);
 
-  const blockerActions = actionsWithIssues.filter(
-    (item) => item.issue.severity === "blocker"
-  );
-  const warningActions = actionsWithIssues.filter(
-    (item) => item.issue.severity === "warning"
-  );
+  const blockerActions = actionsWithIssues.filter((item) => item.issue.severity === "blocker");
+  const warningActions = actionsWithIssues.filter((item) => item.issue.severity === "warning");
 
   return (
     <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel">
@@ -50,7 +49,7 @@ export function DealNextActionsPanel({
           </p>
         </div>
         <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700">
-          {dealState.completeness}% complete • {dealState.trustScore} trust
+          {completeness}% complete | {trustScore} trust
         </div>
       </div>
 

@@ -20,6 +20,9 @@ import { focusFixItTarget } from "@/components/fix-it-focus";
 import { normalizeImportedPeriod } from "@/lib/import-periods";
 import {
   SOURCE_DATA_FILE_FIELD_ID,
+  SOURCE_DATA_FOCUSED_MAPPING_SECTION_ID,
+  SOURCE_DATA_REVIEW_REQUIRED_FIELD_ID,
+  SOURCE_DATA_REVIEW_SECTION_ID,
   SOURCE_DATA_UPLOAD_SECTION_ID
 } from "@/lib/fix-it";
 import type { ParsedImportFile, ParsedImportSheet } from "@/lib/import-preview";
@@ -426,12 +429,32 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
 
     if (requestedFixStep === "1") {
       setActiveStep(1);
+      return;
+    }
+
+    if (requestedFixStep === "3") {
+      setActiveStep(3);
     }
   }, [requestedFixStep, setActiveStep]);
 
   useEffect(() => {
-    if (requestedFixSection !== SOURCE_DATA_UPLOAD_SECTION_ID) {
+    if (
+      requestedFixSection !== SOURCE_DATA_UPLOAD_SECTION_ID &&
+      requestedFixSection !== SOURCE_DATA_REVIEW_SECTION_ID &&
+      requestedFixSection !== SOURCE_DATA_FOCUSED_MAPPING_SECTION_ID
+    ) {
       return;
+    }
+
+    if (requestedFixSection === SOURCE_DATA_REVIEW_SECTION_ID) {
+      setReviewMode(true);
+      setPreviewFilter("review_required");
+    }
+
+    if (requestedFixSection === SOURCE_DATA_FOCUSED_MAPPING_SECTION_ID) {
+      setReviewMode(true);
+      setPreviewFilter("review_required");
+      setFocusedReviewOpen(true);
     }
 
     const timer = window.setTimeout(() => {
@@ -439,7 +462,13 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
     }, 150);
 
     return () => window.clearTimeout(timer);
-  }, [activeStep, requestedFixField, requestedFixSection]);
+  }, [
+    activeStep,
+    requestedFixField,
+    requestedFixSection,
+    setPreviewFilter,
+    setReviewMode
+  ]);
 
   return (
     <section
@@ -1105,7 +1134,11 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
 
       {activeStep === 3 && selectedSheet ? (
         <div className="mt-5 space-y-5">
-          <section className="rounded-2xl border border-slate-200 p-4">
+          <section
+            id={SOURCE_DATA_REVIEW_SECTION_ID}
+            data-fix-section={SOURCE_DATA_REVIEW_SECTION_ID}
+            className="rounded-2xl border border-slate-200 p-4"
+          >
             <StepHeading
               step="Step 3"
               title="Review Mappings"
@@ -1124,6 +1157,8 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
                 </p>
               </div>
               <button
+                id={SOURCE_DATA_REVIEW_REQUIRED_FIELD_ID}
+                data-fix-field={SOURCE_DATA_REVIEW_REQUIRED_FIELD_ID}
                 type="button"
                 onClick={() => {
                   setReviewMode(true);
@@ -1359,6 +1394,8 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
             )}
 
             <details
+              id={SOURCE_DATA_FOCUSED_MAPPING_SECTION_ID}
+              data-fix-section={SOURCE_DATA_FOCUSED_MAPPING_SECTION_ID}
               open={focusedReviewOpen}
               onToggle={(event) =>
                 setFocusedReviewOpen((event.currentTarget as HTMLDetailsElement).open)

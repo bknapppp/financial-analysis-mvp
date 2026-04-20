@@ -6,7 +6,6 @@ import {
 } from "./add-backs.ts";
 import { ADD_BACK_SELECT, isAddBacksSchemaError } from "./add-back-schema.ts";
 import { buildBalanceSheet, buildIncomeStatement, buildSnapshots } from "./calculations.ts";
-import { buildCreditScenario } from "./credit-scenario.ts";
 import { buildDataQualityReport } from "./data-quality.ts";
 import { buildDataReadiness } from "./data-readiness.ts";
 import {
@@ -24,11 +23,13 @@ import {
 import { buildNormalizedPeriodOutputs } from "./normalized-outputs.ts";
 import { getSourceReconciliationForContext } from "./source-reconciliation.ts";
 import { getSupabaseServerClient } from "./supabase.ts";
-import { buildUnderwritingCompletion, countBroadClassifications } from "./underwriting/completion.ts";
+import { buildUnderwritingAnalysis } from "./underwriting/analysis.ts";
+import { countBroadClassifications } from "./underwriting/completion.ts";
 import type {
   AccountMapping,
   AddBack,
   Company,
+  CreditScenarioResult,
   CreditScenarioInputs,
   DashboardData,
   FinancialEntry,
@@ -112,7 +113,7 @@ export type DealCoreDerivedContext = DealRawContext & {
 export type DealDerivedContext = DealCoreDerivedContext & {
   taxSourceStatus: TaxSourceStatus;
   underwritingInputs: CreditScenarioInputs;
-  defaultCreditScenario: ReturnType<typeof buildCreditScenario>;
+  defaultCreditScenario: CreditScenarioResult;
   completionSummary: DashboardData["completionSummary"];
 };
 
@@ -384,29 +385,22 @@ export function buildDealDerivedContextFromCore(params: {
   underwritingInputs?: CreditScenarioInputs;
 }): DealDerivedContext {
   const underwritingInputs = params.underwritingInputs ?? DEFAULT_UNDERWRITING_INPUTS;
-  const selectedEbitda =
-    params.core.ebitdaBasis === "reported"
-      ? params.core.snapshot.ebitda
-      : params.core.snapshot.adjustedEbitda;
-  const defaultCreditScenario = buildCreditScenario({
-    inputs: underwritingInputs,
-    ebitda: selectedEbitda
+  const underwritingAnalysis = buildUnderwritingAnalysis({
+    snapshot: params.core.snapshot,
+    entries: params.core.entries,
+    dataQuality: params.core.dataQuality,
+    taxSourceStatus: params.taxSourceStatus,
+    reconciliation: params.core.reconciliation,
+    underwritingInputs,
+    ebitdaBasis: params.core.ebitdaBasis === "reported" ? "computed" : "adjusted"
   });
 
   return {
     ...params.core,
     taxSourceStatus: params.taxSourceStatus,
     underwritingInputs,
-    defaultCreditScenario,
-    completionSummary: buildUnderwritingCompletion({
-      snapshot: params.core.snapshot,
-      entries: params.core.entries,
-      dataQuality: params.core.dataQuality,
-      taxSourceStatus: params.taxSourceStatus,
-      underwritingInputs,
-      creditScenario: defaultCreditScenario,
-      reconciliation: params.core.reconciliation
-    })
+    defaultCreditScenario: underwritingAnalysis.creditScenario,
+    completionSummary: underwritingAnalysis.completionSummary
   };
 }
 

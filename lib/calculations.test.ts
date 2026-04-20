@@ -249,10 +249,10 @@ function snapshotFromEntries(entries: FinancialEntry[], addBacks: AddBack[] = []
   ]);
 
   assert.equal(snapshot.ebit, 280);
-  assert.equal(snapshot.ebitda, 330);
+  assert.equal(snapshot.ebitda, null);
   assert.equal(snapshot.incomeStatementMetricDebug?.ebit.source, "reported_fallback");
-  assert.equal(snapshot.incomeStatementMetricDebug?.ebitda.source, "reported_fallback");
-  assert.equal(snapshot.ebitdaExplainability?.basis, "reported_fallback");
+  assert.equal(snapshot.incomeStatementMetricDebug?.ebitda.source, "none");
+  assert.equal(snapshot.ebitdaExplainability?.basis, "incomplete");
   assert.equal(snapshot.ebitdaExplainability?.computedEbitda, null);
   assert.equal(snapshot.ebitdaExplainability?.reportedEbitda, 330);
   assert.deepEqual(snapshot.ebitdaExplainability?.missingComponents, [
@@ -275,6 +275,18 @@ function snapshotFromEntries(entries: FinancialEntry[], addBacks: AddBack[] = []
   assert.equal(snapshot.adjustedEbitda, null);
   assert.equal(snapshot.incomeStatementMetricDebug?.ebitda.source, "none");
   assert.equal(snapshot.ebitdaExplainability?.basis, "incomplete");
+}
+
+{
+  const snapshot = snapshotFromEntries([
+    createNamedIncomeEntry("Revenue", "Revenue", 1000),
+    createNamedIncomeEntry("COGS", "COGS", 400),
+    createNamedIncomeEntry("Adjusted EBITDA", "EBITDA", 360)
+  ]);
+
+  assert.equal(snapshot.ebitda, null);
+  assert.equal(snapshot.reportedEbitda, null);
+  assert.equal(snapshot.adjustedEbitda, null);
 }
 
 {

@@ -284,7 +284,7 @@ export type TaxNormalizationSummary = {
     explanation: string;
   }>;
   flaggedCandidates: TaxNormalizationCandidate[];
-  normalizedTaxEBITDA: number;
+  normalizedTaxEBITDA: number | null;
 };
 
 export type TaxEbitdaCoverage = {
@@ -583,21 +583,22 @@ function addToComponents(
 function buildCoverage(params: {
   entryCount: number;
   components: TaxEbitdaComponents;
+  presentComponents: Set<FoundComponentKey>;
 }) {
-  const { entryCount, components } = params;
-  const found = FOUND_COMPONENT_KEYS.filter((key) => components[key] !== 0);
-  const missing = FOUND_COMPONENT_KEYS.filter((key) => components[key] === 0);
+  const { entryCount, components, presentComponents } = params;
+  const found = FOUND_COMPONENT_KEYS.filter((key) => presentComponents.has(key));
+  const missing = FOUND_COMPONENT_KEYS.filter((key) => !presentComponents.has(key));
   const notes: string[] = [];
 
-  if (components.depreciation === 0) {
+  if (!presentComponents.has("depreciation")) {
     notes.push("Depreciation was not present in the tax-source entries and was treated as zero.");
   }
 
-  if (components.amortization === 0) {
+  if (!presentComponents.has("amortization")) {
     notes.push("Amortization was not present in the tax-source entries and was treated as zero.");
   }
 
-  if (components.cogs === 0) {
+  if (!presentComponents.has("cogs")) {
     notes.push("COGS was not present in the tax-source entries; gross profit and EBITDA were computed without a COGS deduction.");
   }
 
@@ -613,9 +614,12 @@ function buildCoverage(params: {
     };
   }
 
-  const computable = components.grossRevenue !== 0 || components.contraRevenue !== 0;
+  const computable =
+    presentComponents.has("grossRevenue") || presentComponents.has("contraRevenue");
   const status =
-    computable && components.cogs !== 0 && components.operatingExpensesBeforeDandA !== 0
+    computable &&
+    presentComponents.has("cogs") &&
+    presentComponents.has("operatingExpensesBeforeDandA")
       ? ("complete" as const)
       : computable
         ? ("partial" as const)
@@ -686,7 +690,7 @@ function buildNormalization(params: {
   return {
     appliedAdjustments: [],
     flaggedCandidates,
-    normalizedTaxEBITDA: taxDerivedEbitda ?? 0
+    normalizedTaxEBITDA: taxDerivedEbitda
   };
 }
 
@@ -697,11 +701,55 @@ export function calculateTaxDerivedEbitda(params: {
   entries: SourceFinancialEntry[];
 }): TaxDerivedEbitdaResult {
   const components = zeroComponents();
+  const presentComponents = new Set<FoundComponentKey>();
   const traceRows = params.entries
     .filter((entry) => entry.statement_type === "income")
     .map((entry) => {
       const classification = classifyTaxEbitdaBucket(entry);
       addToComponents(components, classification.bucket, Number(entry.amount));
+      switch (classification.bucket) {
+        case "gross_revenue":
+          presentComponents.add("grossRevenue");
+          break;
+        case "contra_revenue":
+          presentComponents.add("contraRevenue");
+          break;
+        case "cogs":
+          presentComponents.add("cogs");
+          break;
+        case "officer_compensation":
+        case "salaries_and_wages":
+        case "rent":
+        case "advertising":
+        case "repairs_and_maintenance":
+        case "utilities":
+        case "insurance":
+        case "taxes_and_licenses":
+        case "payroll_taxes_and_benefits":
+        case "meals":
+        case "travel":
+        case "other_deductions":
+        case "operating_expenses_other":
+          presentComponents.add("operatingExpensesBeforeDandA");
+          break;
+        case "depreciation":
+        case "section_179":
+          presentComponents.add("depreciation");
+          break;
+        case "amortization":
+          presentComponents.add("amortization");
+          break;
+        case "interest":
+        case "non_operating_other":
+          presentComponents.add("interest");
+          break;
+        case "income_taxes":
+          presentComponents.add("incomeTaxes");
+          break;
+        case "net_income":
+        case "pre_tax":
+          break;
+      }
 
       return {
         entryId: entry.id,
@@ -734,7 +782,8 @@ export function calculateTaxDerivedEbitda(params: {
 
   const coverage = buildCoverage({
     entryCount: traceRows.length,
-    components
+    components,
+    presentComponents
   });
 
   // Sign convention:
@@ -753,7 +802,9 @@ export function calculateTaxDerivedEbitda(params: {
     : null;
 
   const taxDerivedEbitdaIncludingInterest = coverage.computable
-    ? (taxDerivedEbitda ?? 0) + Math.abs(components.interest)
+    ? taxDerivedEbitda === null
+      ? null
+      : taxDerivedEbitda + Math.abs(components.interest)
     : null;
 
   const normalization = buildNormalization({

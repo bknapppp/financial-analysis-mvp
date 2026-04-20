@@ -1,5 +1,6 @@
 import { CompanySetupForm } from "@/components/company-setup-form";
 import { CsvImportSection } from "@/components/csv-import-section";
+import { DealNextActionsPanel } from "@/components/deal-next-actions-panel";
 import { DealPageNavigation } from "@/components/deal-page-navigation";
 import { DiligenceFeedbackPanel } from "@/components/diligence-feedback-panel";
 import { DiligenceIssuesPanel } from "@/components/diligence-issues-panel";
@@ -9,6 +10,9 @@ import { PeriodForm } from "@/components/period-form";
 import { SourceDataSummaryPanel } from "@/components/source-data-summary-panel";
 import { SourceReconciliationCard } from "@/components/source-reconciliation-card";
 import { getDashboardData } from "@/lib/data";
+import { DEFAULT_UNDERWRITING_INPUTS } from "@/lib/deal-derived-context";
+import { buildDealState } from "@/lib/deal-state";
+import { buildUnderwritingAnalysis } from "@/lib/underwriting/analysis";
 
 export const revalidate = 60;
 
@@ -25,6 +29,24 @@ export default async function SourceDataPage({
   const financialsHref = companyId ? `/financials?companyId=${companyId}` : "/financials";
   const underwritingHref = companyId ? `/deal/${companyId}/underwriting` : "/";
   const sourceDataHref = companyId ? `/source-data?companyId=${companyId}` : "/source-data";
+  const underwritingAnalysis = buildUnderwritingAnalysis({
+    snapshot: data.snapshot,
+    entries: data.entries,
+    dataQuality: data.dataQuality,
+    taxSourceStatus: data.taxSourceStatus,
+    reconciliation: data.reconciliation,
+    underwritingInputs: DEFAULT_UNDERWRITING_INPUTS,
+    ebitdaBasis: "adjusted"
+  });
+  const dealState = buildDealState(data.snapshot, {
+    completionSummary: data.completionSummary,
+    dataQuality: data.dataQuality,
+    reconciliation: data.reconciliation,
+    creditScenario: underwritingAnalysis.creditScenario
+  });
+  const sourceActions = dealState.actions.filter((action) => action.location === "source");
+  const sourceIssueIds = new Set(sourceActions.map((action) => action.issueId));
+  const sourceIssuesForActions = dealState.issues.filter((issue) => sourceIssueIds.has(issue.id));
   const sourceIssues = data.diligenceIssues.filter(
     (issue) =>
       (issue.status === "open" || issue.status === "in_review") &&
@@ -69,6 +91,15 @@ export default async function SourceDataPage({
 
         <section>
           <div className="space-y-6">
+            {companyId ? (
+              <DealNextActionsPanel
+                companyId={companyId}
+                actions={sourceActions}
+                issues={sourceIssuesForActions}
+                completeness={dealState.completeness}
+                trustScore={dealState.trustScore}
+              />
+            ) : null}
             <DiligenceFeedbackPanel
               feedback={data.diligenceIssueFeedback}
               title="Source Issue Changes"

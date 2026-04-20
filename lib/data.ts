@@ -1,4 +1,3 @@
-import { buildCreditScenario } from "@/lib/credit-scenario";
 import {
   assessDealStageReadinessConsistency,
   getDealStage,
@@ -34,7 +33,7 @@ import {
   type PortfolioReadinessStateKey
 } from "@/lib/portfolio-deal-state";
 import { buildRiskFlags } from "@/lib/risk-flags";
-import { buildUnderwritingCompletion } from "@/lib/underwriting/completion";
+import { buildUnderwritingAnalysis } from "@/lib/underwriting/analysis";
 import type { Company, DashboardData, SimilarDeal } from "@/lib/types";
 
 export type DealScreenerRow = {
@@ -96,9 +95,14 @@ function buildEmptyDashboardData(companies: Company[]): DashboardData {
     issues: []
   };
   const emptyTaxSourceStatus = buildEmptyTaxSourceStatus();
-  const emptyCreditScenario = buildCreditScenario({
-    inputs: DEFAULT_UNDERWRITING_INPUTS,
-    ebitda: EMPTY_SNAPSHOT.adjustedEbitda
+  const emptyUnderwritingAnalysis = buildUnderwritingAnalysis({
+    snapshot: EMPTY_SNAPSHOT,
+    entries: [],
+    dataQuality: emptyQuality,
+    taxSourceStatus: emptyTaxSourceStatus,
+    reconciliation: emptyReconciliation,
+    underwritingInputs: DEFAULT_UNDERWRITING_INPUTS,
+    ebitdaBasis: "adjusted"
   });
 
   return {
@@ -144,15 +148,7 @@ function buildEmptyDashboardData(companies: Company[]): DashboardData {
     diligenceIssueGroups: [],
     diligenceReadiness: deriveDiligenceReadiness({ issues: [] }),
     diligenceIssueFeedback: buildEmptyDiligenceIssueFeedback(),
-    completionSummary: buildUnderwritingCompletion({
-      snapshot: EMPTY_SNAPSHOT,
-      entries: [],
-      dataQuality: emptyQuality,
-      taxSourceStatus: emptyTaxSourceStatus,
-      underwritingInputs: DEFAULT_UNDERWRITING_INPUTS,
-      creditScenario: emptyCreditScenario,
-      reconciliation: emptyReconciliation
-    }),
+    completionSummary: emptyUnderwritingAnalysis.completionSummary,
     ebitdaBridge: null,
     reconciliation: emptyReconciliation,
     normalizedPeriods: [],
@@ -217,10 +213,16 @@ async function buildDealScreenerRow(params: {
 }): Promise<DealScreenerRow> {
   const { context } = params;
   const snapshot = context.snapshot;
-  const creditScenario = buildCreditScenario({
-    inputs: DEFAULT_UNDERWRITING_INPUTS,
-    ebitda: snapshot.adjustedEbitda
+  const underwritingAnalysis = buildUnderwritingAnalysis({
+    snapshot,
+    entries: context.entries,
+    dataQuality: context.dataQuality,
+    taxSourceStatus: context.taxSourceStatus,
+    reconciliation: context.reconciliation,
+    underwritingInputs: DEFAULT_UNDERWRITING_INPUTS,
+    ebitdaBasis: "adjusted"
   });
+  const creditScenario = underwritingAnalysis.creditScenario;
   const acceptedAddBackItems = context.addBackReviewItems.filter(
     (item) => item.periodId === snapshot.periodId && item.status === "accepted"
   );

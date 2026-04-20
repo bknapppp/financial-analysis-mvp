@@ -1,5 +1,9 @@
 export const SOURCE_DATA_UPLOAD_SECTION_ID = "source-data-upload";
 export const SOURCE_DATA_FILE_FIELD_ID = "source-data-file";
+export const SOURCE_DATA_REVIEW_SECTION_ID = "source-data-review";
+export const SOURCE_DATA_REVIEW_REQUIRED_FIELD_ID = "source-data-review-required";
+export const SOURCE_DATA_FOCUSED_MAPPING_SECTION_ID = "source-data-focused-mapping";
+export const SOURCE_DATA_RECONCILIATION_SECTION_ID = "source-data-reconciliation";
 export const UNDERWRITING_WORKBENCH_SECTION_ID = "underwriting-workbench";
 export const ADD_BACK_LAYER_SECTION_ID = "add-back-layer";
 
@@ -122,14 +126,32 @@ export function buildFixItHref(action: string, fallbackHref: string) {
   }
 
   if (
-    normalizedAction.includes("upload financials") ||
-    normalizedAction.includes("load reported financials") ||
+    normalizedAction.includes("reconciliation") ||
+    normalizedAction.includes("ebitda mismatch")
+  ) {
+    return buildHrefWithTarget(sourceDataHref, {
+      sectionId: SOURCE_DATA_RECONCILIATION_SECTION_ID
+    });
+  }
+
+  if (
     normalizedAction.includes("complete mapping") ||
-    normalizedAction.includes("load or map") ||
-    normalizedAction.includes("mapping") ||
+    normalizedAction.includes("resolve the remaining unmapped rows") ||
     normalizedAction.includes("unmapped rows") ||
     normalizedAction.includes("low-confidence") ||
-    normalizedAction.includes("classification") ||
+    normalizedAction.includes("classification")
+  ) {
+    return buildHrefWithTarget(sourceDataHref, {
+      sectionId: SOURCE_DATA_REVIEW_SECTION_ID,
+      fieldId: SOURCE_DATA_REVIEW_REQUIRED_FIELD_ID,
+      step: "3"
+    });
+  }
+
+  if (
+    normalizedAction.includes("upload financials") ||
+    normalizedAction.includes("load reported financials") ||
+    normalizedAction.includes("load or map") ||
     normalizedAction.includes("income statement") ||
     normalizedAction.includes("balance sheet") ||
     normalizedAction.includes("workbook") ||

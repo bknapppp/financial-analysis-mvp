@@ -107,10 +107,22 @@ const CATEGORY_SUBTOTAL_LABELS: Record<IncomeStatementAggregationFamilyKey, Set<
   ]),
   ebitda: new Set([
     "ebitda",
-    "adjusted ebitda",
     "reported ebitda"
   ])
 };
+
+function shouldExcludeFamilyRow(params: {
+  family: IncomeStatementAggregationFamilyKey;
+  accountName: string | null | undefined;
+}) {
+  const normalizedLabel = normalizeIncomeStatementLabel(params.accountName);
+
+  if (!normalizedLabel) {
+    return false;
+  }
+
+  return params.family === "ebitda" && normalizedLabel.includes("adjusted ebitda");
+}
 
 export function normalizeIncomeStatementLabel(label: string | null | undefined) {
   return (label ?? "")
@@ -149,14 +161,25 @@ function buildFamilyDebug(params: {
   family: IncomeStatementAggregationFamilyKey;
   rows: FinancialEntry[];
 }) {
+  const eligibleRows = params.rows.filter(
+    (entry) =>
+      !shouldExcludeFamilyRow({
+        family: params.family,
+        accountName: entry.account_name
+      })
+  );
   const componentRows = params.rows.filter(
     (entry) =>
+      !shouldExcludeFamilyRow({
+        family: params.family,
+        accountName: entry.account_name
+      }) &&
       !isLikelyIncomeStatementSubtotalLabel({
         accountName: entry.account_name,
         family: params.family
       })
   );
-  const subtotalRows = params.rows.filter((entry) =>
+  const subtotalRows = eligibleRows.filter((entry) =>
     isLikelyIncomeStatementSubtotalLabel({
       accountName: entry.account_name,
       family: params.family
