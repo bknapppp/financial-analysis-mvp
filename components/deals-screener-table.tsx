@@ -3,6 +3,15 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, type MouseEvent } from "react";
+import { DealStageSelect } from "@/components/deal-stage-select";
+import {
+  DEAL_STAGE_OPTIONS,
+  compareDealStages,
+  filterRowsByDealStage,
+  getDealStageLabel,
+  type DealStage,
+  type DealStageFilter
+} from "@/lib/deal-stage";
 import { buildFixItHref } from "@/lib/fix-it";
 import { isRecentlyUpdated, type PortfolioDealStatus } from "@/lib/portfolio-deal-state";
 import type { DealScreenerRow } from "@/lib/data";
@@ -13,20 +22,17 @@ type DealsScreenerTableProps = {
 
 type SortKey =
   | "urgency"
+  | "stage"
   | "lastUpdated"
   | "completionPercent"
   | "currentBlocker"
   | "companyName";
 
 type SortDirection = "asc" | "desc";
-type CompletionBand = "all" | "0-24" | "25-49" | "50-74" | "75-99" | "100";
 type RiskFilter = "all" | "high" | "medium" | "low" | "none";
-type UpdatedFilter = "all" | "7d" | "30d" | "90d" | "older" | "unknown";
 type SummaryFilter =
   | "all"
-  | "ready_for_review_or_structure"
   | "missing_critical_inputs"
-  | "high_risk"
   | "recently_updated";
 type QuickFilter = "all" | "blocked" | "ready";
 
@@ -110,33 +116,6 @@ function riskLabel(severity: DealScreenerRow["riskSeverity"]) {
   return "None";
 }
 
-function completionBandMatches(value: number, band: CompletionBand) {
-  if (band === "all") return true;
-  if (band === "0-24") return value < 25;
-  if (band === "25-49") return value >= 25 && value < 50;
-  if (band === "50-74") return value >= 50 && value < 75;
-  if (band === "75-99") return value >= 75 && value < 100;
-  return value === 100;
-}
-
-function lastUpdatedMatches(value: string | null, filter: UpdatedFilter, now: Date) {
-  if (filter === "all") return true;
-  if (!value) return filter === "unknown";
-
-  const updatedAt = new Date(value);
-  if (Number.isNaN(updatedAt.getTime())) {
-    return filter === "unknown";
-  }
-
-  const ageInDays = (now.getTime() - updatedAt.getTime()) / (24 * 60 * 60 * 1000);
-
-  if (filter === "7d") return ageInDays <= 7;
-  if (filter === "30d") return ageInDays <= 30;
-  if (filter === "90d") return ageInDays <= 90;
-  if (filter === "older") return ageInDays > 90;
-  return false;
-}
-
 function compareValues(
   left: DealScreenerRow,
   right: DealScreenerRow,
@@ -146,6 +125,13 @@ function compareValues(
   const multiplier = direction === "asc" ? 1 : -1;
 
   if (key === "urgency") {
+    const readinessDifference =
+      left.diligenceReadinessRank - right.diligenceReadinessRank;
+
+    if (readinessDifference !== 0) {
+      return readinessDifference * multiplier;
+    }
+
     return (STATUS_ORDER[left.status] - STATUS_ORDER[right.status]) * multiplier;
   }
 
@@ -153,6 +139,10 @@ function compareValues(
     const leftValue = left.lastUpdated ? new Date(left.lastUpdated).getTime() : Number.NEGATIVE_INFINITY;
     const rightValue = right.lastUpdated ? new Date(right.lastUpdated).getTime() : Number.NEGATIVE_INFINITY;
     return (leftValue - rightValue) * multiplier;
+  }
+
+  if (key === "stage") {
+    return compareDealStages(left.stage, right.stage) * multiplier;
   }
 
   const leftValue = left[key];
@@ -218,6 +208,7 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
   const router = useRouter();
   const now = useMemo(() => new Date(), []);
   const [query, setQuery] = useState("");
+  const [stageFilter, setStageFilter] = useState<DealStageFilter>("active");
   const [statusFilter, setStatusFilter] = useState<PortfolioDealStatus | "all">("all");
   const [riskFilter, setRiskFilter] = useState<RiskFilter>("all");
   const [industryFilter, setIndustryFilter] = useState("all");
@@ -240,45 +231,34 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
   );
 
   const portfolioSummary = useMemo(() => {
-    const averageCompletion =
-      rows.length > 0
-        ? Math.round(
-            rows.reduce((total, row) => total + row.completionPercent, 0) / rows.length
-          )
-        : 0;
-
     return {
-      activeDeals: rows.length,
-      readyForReviewOrStructure: rows.filter(
-        (row) => row.status === "Ready for structure" || row.status === "Ready for output"
+      activeDeals: rows.filter((row) => row.isActiveStage).length,
+      inDiligence: rows.filter((row) => row.stage === "diligence").length,
+      icReady: rows.filter((row) => row.stage === "ic_ready").length,
+      closing: rows.filter((row) => row.stage === "closing").length,
+      missingCriticalInputs: rows.filter(
+        (row) => row.criticalIssueCount > 0 || row.diligenceReadinessLabel === "Not Ready"
       ).length,
-      missingCriticalInputs: rows.filter((row) =>
-        [
-          "Needs source data",
-          "Needs workbook review",
-          "Needs source completion",
-          "Needs underwriting inputs"
-        ].includes(row.status)
-      ).length,
-      highRiskDeals: rows.filter((row) => row.riskSeverity === "high").length,
-      averageCompletion,
       recentlyUpdatedDeals: rows.filter((row) => isRecentlyUpdated(row.lastUpdated, now)).length
     };
   }, [now, rows]);
 
   const filteredRows = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
-
-    const searched = rows.filter((row) => {
+    const stageFiltered = filterRowsByDealStage(rows, stageFilter);
+    const searched = stageFiltered.filter((row) => {
       if (
         normalizedQuery &&
         ![
           row.companyName,
           row.industry ?? "",
+          row.stageLabel,
           row.status,
+          row.diligenceReadinessLabel,
           row.currentBlocker ?? "",
           row.nextAction,
-          row.primaryRisk ?? ""
+          row.primaryRisk ?? "",
+          row.stageReadinessMismatchReason ?? ""
         ]
           .join(" ")
           .toLowerCase()
@@ -311,24 +291,9 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
       }
 
       if (
-        summaryFilter === "ready_for_review_or_structure" &&
-        row.status !== "Ready for structure" &&
-        row.status !== "Ready for output"
-      ) {
-        return false;
-      }
-
-      if (
         summaryFilter === "missing_critical_inputs" &&
-        row.status !== "Needs source data" &&
-        row.status !== "Needs workbook review" &&
-        row.status !== "Needs source completion" &&
-        row.status !== "Needs underwriting inputs"
+        row.criticalIssueCount === 0
       ) {
-        return false;
-      }
-
-      if (summaryFilter === "high_risk" && row.riskSeverity !== "high") {
         return false;
       }
 
@@ -364,6 +329,7 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
     query,
     riskFilter,
     rows,
+    stageFilter,
     quickFilter,
     sortDirection,
     sortKey,
@@ -387,10 +353,6 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
     );
   }
 
-  function toggleStatusFilter(nextStatus: PortfolioDealStatus | "all") {
-    setStatusFilter((current) => (current === nextStatus ? "all" : nextStatus));
-  }
-
   function toggleSummaryFilter(nextFilter: SummaryFilter) {
     setSummaryFilter((current) => (current === nextFilter ? "all" : nextFilter));
   }
@@ -401,6 +363,7 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
 
   const hasActiveFilters =
     summaryFilter !== "all" ||
+    stageFilter !== "active" ||
     statusFilter !== "all" ||
     riskFilter !== "all" ||
     industryFilter !== "all" ||
@@ -409,7 +372,8 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
 
   const columns: Array<{ key: SortKey; label: string; align?: "left" | "right" }> = [
     { key: "companyName", label: "Company" },
-    { key: "urgency", label: "Status" },
+    { key: "stage", label: "Stage" },
+    { key: "urgency", label: "Readiness" },
     { key: "completionPercent", label: "Completion %", align: "right" },
     { key: "currentBlocker", label: "Current Blocker" },
     { key: "lastUpdated", label: "Last Updated" }
@@ -424,7 +388,7 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
           </p>
           <h1 className="mt-1 text-2xl font-semibold text-slate-950">All Deals</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Monitor deterministic readiness, blockers, and risk across the active portfolio.
+            Monitor lifecycle stage, readiness, blockers, and risk across the portfolio.
           </p>
         </div>
 
@@ -432,14 +396,16 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
           <SummaryCard
             label="Active Deals"
             value={String(portfolioSummary.activeDeals)}
-            detail="Companies currently in the portfolio"
+            detail="Deals in non-terminal lifecycle stages"
             active={
               summaryFilter === "all" &&
+              stageFilter === "active" &&
               statusFilter === "all" &&
               riskFilter === "all"
             }
             onClick={() => {
               setSummaryFilter("all");
+              setStageFilter("active");
               setStatusFilter("all");
               setRiskFilter("all");
               setQuickFilter("all");
@@ -447,35 +413,32 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
             }}
           />
           <SummaryCard
-            label="Ready For Review / Structure"
-            value={String(portfolioSummary.readyForReviewOrStructure)}
-            detail="Deals that can move through structure or output prep"
-            active={summaryFilter === "ready_for_review_or_structure"}
-            onClick={() => toggleSummaryFilter("ready_for_review_or_structure")}
+            label="In Diligence"
+            value={String(portfolioSummary.inDiligence)}
+            detail="Active diligence, normalization, and underwriting"
+            active={stageFilter === "diligence"}
+            onClick={() => setStageFilter("diligence")}
+          />
+          <SummaryCard
+            label="IC Ready"
+            value={String(portfolioSummary.icReady)}
+            detail="Lifecycle stage marked ready for committee review"
+            active={stageFilter === "ic_ready"}
+            onClick={() => setStageFilter("ic_ready")}
+          />
+          <SummaryCard
+            label="Closing"
+            value={String(portfolioSummary.closing)}
+            detail="Approved deals moving through final execution"
+            active={stageFilter === "closing"}
+            onClick={() => setStageFilter("closing")}
           />
           <SummaryCard
             label="Missing Critical Inputs"
             value={String(portfolioSummary.missingCriticalInputs)}
-            detail="Deals blocked on source or underwriting inputs"
+            detail="Lifecycle and diligence state are currently blocked"
             active={summaryFilter === "missing_critical_inputs"}
             onClick={() => toggleSummaryFilter("missing_critical_inputs")}
-          />
-          <SummaryCard
-            label="High-Risk Deals"
-            value={String(portfolioSummary.highRiskDeals)}
-            detail="Deals with a high-severity primary risk"
-            active={summaryFilter === "high_risk"}
-            onClick={() => toggleSummaryFilter("high_risk")}
-          />
-          <SummaryCard
-            label="Average Completion %"
-            value={formatCompletion(portfolioSummary.averageCompletion)}
-            detail="Mean underwriting completion across the portfolio"
-            active={sortKey === "completionPercent"}
-            onClick={() => {
-              setSortKey("completionPercent");
-              setSortDirection("desc");
-            }}
           />
           <SummaryCard
             label="Recently Updated Deals"
@@ -504,6 +467,21 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
               aria-label="Search deals"
               className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-slate-400 xl:col-span-2"
             />
+            <select
+              value={stageFilter}
+              onChange={(event) => setStageFilter(event.target.value as DealStageFilter)}
+              aria-label="Filter by stage"
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400"
+            >
+              <option value="active">Active pipeline</option>
+              <option value="all">All stages</option>
+              <option value="terminal">Terminal only</option>
+              {DEAL_STAGE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
             <select
               value={statusFilter}
               onChange={(event) =>
@@ -537,14 +515,23 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
               onChange={(event) => {
                 const nextKey = event.target.value as SortKey;
                 setSortKey(nextKey);
-                setSortDirection(nextKey === "urgency" ? "asc" : "desc");
+                setSortDirection(
+                  nextKey === "urgency" ||
+                    nextKey === "stage" ||
+                    nextKey === "companyName" ||
+                    nextKey === "currentBlocker"
+                    ? "asc"
+                    : "desc"
+                );
               }}
               aria-label="Sort deals"
               className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400"
             >
               <option value="urgency">Sort: Urgency</option>
+              <option value="stage">Sort: Stage</option>
               <option value="lastUpdated">Sort: Last updated</option>
               <option value="completionPercent">Sort: Completion %</option>
+              <option value="companyName">Sort: Company</option>
             </select>
             <select
               value={riskFilter}
@@ -589,6 +576,15 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
                   {summaryFilter.replaceAll("_", " ")}
                 </span>
               ) : null}
+              {stageFilter !== "active" ? (
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700">
+                  {stageFilter === "all"
+                    ? "all stages"
+                    : stageFilter === "terminal"
+                      ? "terminal stages"
+                      : getDealStageLabel(stageFilter as DealStage)}
+                </span>
+              ) : null}
               {quickFilter !== "all" ? (
                 <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700">
                   {quickFilter === "blocked" ? "blocked only" : "ready only"}
@@ -618,6 +614,7 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
                 type="button"
                 onClick={() => {
                   setSummaryFilter("all");
+                  setStageFilter("active");
                   setStatusFilter("all");
                   setRiskFilter("all");
                   setIndustryFilter("all");
@@ -697,20 +694,49 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
                       ) : null}
                     </td>
                     <td className="px-3 py-3">
-                      <span
-                        className={`inline-flex rounded-md border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] ${statusTone(
-                          row.status
-                        )}`}
-                      >
-                        {row.status}
-                      </span>
+                      <div className="max-w-[180px]">
+                        <DealStageSelect
+                          companyId={row.companyId}
+                          stage={row.stage}
+                          stageUpdatedAt={row.stageUpdatedAt}
+                          compact
+                          showUpdatedAt
+                          ariaLabel={`Update lifecycle stage for ${row.companyName}`}
+                        />
+                      </div>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="flex flex-col gap-1">
+                        <span
+                          className={`inline-flex w-fit rounded-md border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] ${statusTone(
+                            row.status
+                          )}`}
+                        >
+                          {row.status}
+                        </span>
+                        <span className="text-xs text-slate-500">
+                          {row.diligenceReadinessLabel}
+                        </span>
+                        {row.primaryBlockerLabel ? (
+                          <span className="text-xs text-slate-500">
+                            {row.primaryBlockerLabel}
+                          </span>
+                        ) : null}
+                        {row.stageReadinessMismatchReason ? (
+                          <span className="text-xs text-amber-700">
+                            {row.stageReadinessMismatchReason}
+                          </span>
+                        ) : null}
+                      </div>
                     </td>
                     <td className="px-3 py-3 text-right tabular-nums text-slate-700">
                       {formatCompletion(row.completionPercent)}
                     </td>
                     <td className="max-w-[220px] px-3 py-3 text-[12px] text-slate-700">
-                      {row.currentBlocker ? (
-                        <span className="block truncate">{row.currentBlocker}</span>
+                      {row.primaryBlockerIssueTitle || row.currentBlocker ? (
+                        <span className="block truncate">
+                          {row.primaryBlockerIssueTitle ?? row.currentBlocker}
+                        </span>
                       ) : row.primaryRisk ? (
                         <div className="flex flex-col gap-1">
                           <span className={`inline-flex w-fit rounded-md border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${riskTone(row.riskSeverity)}`}>

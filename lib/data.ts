@@ -1,4 +1,13 @@
 import { buildCreditScenario } from "@/lib/credit-scenario";
+import {
+  assessDealStageReadinessConsistency,
+  getDealStage,
+  getDealStageLabel,
+  getDealStageSortOrder,
+  isActiveDealStage,
+  isTerminalDealStage,
+  type DealStage
+} from "@/lib/deal-stage";
 import { buildDataQualityReport } from "@/lib/data-quality";
 import { buildDataReadiness } from "@/lib/data-readiness";
 import {
@@ -9,6 +18,14 @@ import {
   getDealDerivedContext
 } from "@/lib/deal-derived-context";
 import { buildDealDecision } from "@/lib/deal-decision";
+import {
+  buildEmptyDiligenceIssueFeedback,
+  resolveDiligenceIssueActionTarget,
+  summarizeDiligenceIssues,
+  syncDiligenceIssuesForContext
+} from "@/lib/diligence-issues";
+import { groupDiligenceIssues } from "@/lib/diligence-issue-groups";
+import { deriveDiligenceReadiness } from "@/lib/diligence-readiness";
 import {
   derivePortfolioDealState,
   getPrimaryRiskSeverity,
@@ -24,9 +41,24 @@ export type DealScreenerRow = {
   companyId: string;
   companyName: string;
   industry: string | null;
+  stage: DealStage;
+  stageLabel: string;
+  stageSortOrder: number;
+  stageUpdatedAt: string | null;
+  stageNotes: string | null;
+  isActiveStage: boolean;
+  isTerminalStage: boolean;
+  stageReadinessMismatchReason: string | null;
   readinessStateKey: PortfolioReadinessStateKey;
   status: PortfolioDealStatus;
   blockerCount: number;
+  openIssueCount: number;
+  criticalIssueCount: number;
+  diligenceReadinessLabel: string;
+  diligenceReadinessReason: string;
+  diligenceReadinessRank: number;
+  primaryBlockerLabel: string | null;
+  primaryBlockerIssueTitle: string | null;
   primaryBlockerCategory: PortfolioReadinessBlockerCategory | null;
   completionPercent: number;
   currentBlocker: string | null;
@@ -72,6 +104,16 @@ function buildEmptyDashboardData(companies: Company[]): DashboardData {
   return {
     companies,
     company: null,
+    stage: getDealStage(null),
+    stageAssessment: assessDealStageReadinessConsistency({
+      stage: getDealStage(null),
+      diligenceReadiness: deriveDiligenceReadiness({ issues: [] }),
+      completionSummary: {
+        completionStatus: "blocked",
+        completionPercent: 0,
+        blockers: []
+      }
+    }),
     periods: [],
     entries: [],
     accountMappings: [],
@@ -97,13 +139,19 @@ function buildEmptyDashboardData(companies: Company[]): DashboardData {
       dataQuality: emptyQuality
     }),
     taxSourceStatus: emptyTaxSourceStatus,
+    diligenceIssues: [],
+    diligenceIssueSummary: summarizeDiligenceIssues([]),
+    diligenceIssueGroups: [],
+    diligenceReadiness: deriveDiligenceReadiness({ issues: [] }),
+    diligenceIssueFeedback: buildEmptyDiligenceIssueFeedback(),
     completionSummary: buildUnderwritingCompletion({
       snapshot: EMPTY_SNAPSHOT,
       entries: [],
       dataQuality: emptyQuality,
       taxSourceStatus: emptyTaxSourceStatus,
       underwritingInputs: DEFAULT_UNDERWRITING_INPUTS,
-      creditScenario: emptyCreditScenario
+      creditScenario: emptyCreditScenario,
+      reconciliation: emptyReconciliation
     }),
     ebitdaBridge: null,
     reconciliation: emptyReconciliation,
@@ -115,12 +163,24 @@ function buildEmptyDashboardData(companies: Company[]): DashboardData {
 function buildDashboardDataForCompany(params: {
   companies: Company[];
   context: NonNullable<Awaited<ReturnType<typeof getDealDerivedContext>>>;
+  diligenceIssues: DashboardData["diligenceIssues"];
+  diligenceIssueFeedback: DashboardData["diligenceIssueFeedback"];
 }): DashboardData {
-  const { companies, context } = params;
+  const { companies, context, diligenceIssues, diligenceIssueFeedback } = params;
+  const diligenceIssueGroups = groupDiligenceIssues({ issues: diligenceIssues });
+  const diligenceReadiness = deriveDiligenceReadiness({ issues: diligenceIssues });
+  const stage = getDealStage(context.company.stage);
+  const stageAssessment = assessDealStageReadinessConsistency({
+    stage,
+    diligenceReadiness,
+    completionSummary: context.completionSummary
+  });
 
   return {
     companies,
     company: context.company,
+    stage,
+    stageAssessment,
     periods: context.periods,
     entries: context.entries,
     accountMappings: context.accountMappings,
@@ -139,6 +199,11 @@ function buildDashboardDataForCompany(params: {
     dataQuality: context.dataQuality,
     readiness: context.readiness,
     taxSourceStatus: context.taxSourceStatus,
+    diligenceIssues,
+    diligenceIssueSummary: summarizeDiligenceIssues(diligenceIssues),
+    diligenceIssueGroups,
+    diligenceReadiness,
+    diligenceIssueFeedback,
     completionSummary: context.completionSummary,
     ebitdaBridge: context.ebitdaBridge,
     reconciliation: context.reconciliation,
@@ -147,9 +212,9 @@ function buildDashboardDataForCompany(params: {
   };
 }
 
-function buildDealScreenerRow(params: {
+async function buildDealScreenerRow(params: {
   context: NonNullable<Awaited<ReturnType<typeof getDealDerivedContext>>>;
-}): DealScreenerRow {
+}): Promise<DealScreenerRow> {
   const { context } = params;
   const snapshot = context.snapshot;
   const creditScenario = buildCreditScenario({
@@ -176,28 +241,78 @@ function buildDealScreenerRow(params: {
   const latestAddBack = context.addBacks
     .slice()
     .sort((left, right) => right.updated_at.localeCompare(left.updated_at))[0] ?? null;
+  const diligenceIssueSync = await syncDiligenceIssuesForContext(context);
+  const diligenceIssues = diligenceIssueSync.issues;
+  const diligenceIssueSummary = summarizeDiligenceIssues(diligenceIssues);
+  const diligenceReadiness = deriveDiligenceReadiness({ issues: diligenceIssues });
+  const stage = getDealStage(context.company.stage);
+  const stageAssessment = assessDealStageReadinessConsistency({
+    stage,
+    diligenceReadiness,
+    completionSummary: context.completionSummary
+  });
   const lastUpdated =
-    latestAddBack?.updated_at ?? latestPeriod?.created_at ?? context.company.created_at ?? null;
+    [
+      latestAddBack?.updated_at,
+      latestPeriod?.created_at,
+      context.company.stage_updated_at,
+      context.company.created_at
+    ]
+      .filter((value): value is string => Boolean(value))
+      .sort((left, right) => right.localeCompare(left))[0] ?? null;
   const portfolioState = derivePortfolioDealState({
     companyId: context.company.id,
     completionSummary: context.completionSummary,
     readiness: context.readiness,
     taxSourceStatus: context.taxSourceStatus,
-    snapshot
+    diligenceIssues,
+    snapshot,
+    screenerOutputs: {
+      completionSummary: context.completionSummary,
+      dataQuality: context.dataQuality,
+      reconciliation: context.reconciliation,
+      creditScenario
+    }
   });
+  const topOpenIssue = diligenceIssueSummary.topOpenIssue;
+  const topOpenIssueAction = topOpenIssue
+    ? resolveDiligenceIssueActionTarget(topOpenIssue)
+    : null;
 
   return {
     companyId: context.company.id,
     companyName: context.company.name,
     industry: context.company.industry,
+    stage,
+    stageLabel: getDealStageLabel(stage),
+    stageSortOrder: getDealStageSortOrder(stage),
+    stageUpdatedAt: context.company.stage_updated_at,
+    stageNotes: context.company.stage_notes,
+    isActiveStage: isActiveDealStage(stage),
+    isTerminalStage: isTerminalDealStage(stage),
+    stageReadinessMismatchReason: stageAssessment.stageReadinessMismatchReason,
     readinessStateKey: portfolioState.stateKey,
     status: portfolioState.status,
-    blockerCount: portfolioState.blockers.length,
+    blockerCount:
+      diligenceIssueSummary.open + diligenceIssueSummary.inReview > 0
+        ? diligenceIssueSummary.open + diligenceIssueSummary.inReview
+        : portfolioState.blockers.length,
+    openIssueCount: diligenceIssueSummary.open + diligenceIssueSummary.inReview,
+    criticalIssueCount: diligenceIssueSummary.criticalOpen,
+    diligenceReadinessLabel: diligenceReadiness.readinessLabel,
+    diligenceReadinessReason: diligenceReadiness.readinessReason,
+    diligenceReadinessRank: diligenceReadiness.readinessPriorityRank,
+    primaryBlockerLabel: diligenceReadiness.primaryBlockerLabel,
+    primaryBlockerIssueTitle: diligenceReadiness.primaryBlockerIssueTitle,
     primaryBlockerCategory: portfolioState.primaryBlocker?.category ?? null,
     completionPercent: context.completionSummary.completionPercent,
-    currentBlocker: portfolioState.currentBlocker,
-    nextAction: portfolioState.nextAction,
-    nextActionHref: portfolioState.nextActionHref,
+    currentBlocker:
+      diligenceReadiness.primaryBlockerIssueTitle ??
+      topOpenIssue?.title ??
+      diligenceReadiness.readinessReason ??
+      portfolioState.currentBlocker,
+    nextAction: topOpenIssueAction?.actionLabel ?? portfolioState.nextAction,
+    nextActionHref: topOpenIssueAction?.linkedRoute ?? portfolioState.nextActionHref,
     revenue: snapshot.periodId ? snapshot.revenue : null,
     ebitda: snapshot.periodId ? snapshot.ebitda : null,
     adjustedEbitda: snapshot.periodId ? snapshot.adjustedEbitda : null,
@@ -275,7 +390,7 @@ export async function getSimilarDeals(companyId: string): Promise<SimilarDeal[]>
       await Promise.all(
         companies.map(async (company) => {
           const context = await getDealDerivedContext(company.id);
-          return context ? buildDealScreenerRow({ context }) : null;
+          return context ? await buildDealScreenerRow({ context }) : null;
         })
       )
     ).filter((row): row is DealScreenerRow => Boolean(row));
@@ -325,7 +440,13 @@ export async function getDashboardData(
       return buildEmptyDashboardData(companies);
     }
 
-    const dashboardData = buildDashboardDataForCompany({ companies, context });
+    const diligenceIssueSync = await syncDiligenceIssuesForContext(context);
+    const dashboardData = buildDashboardDataForCompany({
+      companies,
+      context,
+      diligenceIssues: diligenceIssueSync.issues,
+      diligenceIssueFeedback: diligenceIssueSync.feedback
+    });
 
     return {
       ...dashboardData,
@@ -346,7 +467,7 @@ export async function getDealScreenerRows(): Promise<DealScreenerRow[]> {
     await Promise.all(
       companies.map(async (company) => {
         const context = await getDealDerivedContext(company.id);
-        return context ? buildDealScreenerRow({ context }) : null;
+        return context ? await buildDealScreenerRow({ context }) : null;
       })
     )
   ).filter((row): row is DealScreenerRow => Boolean(row));

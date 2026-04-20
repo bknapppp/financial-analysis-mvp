@@ -77,11 +77,6 @@ export function UnderwritingCompletionPanel({
                 ) : (
                   <p className="text-sm font-medium text-slate-900">{item}</p>
                 )}
-                {summary.missingItems[index] ? (
-                  <p className="mt-1 text-sm text-slate-600">
-                    Missing input: {summary.missingItems[index]}
-                  </p>
-                ) : null}
               </div>
             </li>
           ))}

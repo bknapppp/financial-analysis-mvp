@@ -23,11 +23,20 @@ export function SourceDataSummaryPanel({ data }: SourceDataSummaryPanelProps) {
   const lowConfidenceRows = selectedEntries.filter(
     (entry) => entry.confidence === "low"
   ).length;
-  const sourceQueue = [
-    ...data.readiness.blockingReasons,
-    ...data.readiness.cautionReasons,
-    ...data.taxSourceStatus.missingComponents
-  ].slice(0, 4);
+  const sourceQueue = data.diligenceIssues
+    .filter(
+      (issue) =>
+        (issue.status === "open" || issue.status === "in_review") &&
+        (issue.period_id === null || issue.period_id === data.snapshot.periodId) &&
+        (
+          issue.linked_page === "source_data" ||
+          issue.category === "source_data" ||
+          issue.category === "reconciliation" ||
+          issue.category === "tax"
+        )
+    )
+    .map((issue) => issue.title)
+    .slice(0, 4);
 
   return (
     <section className="grid gap-4 xl:grid-cols-2">
@@ -127,6 +136,12 @@ export function SourceDataSummaryPanel({ data }: SourceDataSummaryPanelProps) {
           <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
             Reconciliation readiness: {formatComparisonStatus(data)}
           </div>
+          {(data.diligenceReadiness.blockingGroupKey === "source_data" ||
+            data.diligenceReadiness.blockingGroupKey === "reconciliation") ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              Source readiness impact: {data.diligenceReadiness.readinessReason}
+            </div>
+          ) : null}
         </div>
       </section>
 
