@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getDefaultDealStage } from "@/lib/deal-stage";
 import { getSupabaseServerClient } from "@/lib/supabase";
 
 export async function GET() {
@@ -53,7 +54,10 @@ export async function POST(request: NextRequest) {
     .insert({
       name: companyName,
       industry: body.industry ?? null,
-      base_currency: body.baseCurrency ?? "USD"
+      base_currency: body.baseCurrency ?? "USD",
+      stage: getDefaultDealStage(),
+      stage_updated_at: new Date().toISOString(),
+      stage_notes: null
     })
     .select()
     .single();

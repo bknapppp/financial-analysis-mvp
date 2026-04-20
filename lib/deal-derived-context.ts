@@ -404,7 +404,8 @@ export function buildDealDerivedContextFromCore(params: {
       dataQuality: params.core.dataQuality,
       taxSourceStatus: params.taxSourceStatus,
       underwritingInputs,
-      creditScenario: defaultCreditScenario
+      creditScenario: defaultCreditScenario,
+      reconciliation: params.core.reconciliation
     })
   };
 }

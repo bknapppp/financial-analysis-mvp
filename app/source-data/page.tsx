@@ -1,6 +1,9 @@
 import { CompanySetupForm } from "@/components/company-setup-form";
 import { CsvImportSection } from "@/components/csv-import-section";
 import { DealPageNavigation } from "@/components/deal-page-navigation";
+import { DiligenceFeedbackPanel } from "@/components/diligence-feedback-panel";
+import { DiligenceIssuesPanel } from "@/components/diligence-issues-panel";
+import { DiligenceReadinessPanel } from "@/components/diligence-readiness-panel";
 import { EntryForm } from "@/components/entry-form";
 import { PeriodForm } from "@/components/period-form";
 import { SourceDataSummaryPanel } from "@/components/source-data-summary-panel";
@@ -22,6 +25,17 @@ export default async function SourceDataPage({
   const financialsHref = companyId ? `/financials?companyId=${companyId}` : "/financials";
   const underwritingHref = companyId ? `/deal/${companyId}/underwriting` : "/";
   const sourceDataHref = companyId ? `/source-data?companyId=${companyId}` : "/source-data";
+  const sourceIssues = data.diligenceIssues.filter(
+    (issue) =>
+      (issue.status === "open" || issue.status === "in_review") &&
+      (issue.period_id === null || issue.period_id === data.snapshot.periodId) &&
+      (
+        issue.linked_page === "source_data" ||
+        issue.category === "source_data" ||
+        issue.category === "reconciliation" ||
+        issue.category === "tax"
+      )
+  );
 
   return (
     <main className="min-h-screen px-4 py-8 md:px-8">
@@ -55,6 +69,38 @@ export default async function SourceDataPage({
 
         <section>
           <div className="space-y-6">
+            <DiligenceFeedbackPanel
+              feedback={data.diligenceIssueFeedback}
+              title="Source Issue Changes"
+            />
+            {(data.diligenceReadiness.blockingGroupKey === "source_data" ||
+              data.diligenceReadiness.blockingGroupKey === "reconciliation" ||
+              sourceIssues.length > 0) ? (
+              <DiligenceReadinessPanel
+                readiness={data.diligenceReadiness}
+                issueGroups={data.diligenceIssueGroups.filter(
+                  (group) =>
+                    group.groupKey === "source_data" ||
+                    group.groupKey === "reconciliation" ||
+                    group.groupKey === "tax"
+                )}
+                title="Source Readiness"
+                description="How current source coverage, mapping, and reconciliation issues affect diligence readiness."
+              />
+            ) : null}
+            {companyId ? (
+              <DiligenceIssuesPanel
+                companyId={companyId}
+                periodId={data.snapshot.periodId}
+                issues={sourceIssues}
+                currentPage="source_data"
+                title="Source Data Issues"
+                description="Open source coverage, mapping, and reconciliation issues for the selected deal."
+                emptyMessage="No open source-data issues are currently tracked."
+                allowManualCreate
+                preferredGroups={["source_data", "reconciliation", "tax"]}
+              />
+            ) : null}
             <SourceDataSummaryPanel data={data} />
             <SourceReconciliationCard
               companyId={data.company?.id ?? null}

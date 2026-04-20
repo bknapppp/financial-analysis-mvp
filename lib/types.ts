@@ -1,3 +1,5 @@
+import type { DealStage, DealStageAssessment } from "./deal-stage.ts";
+
 export type StatementType = "income" | "balance_sheet";
 
 export type FinancialSourceType = "reported_financials" | "tax_return";
@@ -44,6 +46,9 @@ export type Company = {
   name: string;
   industry: string | null;
   base_currency: string;
+  stage: DealStage;
+  stage_updated_at: string | null;
+  stage_notes: string | null;
   created_at: string;
 };
 
@@ -581,6 +586,162 @@ export type TaxSourceStatus = {
   adjustedEbitdaDeltaPercent: number | null;
 };
 
+export type DiligenceIssueSourceType = "system" | "manual";
+
+export type DiligenceIssueCategory =
+  | "source_data"
+  | "financials"
+  | "underwriting"
+  | "reconciliation"
+  | "validation"
+  | "credit"
+  | "tax"
+  | "diligence_request"
+  | "other";
+
+export type DiligenceIssueSeverity = "low" | "medium" | "high" | "critical";
+
+export type DiligenceIssueStatus = "open" | "in_review" | "resolved" | "waived";
+
+export type DiligenceIssueLinkedPage =
+  | "overview"
+  | "financials"
+  | "underwriting"
+  | "source_data";
+
+export type DiligenceIssueCode =
+  | "missing_revenue"
+  | "missing_cogs"
+  | "required_mappings_incomplete"
+  | "source_coverage_incomplete"
+  | "low_mapping_confidence"
+  | "balance_sheet_out_of_balance"
+  | "ebitda_basis_unavailable"
+  | "gross_profit_reconciliation_mismatch"
+  | "ebitda_reconciliation_mismatch"
+  | "adjusted_ebitda_reconciliation_mismatch"
+  | "working_capital_reconciliation_mismatch"
+  | "source_reconciliation_incomplete"
+  | "ebitda_non_positive"
+  | "adjusted_ebitda_unavailable"
+  | "dscr_not_meaningful_non_positive_earnings"
+  | "debt_sizing_outputs_unavailable"
+  | "underwriting_inputs_incomplete"
+  | "add_back_review_incomplete";
+
+export type DiligenceIssue = {
+  id: string;
+  company_id: string;
+  period_id: string | null;
+  source_type: DiligenceIssueSourceType;
+  issue_code: DiligenceIssueCode | null;
+  title: string;
+  description: string;
+  category: DiligenceIssueCategory;
+  severity: DiligenceIssueSeverity;
+  status: DiligenceIssueStatus;
+  linked_page: DiligenceIssueLinkedPage;
+  linked_field: string | null;
+  linked_route: string | null;
+  dedupe_key: string | null;
+  created_at: string;
+  updated_at: string;
+  resolved_at: string | null;
+  waived_at: string | null;
+  created_by: string | null;
+  owner: string | null;
+};
+
+export type DiligenceIssueSummary = {
+  total: number;
+  open: number;
+  inReview: number;
+  resolved: number;
+  waived: number;
+  criticalOpen: number;
+  bySeverity: Record<DiligenceIssueSeverity, number>;
+  byPage: Record<DiligenceIssueLinkedPage, number>;
+  topOpenIssue: DiligenceIssue | null;
+};
+
+export type DiligenceIssueGroupKey =
+  | "source_data"
+  | "financial_validation"
+  | "reconciliation"
+  | "underwriting"
+  | "credit"
+  | "adjustments"
+  | "tax"
+  | "other";
+
+export type DiligenceIssueGroup = {
+  groupKey: DiligenceIssueGroupKey;
+  groupLabel: string;
+  issueCount: number;
+  criticalCount: number;
+  highCount: number;
+  topIssueTitle: string | null;
+  primaryIssue: DiligenceIssue | null;
+  remainingIssueCount: number;
+  hasMoreIssues: boolean;
+  orderedIssues: DiligenceIssue[];
+  issues: DiligenceIssue[];
+};
+
+export type DiligenceIssueGroupSummary = {
+  totalGroups: number;
+  totalActiveIssues: number;
+  topGroup: DiligenceIssueGroup | null;
+  groups: DiligenceIssueGroup[];
+};
+
+export type DiligenceIssueActionTarget = {
+  linkedPage: DiligenceIssueLinkedPage;
+  linkedRoute: string | null;
+  linkedField: string | null;
+  actionLabel: string | null;
+  isActionable: boolean;
+};
+
+export type DiligenceReadinessState =
+  | "not_ready"
+  | "needs_validation"
+  | "under_review"
+  | "structurally_ready"
+  | "ready_for_ic"
+  | "ready_for_lender"
+  | "completed";
+
+export type DiligenceReadiness = {
+  state: DiligenceReadinessState;
+  readinessLabel: string;
+  readinessReason: string;
+  readinessPriorityRank: number;
+  blockingGroupKey: DiligenceIssueGroupKey | null;
+  blockerGroups: DiligenceIssueGroupKey[];
+  blockerGroupLabels: string[];
+  blockerIssueTitles: string[];
+  blockerIssueIds: string[];
+  blockerCount: number;
+  primaryBlockerGroup: DiligenceIssueGroupKey | null;
+  primaryBlockerLabel: string | null;
+  primaryBlockerIssueTitle: string | null;
+  primaryBlockerIssueId: string | null;
+  activeIssueCount: number;
+  criticalIssueCount: number;
+  highIssueCount: number;
+};
+
+export type DiligenceIssueFeedback = {
+  resolvedIssueTitles: string[];
+  resolvedIssueCount: number;
+  reopenedIssueTitles: string[];
+  reopenedIssueCount: number;
+  readinessChanged: boolean;
+  previousReadinessLabel: string | null;
+  currentReadinessLabel: string | null;
+};
+
 export type UnderwritingCompletionStatus = "ready" | "in_progress" | "blocked";
 
 export type UnderwritingCompletionSectionStatus =
@@ -727,6 +888,8 @@ export type NormalizedPeriodOutput = {
 export type DashboardData = {
   companies: Company[];
   company: Company | null;
+  stage: DealStage;
+  stageAssessment: DealStageAssessment;
   periods: ReportingPeriod[];
   entries: FinancialEntry[];
   accountMappings: AccountMapping[];
@@ -745,6 +908,11 @@ export type DashboardData = {
   dataQuality: DataQualityReport;
   readiness: DataReadiness;
   taxSourceStatus: TaxSourceStatus;
+  diligenceIssues: DiligenceIssue[];
+  diligenceIssueSummary: DiligenceIssueSummary;
+  diligenceIssueGroups: DiligenceIssueGroup[];
+  diligenceReadiness: DiligenceReadiness;
+  diligenceIssueFeedback: DiligenceIssueFeedback;
   completionSummary: UnderwritingCompletionSummary;
   ebitdaBridge: EbitdaBridge | null;
   reconciliation: ReconciliationReport;

@@ -19,6 +19,11 @@ import {
 } from "@/components/financials-view-rollup";
 import { DashboardCharts } from "@/components/dashboard-charts";
 import { DealPageNavigation } from "@/components/deal-page-navigation";
+import { DealStageSelect } from "@/components/deal-stage-select";
+import { DealNextActionsPanel } from "@/components/deal-next-actions-panel";
+import { DiligenceFeedbackPanel } from "@/components/diligence-feedback-panel";
+import { DiligenceIssuesPanel } from "@/components/diligence-issues-panel";
+import { DiligenceReadinessPanel } from "@/components/diligence-readiness-panel";
 import { InvestmentOverviewPanel } from "@/components/investment-overview-panel";
 import { MultiPeriodSummaryTable } from "@/components/multi-period-summary-table";
 import { PerformanceDrivers } from "@/components/performance-drivers";
@@ -27,6 +32,9 @@ import { StatementTable } from "@/components/statement-table";
 import { UnderwritingCompletionPanel } from "@/components/underwriting-completion-panel";
 import { UnderwritingSnapshotPanel } from "@/components/underwriting-snapshot-panel";
 import { buildCreditScenario } from "@/lib/credit-scenario";
+import { buildDealState } from "@/lib/deal-state";
+import { getDealStageDisplay, getDealStageLabel } from "@/lib/deal-stage";
+import { groupDiligenceIssues } from "@/lib/diligence-issue-groups";
 import { devLog } from "@/lib/debug";
 import { ADD_BACK_LAYER_SECTION_ID } from "@/lib/fix-it";
 import { formatCurrency, formatPercent } from "@/lib/formatters";
@@ -466,6 +474,7 @@ export function DealWorkspaceView({ data, section }: DealWorkspaceViewProps) {
   const sourceDataHref = companyId ? `/source-data?companyId=${companyId}` : "/source-data";
   const currentSection = sectionLabel(section);
   const intent = sectionIntentCopy(section);
+  const stageDisplay = getDealStageDisplay(data.stage);
   const effectiveBridge = effectiveNormalizedOutput?.bridge ?? data.ebitdaBridge ?? null;
   const ebitdaExplainability =
     effectiveNormalizedOutput?.ebitdaExplainability ??
@@ -570,7 +579,8 @@ export function DealWorkspaceView({ data, section }: DealWorkspaceViewProps) {
         dataQuality: data.dataQuality,
         taxSourceStatus: data.taxSourceStatus,
         underwritingInputs: parsedUnderwritingInputs,
-        creditScenario: underwritingScenario
+        creditScenario: underwritingScenario,
+        reconciliation: data.reconciliation
       }),
     [
       data.dataQuality,
@@ -604,6 +614,60 @@ export function DealWorkspaceView({ data, section }: DealWorkspaceViewProps) {
       underwritingEbitdaBasis,
       underwritingScenario
     ]
+  );
+  const dealState = useMemo(
+    () =>
+      buildDealState(effectiveSnapshot, {
+        completionSummary,
+        dataQuality: data.dataQuality,
+        reconciliation: data.reconciliation,
+        creditScenario: underwritingScenario
+      }),
+    [
+      completionSummary,
+      data.dataQuality,
+      data.reconciliation,
+      effectiveSnapshot,
+      underwritingScenario
+    ]
+  );
+  const activeIssues = useMemo(
+    () =>
+      data.diligenceIssues.filter(
+        (issue) =>
+          (issue.status === "open" || issue.status === "in_review") &&
+          (issue.period_id === null || issue.period_id === effectiveSnapshot.periodId)
+      ),
+    [data.diligenceIssues, effectiveSnapshot.periodId]
+  );
+  const underwritingIssues = useMemo(
+    () =>
+      activeIssues.filter(
+        (issue) =>
+          issue.linked_page === "underwriting" ||
+          issue.category === "underwriting" ||
+          issue.category === "credit"
+      ),
+    [activeIssues]
+  );
+  const financialIssues = useMemo(
+    () =>
+      activeIssues.filter(
+        (issue) =>
+          issue.linked_page === "financials" ||
+          issue.category === "financials" ||
+          issue.category === "validation" ||
+          issue.category === "reconciliation"
+      ),
+    [activeIssues]
+  );
+  const underwritingIssueGroups = useMemo(
+    () => groupDiligenceIssues({ issues: underwritingIssues }),
+    [underwritingIssues]
+  );
+  const financialIssueGroups = useMemo(
+    () => groupDiligenceIssues({ issues: financialIssues }),
+    [financialIssues]
   );
   const addBackImpactSummary = {
     canonicalEbitda: effectiveSnapshot.ebitda,
@@ -718,6 +782,30 @@ export function DealWorkspaceView({ data, section }: DealWorkspaceViewProps) {
               </div>
 
               <div className="flex flex-wrap items-start gap-3">
+                {companyId ? (
+                  <div className="min-w-[260px] rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
+                      Lifecycle Context
+                    </p>
+                    <div className="mt-3">
+                      <DealStageSelect
+                        companyId={companyId}
+                        stage={data.stage}
+                        stageUpdatedAt={data.company?.stage_updated_at ?? null}
+                        showUpdatedAt
+                        ariaLabel={`Update lifecycle stage for ${companyName}`}
+                      />
+                    </div>
+                    <p className="mt-3 text-xs text-slate-500">
+                      Readiness: {data.diligenceReadiness.readinessLabel}
+                    </p>
+                    {data.stageAssessment.stageReadinessMismatchReason ? (
+                      <p className="mt-2 text-xs text-amber-700">
+                        {data.stageAssessment.stageReadinessMismatchReason}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
                 {data.company ? (
                   <button
                     type="button"
@@ -845,6 +933,36 @@ export function DealWorkspaceView({ data, section }: DealWorkspaceViewProps) {
                 </p>
               </div>
               <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                  <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
+                    Lifecycle Stage
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <span
+                      className={`inline-flex rounded-md border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] ${stageDisplay.badgeClassName}`}
+                    >
+                      {getDealStageLabel(data.stage)}
+                    </span>
+                    <span className="text-xs text-slate-500">
+                      Updated{" "}
+                      {data.company?.stage_updated_at
+                        ? new Intl.DateTimeFormat("en-US", {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric"
+                          }).format(new Date(data.company.stage_updated_at))
+                        : "not set"}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-sm text-slate-600">
+                    Readiness remains tracked separately as {data.diligenceReadiness.readinessLabel}.
+                  </p>
+                  {data.stageAssessment.stageReadinessMismatchReason ? (
+                    <p className="mt-2 text-sm text-amber-700">
+                      {data.stageAssessment.stageReadinessMismatchReason}
+                    </p>
+                  ) : null}
+                </div>
                 <SummaryMetricCard
                   label="Revenue"
                   value={formatCurrency(effectiveSnapshot.revenue)}
@@ -880,6 +998,31 @@ export function DealWorkspaceView({ data, section }: DealWorkspaceViewProps) {
                 {financialStatusMessage}
               </div>
             </section>
+
+            {companyId ? (
+              <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+                <DiligenceReadinessPanel
+                  readiness={data.diligenceReadiness}
+                  issueGroups={data.diligenceIssueGroups}
+                  title="Diligence Readiness"
+                  description="Current readiness state derived from open diligence issues."
+                />
+                <DiligenceIssuesPanel
+                  companyId={companyId}
+                  periodId={effectiveSnapshot.periodId}
+                  issues={activeIssues}
+                  currentPage="overview"
+                  title="Open Issues"
+                  description="Current structured diligence issues for the selected deal."
+                  emptyMessage="No open diligence issues are currently tracked for this deal."
+                />
+              </div>
+            ) : null}
+
+            <DiligenceFeedbackPanel
+              feedback={data.diligenceIssueFeedback}
+              title="Recent Issue Changes"
+            />
 
             <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel">
               <div className="max-w-3xl">
@@ -955,6 +1098,88 @@ export function DealWorkspaceView({ data, section }: DealWorkspaceViewProps) {
                 blockers={completionSummary.blockers}
               />
             </section>
+
+            {companyId ? (
+              <DealNextActionsPanel companyId={companyId} dealState={dealState} />
+            ) : null}
+
+            <DiligenceFeedbackPanel
+              feedback={data.diligenceIssueFeedback}
+              title="Underwriting Issue Changes"
+            />
+
+            <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="max-w-3xl">
+                  <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
+                    Readiness
+                  </p>
+                  <h2 className="mt-2 text-xl font-semibold text-slate-900">
+                    {data.diligenceReadiness.readinessLabel}
+                  </h2>
+                  <p className="mt-2 text-sm text-slate-600">
+                    {data.diligenceReadiness.readinessReason}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {underwritingIssueGroups.slice(0, 3).map((group) => (
+                    <span
+                      key={group.groupKey}
+                      className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700"
+                    >
+                      {group.groupLabel}: {group.issueCount}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </section>
+
+            {financialIssueGroups.length > 0 ? (
+              <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="max-w-3xl">
+                    <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
+                      Validation Context
+                    </p>
+                    <h2 className="mt-2 text-lg font-semibold text-slate-900">
+                      {data.diligenceReadiness.readinessLabel}
+                    </h2>
+                    <p className="mt-2 text-sm text-slate-600">
+                      {data.diligenceReadiness.readinessReason}
+                    </p>
+                    {data.diligenceReadiness.primaryBlockerIssueTitle ? (
+                      <p className="mt-2 text-sm font-medium text-slate-900">
+                        Primary blocker: {data.diligenceReadiness.primaryBlockerIssueTitle}
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {financialIssueGroups.slice(0, 2).map((group) => (
+                      <span
+                        key={group.groupKey}
+                        className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700"
+                      >
+                        {group.groupLabel}: {group.issueCount}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </section>
+            ) : null}
+
+            {companyId ? (
+              <DiligenceIssuesPanel
+                companyId={companyId}
+                periodId={effectiveSnapshot.periodId}
+                issues={underwritingIssues}
+                currentPage="underwriting"
+                title="Underwriting Issues"
+                description="Open underwriting, earnings, and credit issues tied to the current deal facts."
+                emptyMessage="No open underwriting issues are currently tracked."
+                allowManualCreate
+                preferredGroups={["underwriting", "credit", "adjustments"]}
+              />
+            ) : null}
 
             <UnderwritingCompletionPanel
               companyId={companyId}
@@ -1403,6 +1628,20 @@ export function DealWorkspaceView({ data, section }: DealWorkspaceViewProps) {
                 </div>
               </section>
             </section>
+
+            {companyId ? (
+              <DiligenceIssuesPanel
+                companyId={companyId}
+                periodId={effectiveSnapshot.periodId}
+                issues={financialIssues}
+                currentPage="financials"
+                title="Financial Validation Issues"
+                description="Accounting and validation issues linked to the selected period."
+                emptyMessage="No open financial validation issues are currently tracked."
+                allowManualCreate
+                preferredGroups={["financial_validation", "reconciliation"]}
+              />
+            ) : null}
           </>
         ) : null}
       </div>

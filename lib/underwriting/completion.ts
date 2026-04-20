@@ -1,9 +1,11 @@
+import { buildDealState } from "@/lib/deal-state";
 import type {
   CreditScenarioInputs,
   CreditScenarioResult,
   DataQualityReport,
   FinancialEntry,
   PeriodSnapshot,
+  ReconciliationReport,
   TaxSourceStatus,
   UnderwritingCompletionItem,
   UnderwritingCompletionSection,
@@ -92,8 +94,17 @@ export function buildUnderwritingCompletion(params: {
   taxSourceStatus: TaxSourceStatus;
   underwritingInputs: CreditScenarioInputs;
   creditScenario: CreditScenarioResult;
+  reconciliation?: ReconciliationReport;
 }): UnderwritingCompletionSummary {
-  const { snapshot, entries, dataQuality, taxSourceStatus, underwritingInputs, creditScenario } =
+  const {
+    snapshot,
+    entries,
+    dataQuality,
+    taxSourceStatus,
+    underwritingInputs,
+    creditScenario,
+    reconciliation
+  } =
     params;
 
   if (!snapshot.periodId) {
@@ -370,11 +381,25 @@ export function buildUnderwritingCompletion(params: {
     return total + (section.completedCount / section.totalCount) * section.weight;
   }, 0);
   const completionPercent = Math.round(weightedScore);
+  const completionSummaryForState = {
+    completionPercent,
+    sections
+  };
+  const dealState = buildDealState(snapshot, {
+    completionSummary: completionSummaryForState,
+    dataQuality,
+    reconciliation,
+    creditScenario
+  });
   const blockers = dedupe(
     sections.flatMap((section) =>
       section.items
         .filter((item) => !item.isComplete && item.isBlocking)
         .map((item) => item.label)
+    ).concat(
+      dealState.issues
+        .filter((issue) => issue.severity === "blocker")
+        .map((issue) => issue.message)
     )
   );
   const missingItems = dedupe(
@@ -387,13 +412,17 @@ export function buildUnderwritingCompletion(params: {
       section.items.filter((item) => item.isComplete).map((item) => item.label)
     )
   );
-  const nextActions = dedupe(
+  const baseNextActions = dedupe(
     sections.flatMap((section) =>
       section.items
         .filter((item) => !item.isComplete)
         .map((item) => item.nextAction ?? `Complete ${item.label.toLowerCase()}`)
     )
-  ).slice(0, 6);
+  );
+  const nextActions = dedupe([
+    ...dealState.actions.map((action) => action.label),
+    ...baseNextActions
+  ]).slice(0, 6);
 
   return {
     completionPercent,

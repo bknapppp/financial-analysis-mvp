@@ -1,8 +1,11 @@
+import { buildDealActionHref, buildDealState, type DealScreenerOutputs } from "@/lib/deal-state";
+import { deriveDiligenceReadiness } from "@/lib/diligence-readiness";
 import type { RiskFlagSeverity } from "@/lib/risk-flags";
 import { buildFixItHref } from "./fix-it.ts";
 import type { WorkbookFixItTask } from "./workbook-fix-its.ts";
 import type {
   DataReadiness,
+  DiligenceIssue,
   PeriodSnapshot,
   TaxSourceStatus,
   UnderwritingCompletionSection,
@@ -481,6 +484,43 @@ function deriveUnderwritingBlockers(params: {
   return dedupeBlockers(blockers).sort(compareBlockers);
 }
 
+function deriveDealStateBlockers(params: {
+  companyId: string;
+  snapshot?: PeriodSnapshot | null;
+  screenerOutputs?: DealScreenerOutputs;
+}) {
+  if (!params.snapshot || !params.screenerOutputs) {
+    return [];
+  }
+
+  const dealState = buildDealState(params.snapshot, params.screenerOutputs);
+  const actionsByIssueId = new Map(
+    dealState.actions.map((action) => [action.issueId, action] as const)
+  );
+
+  return dealState.issues.map((issue) => {
+    const action = actionsByIssueId.get(issue.id);
+    const category: PortfolioReadinessBlockerCategory =
+      issue.type === "mapping"
+        ? "mapping"
+        : issue.type === "reconciliation"
+          ? "reconciliation"
+          : issue.type === "credit"
+            ? "underwriting"
+            : "source_data";
+
+    return buildBlocker({
+      key: issue.id,
+      category,
+      severity: issue.severity === "blocker" ? "critical" : "warning",
+      label: issue.message,
+      reason: issue.message,
+      actionLabel: action?.label ?? "Review source data",
+      href: action ? buildDealActionHref(action, params.companyId) : buildSourceDataHref(params.companyId)
+    });
+  });
+}
+
 function deriveStateKey(params: {
   completionSummary: UnderwritingCompletionSummary;
   readiness: DataReadiness;
@@ -593,13 +633,45 @@ function buildStateNextAction(params: {
   };
 }
 
+function mapReadinessStateToPortfolioStateKey(params: {
+  readinessState: ReturnType<typeof deriveDiligenceReadiness>["state"];
+  blockingGroupKey: ReturnType<typeof deriveDiligenceReadiness>["blockingGroupKey"];
+}) {
+  if (params.readinessState === "ready_for_lender" || params.readinessState === "completed") {
+    return "ready_for_output" as const;
+  }
+
+  if (
+    params.readinessState === "ready_for_ic" ||
+    params.readinessState === "structurally_ready"
+  ) {
+    return "ready_for_structure" as const;
+  }
+
+  if (params.readinessState === "under_review") {
+    return "underwriting_in_progress" as const;
+  }
+
+  if (params.blockingGroupKey === "source_data" || params.blockingGroupKey === "reconciliation") {
+    return "needs_source_completion" as const;
+  }
+
+  if (params.blockingGroupKey === "financial_validation") {
+    return "needs_workbook_review" as const;
+  }
+
+  return "needs_underwriting_inputs" as const;
+}
+
 export function derivePortfolioReadiness(params: {
   companyId: string;
   completionSummary: UnderwritingCompletionSummary;
   readiness: DataReadiness;
   taxSourceStatus: TaxSourceStatus;
+  diligenceIssues?: DiligenceIssue[];
   workbookFixIts?: WorkbookFixItTask[];
   snapshot?: PeriodSnapshot | null;
+  screenerOutputs?: DealScreenerOutputs;
 }): PortfolioReadinessRecord {
   const { companyId, completionSummary, readiness, taxSourceStatus, snapshot } = params;
   const workbookFixIts = params.workbookFixIts ?? [];
@@ -631,15 +703,24 @@ export function derivePortfolioReadiness(params: {
     addBacksAboveThreshold,
     addBacksPercentOfEbitda
   });
+  const dealStateBlockers = deriveDealStateBlockers({
+    companyId,
+    snapshot,
+    screenerOutputs: params.screenerOutputs
+  });
 
   const blockers = dedupeBlockers([
     ...workbookBlockers,
     ...sourceBlockers,
     ...mappingBlockers,
-    ...underwritingBlockers
+    ...underwritingBlockers,
+    ...dealStateBlockers
   ]).sort(compareBlockers);
 
-  const stateKey = deriveStateKey({
+  const issueReadiness = deriveDiligenceReadiness({
+    issues: params.diligenceIssues ?? []
+  });
+  const fallbackStateKey = deriveStateKey({
     completionSummary,
     readiness,
     taxSourceStatus,
@@ -648,11 +729,27 @@ export function derivePortfolioReadiness(params: {
     mappingBlockers,
     underwritingBlockers
   });
+  const stateKey =
+    params.diligenceIssues && params.diligenceIssues.length > 0
+      ? mapReadinessStateToPortfolioStateKey({
+          readinessState: issueReadiness.state,
+          blockingGroupKey: issueReadiness.blockingGroupKey
+        })
+      : fallbackStateKey;
   const status = statusForStateKey(stateKey);
   const primaryBlocker =
     stateKey === "ready_for_structure" || stateKey === "ready_for_output"
-      ? blockers.find((blocker) => blocker.category === "structure") ?? null
+      ? blockers.find((blocker) => blocker.category === "structure") ??
+        dealStateBlockers[0] ??
+        null
       : blockers[0] ?? null;
+  const dealState = snapshot
+    ? buildDealState(snapshot, {
+        completionSummary,
+        ...params.screenerOutputs
+      })
+    : null;
+  const prioritizedDealAction = dealState?.actions[0] ?? null;
   const nextAction =
     primaryBlocker &&
     stateKey !== "ready_for_structure" &&
@@ -663,13 +760,22 @@ export function derivePortfolioReadiness(params: {
           href: primaryBlocker.href,
           source: primaryBlocker.category
         }
+      : prioritizedDealAction
+        ? {
+            label: prioritizedDealAction.label,
+            href: buildDealActionHref(prioritizedDealAction, companyId),
+            source:
+              prioritizedDealAction.location === "source"
+                ? ("source_data" as const)
+                : ("underwriting" as const)
+          }
       : buildStateNextAction({
           stateKey,
           companyId,
           completionSummary,
           addBacksAboveThreshold
         });
-  const currentBlocker = primaryBlocker?.label ?? null;
+  const currentBlocker = primaryBlocker?.label ?? issueReadiness.readinessReason ?? null;
 
   return {
     stateKey,
@@ -690,8 +796,10 @@ export function derivePortfolioDealState(params: {
   completionSummary: UnderwritingCompletionSummary;
   readiness: DataReadiness;
   taxSourceStatus: TaxSourceStatus;
+  diligenceIssues?: DiligenceIssue[];
   workbookFixIts?: WorkbookFixItTask[];
   snapshot?: PeriodSnapshot | null;
+  screenerOutputs?: DealScreenerOutputs;
 }): PortfolioDealState {
   const readinessRecord = derivePortfolioReadiness(params);
 
