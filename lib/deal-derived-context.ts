@@ -23,7 +23,11 @@ import {
 import { buildNormalizedPeriodOutputs } from "./normalized-outputs.ts";
 import { getSourceReconciliationForContext } from "./source-reconciliation.ts";
 import { getSupabaseServerClient } from "./supabase.ts";
-import { buildEmptyTaxSourceStatus, buildTaxSourceStatus } from "./tax-source-status.ts";
+import {
+  buildEmptyTaxSourceStatus,
+  buildTaxSourceStatus,
+  canComputeTaxComparison
+} from "./tax-source-status.ts";
 import { buildUnderwritingAnalysis } from "./underwriting/analysis.ts";
 import type {
   AccountMapping,
@@ -455,16 +459,23 @@ const getDealDerivedContextCached = cache(
     const taxSourceStatus = buildTaxSourceStatus({
       taxContext: raw.taxContext,
       matchedPeriodLabel: sourceReconciliation?.taxPeriodLabel ?? null,
-      comparisonComputable:
-        sourceReconciliation?.coverage.hasTaxData === true &&
-        sourceReconciliation.coverage.hasReportedEbitdaReference === true &&
-        sourceReconciliation.ebitda.tax !== null,
+      comparisonComputable: canComputeTaxComparison({
+        hasTaxData: sourceReconciliation?.coverage.hasTaxData === true,
+        taxEbitda: sourceReconciliation?.ebitda.tax ?? null,
+        reportedEbitdaReference: sourceReconciliation?.ebitda.reportedReference ?? null,
+        computedEbitda: sourceReconciliation?.ebitda.computed ?? null
+      }),
       comparisonMissingComponents: sourceReconciliation
         ? [
             ...sourceReconciliation.explainability.missingComponents,
-            ...(sourceReconciliation.coverage.hasReportedEbitdaReference
+            ...(canComputeTaxComparison({
+              hasTaxData: sourceReconciliation.coverage.hasTaxData,
+              taxEbitda: sourceReconciliation.ebitda.tax,
+              reportedEbitdaReference: sourceReconciliation.ebitda.reportedReference,
+              computedEbitda: sourceReconciliation.ebitda.computed
+            })
               ? []
-              : ["Reported EBITDA reference is missing for the matched period."])
+              : ["Neither reported EBITDA nor computed EBITDA is available for the matched period."])
           ]
         : [],
       comparisonNotes: sourceReconciliation?.explainability.notes ?? [],

@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
-import { buildEmptyTaxSourceStatus, buildTaxSourceStatus } from "./tax-source-status.ts";
+import {
+  buildEmptyTaxSourceStatus,
+  buildTaxSourceStatus,
+  canComputeTaxComparison
+} from "./tax-source-status.ts";
 import type { SourceFinancialContext } from "./types.ts";
 
 const taxContext: SourceFinancialContext = {
@@ -63,12 +67,42 @@ assert.equal(empty.taxCoverageStatus, "not_loaded");
 assert.deepEqual(empty.requiredComponentsFound, []);
 assert.equal(empty.comparisonContext, null);
 
-const missingReportedSide = buildTaxSourceStatus({
+assert.equal(
+  canComputeTaxComparison({
+    hasTaxData: true,
+    taxEbitda: 280,
+    reportedEbitdaReference: 310,
+    computedEbitda: null
+  }),
+  true
+);
+
+assert.equal(
+  canComputeTaxComparison({
+    hasTaxData: true,
+    taxEbitda: 280,
+    reportedEbitdaReference: null,
+    computedEbitda: 300
+  }),
+  true
+);
+
+assert.equal(
+  canComputeTaxComparison({
+    hasTaxData: true,
+    taxEbitda: 280,
+    reportedEbitdaReference: null,
+    computedEbitda: null
+  }),
+  false
+);
+
+const missingBothSides = buildTaxSourceStatus({
   taxContext,
   matchedPeriodLabel: "FY2024",
   comparisonComputable: false,
-  comparisonMissingComponents: ["Reported EBITDA reference is missing for the matched period."],
-  comparisonNotes: ["Tax-side coverage is complete, but the reported side is incomplete."],
+  comparisonMissingComponents: ["Neither reported EBITDA nor computed EBITDA is available for the matched period."],
+  comparisonNotes: ["Tax-side coverage is complete, but no comparable reported-side EBITDA basis is available."],
   revenueDeltaPercent: 0.02,
   reportedEbitdaDeltaPercent: null,
   computedEbitdaDeltaPercent: null,
@@ -86,21 +120,57 @@ const missingReportedSide = buildTaxSourceStatus({
   }
 });
 
-assert.equal(missingReportedSide.comparisonStatus, "partial");
-assert.equal(missingReportedSide.comparisonComputable, false);
+assert.equal(missingBothSides.comparisonStatus, "partial");
+assert.equal(missingBothSides.comparisonComputable, false);
 assert.ok(
-  missingReportedSide.missingComponents.includes(
-    "Reported EBITDA reference is missing for the matched period."
+  missingBothSides.missingComponents.includes(
+    "Neither reported EBITDA nor computed EBITDA is available for the matched period."
   )
 );
-assert.deepEqual(missingReportedSide.requiredComponentsFound, [
+assert.deepEqual(missingBothSides.requiredComponentsFound, [
   "grossRevenue",
   "cogs",
   "operatingExpensesBeforeDandA"
 ]);
-assert.equal(missingReportedSide.taxCoverageStatus, "complete");
-assert.equal(missingReportedSide.comparisonContext?.taxEbitda, 280);
-assert.equal(missingReportedSide.notes[0], "Tax-side coverage is complete, but the reported side is incomplete.");
+assert.equal(missingBothSides.taxCoverageStatus, "complete");
+assert.equal(missingBothSides.comparisonContext?.taxEbitda, 280);
+assert.equal(
+  missingBothSides.notes[0],
+  "Tax-side coverage is complete, but no comparable reported-side EBITDA basis is available."
+);
+
+const computedFallbackReady = buildTaxSourceStatus({
+  taxContext,
+  matchedPeriodLabel: "FY2024",
+  comparisonComputable: canComputeTaxComparison({
+    hasTaxData: true,
+    taxEbitda: 280,
+    reportedEbitdaReference: null,
+    computedEbitda: 300
+  }),
+  comparisonMissingComponents: [],
+  comparisonNotes: ["Coverage is complete and computed EBITDA provides the comparison basis."],
+  revenueDeltaPercent: 0.02,
+  reportedEbitdaDeltaPercent: null,
+  computedEbitdaDeltaPercent: 0.06,
+  adjustedEbitdaDeltaPercent: 0.1,
+  requiredComponentsFound: ["grossRevenue", "cogs", "operatingExpensesBeforeDandA"],
+  taxCoverageStatus: "complete",
+  comparisonContext: {
+    reportedRevenue: 1200,
+    taxRevenue: 1000,
+    computedEbitda: 300,
+    reportedEbitdaReference: null,
+    adjustedEbitda: 320,
+    taxEbitda: 280,
+    taxEbitdaIncludingInterest: 290
+  }
+});
+
+assert.equal(computedFallbackReady.comparisonStatus, "ready");
+assert.equal(computedFallbackReady.comparisonComputable, true);
+assert.equal(computedFallbackReady.reportedEbitdaDeltaPercent, null);
+assert.equal(computedFallbackReady.comparisonContext?.computedEbitda, 300);
 
 const ready = buildTaxSourceStatus({
   taxContext,

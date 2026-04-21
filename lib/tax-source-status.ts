@@ -15,6 +15,22 @@ function countBroadClassifications(entries: FinancialEntry[]) {
   return entries.filter((entry) => BROAD_CATEGORIES.has(entry.category)).length;
 }
 
+export function canComputeTaxComparison(params: {
+  hasTaxData: boolean;
+  taxEbitda: number | null;
+  reportedEbitdaReference: number | null;
+  computedEbitda: number | null;
+}) {
+  const hasComparableReportedBasis = params.reportedEbitdaReference !== null;
+  const hasComparableComputedBasis = params.computedEbitda !== null;
+
+  return (
+    params.hasTaxData &&
+    params.taxEbitda !== null &&
+    (hasComparableReportedBasis || hasComparableComputedBasis)
+  );
+}
+
 export function buildEmptyTaxSourceStatus(): TaxSourceStatus {
   return {
     documentCount: 0,
