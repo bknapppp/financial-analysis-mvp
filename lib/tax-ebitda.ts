@@ -192,10 +192,17 @@ export type TaxEbitdaTraceRow = {
   accountName: string;
   amount: number;
   mappedCategory: SourceFinancialEntry["category"];
-  bucket: TaxEarningsBucket;
+  bucket: TaxEarningsBucket | null;
+  classification: "mapped" | "unknown";
   bucketExplanation: string;
   mappingConfidence: AuditConfidence | "unknown";
   mappingExplanation: string | null;
+};
+
+type TaxEbitdaBucketClassification = {
+  bucket: TaxEarningsBucket | null;
+  classification: "mapped" | "unknown";
+  explanation: string;
 };
 
 export type TaxEbitdaComponents = {
@@ -292,6 +299,7 @@ export type TaxEbitdaCoverage = {
   status: "complete" | "partial" | "insufficient";
   requiredComponentsFound: FoundComponentKey[];
   missingComponents: FoundComponentKey[];
+  unknownEntryCount: number;
   confidenceNote: string;
   notes: string[];
 };
@@ -427,17 +435,23 @@ function matchBucket(normalizedAccountName: string) {
   return null;
 }
 
-export function classifyTaxEbitdaBucket(entry: SourceFinancialEntry) {
+export function classifyTaxEbitdaBucket(
+  entry: SourceFinancialEntry
+): TaxEbitdaBucketClassification {
   const normalizedAccountName = normalizeTaxLabel(entry.account_name);
   const matched = matchBucket(normalizedAccountName);
 
   if (matched) {
-    return matched;
+    return {
+      ...matched,
+      classification: "mapped"
+    };
   }
 
   if (entry.category === "Revenue") {
     return {
       bucket: "gross_revenue" as const,
+      classification: "mapped",
       explanation:
         "Classified as gross revenue by fallback because the entry is mapped to Revenue and no narrower tax rule matched."
     };
@@ -446,6 +460,7 @@ export function classifyTaxEbitdaBucket(entry: SourceFinancialEntry) {
   if (entry.category === "COGS") {
     return {
       bucket: "cogs" as const,
+      classification: "mapped",
       explanation: "Classified as COGS by fallback from canonical tax mapping."
     };
   }
@@ -453,6 +468,7 @@ export function classifyTaxEbitdaBucket(entry: SourceFinancialEntry) {
   if (entry.category === "Depreciation / Amortization") {
     return {
       bucket: "depreciation" as const,
+      classification: "mapped",
       explanation:
         "Classified as depreciation/amortization by fallback from canonical tax mapping."
     };
@@ -461,6 +477,7 @@ export function classifyTaxEbitdaBucket(entry: SourceFinancialEntry) {
   if (entry.category === "Non-operating") {
     return {
       bucket: "non_operating_other" as const,
+      classification: "mapped",
       explanation:
         "Classified as non-operating other because the entry maps to Non-operating without an interest-specific rule."
     };
@@ -469,6 +486,7 @@ export function classifyTaxEbitdaBucket(entry: SourceFinancialEntry) {
   if (entry.category === "Tax Expense") {
     return {
       bucket: "income_taxes" as const,
+      classification: "mapped",
       explanation: "Classified as income taxes by fallback from canonical tax mapping."
     };
   }
@@ -476,6 +494,7 @@ export function classifyTaxEbitdaBucket(entry: SourceFinancialEntry) {
   if (entry.category === "Operating Expenses") {
     return {
       bucket: "operating_expenses_other" as const,
+      classification: "mapped",
       explanation:
         "Classified as operating expenses other because the entry maps to Operating Expenses without a narrower tax rule."
     };
@@ -484,6 +503,7 @@ export function classifyTaxEbitdaBucket(entry: SourceFinancialEntry) {
   if (entry.category === "Pre-tax") {
     return {
       bucket: "pre_tax" as const,
+      classification: "mapped",
       explanation: "Classified as pre-tax reference line by fallback from canonical tax mapping."
     };
   }
@@ -491,22 +511,28 @@ export function classifyTaxEbitdaBucket(entry: SourceFinancialEntry) {
   if (entry.category === "Net Income") {
     return {
       bucket: "net_income" as const,
+      classification: "mapped",
       explanation: "Classified as net income reference line by fallback from canonical tax mapping."
     };
   }
 
   return {
-    bucket: "operating_expenses_other" as const,
+    bucket: null,
+    classification: "unknown",
     explanation:
-      "Classified conservatively as operating expenses other because no explicit tax EBITDA bucket rule matched."
+      "Left unclassified because no explicit tax EBITDA bucket rule or canonical category fallback matched. Unknown tax lines are excluded from EBITDA and reduce completeness."
   };
 }
 
 function addToComponents(
   components: TaxEbitdaComponents,
-  bucket: TaxEarningsBucket,
+  bucket: TaxEarningsBucket | null,
   amount: number
 ) {
+  if (!bucket) {
+    return;
+  }
+
   switch (bucket) {
     case "gross_revenue":
       components.grossRevenue += amount;
@@ -584,8 +610,9 @@ function buildCoverage(params: {
   entryCount: number;
   components: TaxEbitdaComponents;
   presentComponents: Set<FoundComponentKey>;
+  unknownEntryCount: number;
 }) {
-  const { entryCount, presentComponents } = params;
+  const { entryCount, presentComponents, unknownEntryCount } = params;
   const found = FOUND_COMPONENT_KEYS.filter((key) => presentComponents.has(key));
   const missing = FOUND_COMPONENT_KEYS.filter((key) => !presentComponents.has(key));
   const notes: string[] = [];
@@ -608,12 +635,19 @@ function buildCoverage(params: {
     );
   }
 
+  if (unknownEntryCount > 0) {
+    notes.push(
+      `${unknownEntryCount} tax-source income line${unknownEntryCount === 1 ? "" : "s"} could not be classified and were excluded from EBITDA, so completeness is reduced.`
+    );
+  }
+
   if (entryCount === 0) {
     return {
       computable: false,
       status: "insufficient" as const,
       requiredComponentsFound: [] as FoundComponentKey[],
       missingComponents: [...FOUND_COMPONENT_KEYS],
+      unknownEntryCount: 0,
       confidenceNote:
         "No tax-source income statement entries are available for this source period.",
       notes: ["No tax-source entries were found for the requested source period."]
@@ -627,9 +661,9 @@ function buildCoverage(params: {
     presentComponents.has("cogs") &&
     presentComponents.has("operatingExpensesBeforeDandA");
   const status =
-    computable
+    computable && unknownEntryCount === 0
       ? ("complete" as const)
-      : hasRevenueStructure
+      : computable || hasRevenueStructure || unknownEntryCount > 0
         ? ("partial" as const)
         : ("insufficient" as const);
 
@@ -638,9 +672,12 @@ function buildCoverage(params: {
     status,
     requiredComponentsFound: found,
     missingComponents: missing,
+    unknownEntryCount,
     confidenceNote:
       status === "complete"
         ? "Tax-derived EBITDA was computed from a reasonably structured tax-source dataset."
+        : computable
+          ? "Tax-derived EBITDA was computed from classified tax-source lines, but unknown tax lines were excluded so coverage is partial."
         : status === "partial"
           ? "Tax-derived EBITDA is unavailable because tax-source coverage is partial."
           : "Tax-derived EBITDA could not be computed because revenue structure is missing.",
@@ -710,6 +747,7 @@ export function calculateTaxDerivedEbitda(params: {
 }): TaxDerivedEbitdaResult {
   const components = zeroComponents();
   const presentComponents = new Set<FoundComponentKey>();
+  let unknownEntryCount = 0;
   const traceRows = params.entries
     .filter((entry) => entry.statement_type === "income")
     .map((entry) => {
@@ -756,7 +794,12 @@ export function calculateTaxDerivedEbitda(params: {
           break;
         case "net_income":
         case "pre_tax":
+        case null:
           break;
+      }
+
+      if (classification.classification === "unknown") {
+        unknownEntryCount += 1;
       }
 
       return {
@@ -765,6 +808,7 @@ export function calculateTaxDerivedEbitda(params: {
         amount: Number(entry.amount),
         mappedCategory: entry.category,
         bucket: classification.bucket,
+        classification: classification.classification,
         bucketExplanation: classification.explanation,
         mappingConfidence: entry.confidence ?? "unknown",
         mappingExplanation: entry.mapping_explanation ?? null
@@ -791,7 +835,8 @@ export function calculateTaxDerivedEbitda(params: {
   const coverage = buildCoverage({
     entryCount: traceRows.length,
     components,
-    presentComponents
+    presentComponents,
+    unknownEntryCount
   });
 
   // Sign convention:

@@ -13,6 +13,7 @@ import type {
   FinancialEntry,
   PeriodSnapshot,
   ReportingPeriod,
+  SourceReportingPeriod,
   SourceFinancialContext
 } from "./types.ts";
 
@@ -122,6 +123,16 @@ function matchesTaxPeriod(params: {
     params.reportedPeriod.label.trim().toLowerCase() ===
       params.taxPeriod.label.trim().toLowerCase()
   );
+}
+
+function arePeriodsComparable(
+  reportedPeriod: ReportingPeriod,
+  taxPeriod: Pick<SourceReportingPeriod, "period_date" | "source_year">
+) {
+  const reportedYear = Number.parseInt(reportedPeriod.period_date.slice(0, 4), 10);
+  const taxYear = taxPeriod.source_year ?? Number.parseInt(taxPeriod.period_date.slice(0, 4), 10);
+
+  return Number.isFinite(reportedYear) && Number.isFinite(taxYear) && reportedYear === taxYear;
 }
 
 export function buildSourceReconciliation(params: {
@@ -401,6 +412,7 @@ export async function getSourceReconciliationForContext(params: {
     reportedPeriod === null
       ? null
       : taxContext.periods.find((period) =>
+          arePeriodsComparable(reportedPeriod, period) &&
           matchesTaxPeriod({
             reportedPeriod,
             taxPeriod: period

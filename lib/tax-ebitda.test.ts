@@ -435,4 +435,57 @@ assert.equal(explicitSignConventionResult.components.display.depreciation, 50);
 assert.equal(explicitSignConventionResult.components.rawSigned.interest, -20);
 assert.equal(explicitSignConventionResult.components.display.interest, 20);
 
+const unknownLineResult = calculateTaxDerivedEbitda({
+  companyId,
+  sourcePeriodId: "unknown-line-period",
+  period: {
+    label: "Unknown Line",
+    period_date: "2023-12-31"
+  },
+  entries: [
+    ...fy2023.entries,
+    {
+      id: "unknown-1",
+      account_name: "Mystery local tax adjustment",
+      statement_type: "income",
+      amount: -25000,
+      category: null,
+      addback_flag: false,
+      matched_by: null,
+      confidence: "unknown",
+      mapping_explanation: null,
+      created_at: "2026-04-09T00:00:00.000Z",
+      source_period_id: "unknown-line-period",
+      source_document_id: "unknown-doc",
+      source_type: "tax_return",
+      source_file_name: "unknown.json",
+      upload_id: "unknown-upload",
+      source_period_label: "Tax Year 2023",
+      source_year: 2023,
+      source_currency: "USD",
+      source_confidence: "unknown"
+    }
+  ]
+});
+assert.equal(
+  unknownLineResult.taxDerivedEBITDA,
+  fy2023Result.taxDerivedEBITDA,
+  "Unknown lines must not contribute to EBITDA."
+);
+assert.equal(unknownLineResult.coverage.computable, true);
+assert.equal(
+  unknownLineResult.coverage.status,
+  "partial",
+  "Unknown lines must reduce completeness."
+);
+assert.equal(unknownLineResult.coverage.unknownEntryCount, 1);
+assert.ok(
+  unknownLineResult.coverage.notes.some((note) => note.includes("excluded from EBITDA"))
+);
+const unknownTrace = unknownLineResult.traceRows.find(
+  (row) => row.accountName === "Mystery local tax adjustment"
+);
+assert.equal(unknownTrace?.bucket, null);
+assert.equal(unknownTrace?.classification, "unknown");
+
 console.log("tax-ebitda tests passed");
