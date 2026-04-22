@@ -131,7 +131,7 @@ assert.equal(groups[0]?.remainingIssueCount, 1);
 assert.equal(groups[0]?.hasMoreIssues, true);
 assert.equal(groups[2]?.primaryIssue?.title, "Add-back review incomplete");
 assert.equal(groups[2]?.hasMoreIssues, false);
-assert.equal(summary.totalActiveIssues, 3);
+assert.equal(summary.totalActiveIssues, 4);
 assert.equal(summary.topGroup?.groupLabel, "Source Data");
 
 console.log("diligence issue groups tests passed");

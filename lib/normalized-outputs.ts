@@ -1,5 +1,5 @@
-import { getEntryMappingMeta } from "@/lib/mapping-intelligence";
-import { buildReconciliationReport } from "@/lib/reconciliation";
+import { getEntryMappingMeta } from "./mapping-intelligence.ts";
+import { buildReconciliationReport } from "./reconciliation.ts";
 import type {
   AccountMapping,
   EbitdaBridge,
@@ -9,7 +9,7 @@ import type {
   NormalizedStatement,
   PeriodSnapshot,
   ReportingPeriod
-} from "@/lib/types";
+} from "./types.ts";
 
 function hasValue(value: number | null | undefined): value is number {
   return value !== null && value !== undefined && Number.isFinite(value);
@@ -245,7 +245,7 @@ export function buildNormalizedPeriodOutputs(params: {
   entries: FinancialEntry[];
   accountMappings: AccountMapping[];
   bridgesByPeriodId: Map<string, EbitdaBridge>;
-  addBacks: import("@/lib/types").AddBack[];
+  addBacks: import("./types.ts").AddBack[];
 }) {
   const { periods, snapshots, entries, accountMappings, bridgesByPeriodId, addBacks } =
     params;

@@ -71,7 +71,7 @@ type SourceEntryRow = {
 };
 
 const SOURCE_DOCUMENT_SELECT =
-  "id, company_id, source_type, source_file_name, upload_id, source_currency, source_confidence, created_at";
+  "id, company_id, name, document_type, period_label, fiscal_year, uploaded_at, uploaded_by, source_kind, status, source_type, source_file_name, upload_id, source_currency, source_confidence, created_at";
 
 const SOURCE_PERIOD_SELECT = `
   id,
@@ -428,6 +428,13 @@ export async function insertTaxReturnFinancialContext(params: TaxSourceImportPar
       .from("source_documents")
       .insert({
         company_id: params.companyId,
+        name: params.sourceFileName ?? params.periodLabel,
+        document_type: "tax_return",
+        period_label: params.periodLabel,
+        fiscal_year: params.sourceYear ?? null,
+        uploaded_at: new Date().toISOString(),
+        source_kind: "import",
+        status: "active",
         source_type: "tax_return",
         source_file_name: params.sourceFileName ?? null,
         upload_id: params.uploadId ?? null,

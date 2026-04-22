@@ -9,6 +9,7 @@ import type {
   UnderwritingAnalysis,
   UnderwritingEbitdaBasis
 } from "../types.ts";
+import { getAdjustedEbitda } from "./ebitda.ts";
 import { buildUnderwritingCompletion, getMissingCreditScenarioInputs } from "./completion.ts";
 import { buildInvestmentOverview } from "./investment-overview.ts";
 
@@ -31,15 +32,19 @@ export function buildUnderwritingAnalysis(params: {
     underwritingInputs,
     ebitdaBasis
   } = params;
-  const selectedEbitda =
-    ebitdaBasis === "adjusted" ? snapshot.adjustedEbitda : snapshot.ebitda;
+  const acceptedAddBackTotal =
+    params.acceptedAddBackTotal ?? snapshot.acceptedAddBacks ?? 0;
+  const canonicalEbitda = snapshot.ebitda;
+  const adjustedEbitda = getAdjustedEbitda({
+    canonicalEbitda,
+    acceptedAddbacks: acceptedAddBackTotal
+  });
+  const selectedEbitda = ebitdaBasis === "adjusted" ? adjustedEbitda : canonicalEbitda;
   const creditScenario = buildCreditScenario({
     inputs: underwritingInputs,
     ebitda: selectedEbitda
   });
   const missingInputs = getMissingCreditScenarioInputs(underwritingInputs);
-  const acceptedAddBackTotal =
-    params.acceptedAddBackTotal ?? snapshot.acceptedAddBacks ?? 0;
   const completionSummary = buildUnderwritingCompletion({
     snapshot,
     entries,
@@ -63,6 +68,8 @@ export function buildUnderwritingAnalysis(params: {
 
   return {
     ebitdaBasis,
+    canonicalEbitda,
+    adjustedEbitda,
     selectedEbitda,
     underwritingInputs,
     missingInputs,

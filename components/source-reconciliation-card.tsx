@@ -326,36 +326,64 @@ export function SourceReconciliationCard({
   const data = state.status === "success" ? state.data : null;
   const showEmptyState = data !== null && !data.coverage.hasTaxData;
   const showManageButton = data !== null && data.coverage.hasTaxData;
+  const statusLabel =
+    state.status === "loading"
+      ? "Running..."
+      : state.status === "error"
+        ? "Attention needed"
+        : showEmptyState
+          ? "Tax source missing"
+          : data
+            ? "Ready to review"
+            : "Idle";
 
   return (
     <>
-      <section
+      <details
         id={SOURCE_DATA_RECONCILIATION_SECTION_ID}
         data-fix-section={SOURCE_DATA_RECONCILIATION_SECTION_ID}
-        className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel"
+        className="rounded-[1.6rem] border border-slate-200/80 bg-white p-4 shadow-panel"
       >
-        <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+        <summary className="flex cursor-pointer list-none flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
               Reconciliation
             </p>
-            <h2 className="mt-2 text-xl font-semibold text-slate-900">
-              Source Reconciliation
+            <h2 className="mt-1 text-lg font-semibold text-slate-900">
+              Reconciliation
             </h2>
-            <p className="mt-1 text-[12px] text-slate-500">
-              Based on canonical financial outputs vs tax-return-derived results
+            <p className="mt-1 text-sm text-slate-600">
+              Compare canonical financial outputs against tax-return-derived results.
             </p>
           </div>
-          {showManageButton ? (
+          <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={() => setIsDrawerOpen(true)}
-              className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              onClick={(event) => {
+                event.preventDefault();
+                setRefreshKey((current) => current + 1);
+              }}
+              className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
             >
-              Manage tax source
+              Run Reconciliation
             </button>
-          ) : null}
-        </div>
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700">
+              {statusLabel}
+            </span>
+            {showManageButton ? (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.preventDefault();
+                  setIsDrawerOpen(true);
+                }}
+                className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Manage tax source
+              </button>
+            ) : null}
+          </div>
+        </summary>
 
         <div className="mt-4">
           {state.status === "loading" || state.status === "idle" ? <LoadingState /> : null}
@@ -486,7 +514,7 @@ export function SourceReconciliationCard({
             </div>
           ) : null}
         </div>
-      </section>
+      </details>
 
       {companyId && periodId ? (
         <TaxSourceDrawer

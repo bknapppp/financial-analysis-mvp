@@ -20,6 +20,12 @@ import {
   generateInsights,
   generateRecommendedActions
 } from "./insights.ts";
+import { buildDealBackingContext } from "./backing.ts";
+import {
+  getDocumentLinksForCompany,
+  getDocumentsForCompany,
+  getDocumentVersionsForCompany
+} from "./documents.ts";
 import { buildNormalizedPeriodOutputs } from "./normalized-outputs.ts";
 import { getSourceReconciliationForContext } from "./source-reconciliation.ts";
 import { getSupabaseServerClient } from "./supabase.ts";
@@ -36,9 +42,12 @@ import type {
   CreditScenarioResult,
   CreditScenarioInputs,
   DashboardData,
+  DocumentLink,
+  DocumentVersion,
   FinancialEntry,
   PeriodSnapshot,
   ReportingPeriod,
+  SourceDocument,
   SourceFinancialContext,
   TaxSourceStatus
 } from "./types.ts";
@@ -93,6 +102,9 @@ export type DealRawContext = {
   accountMappings: AccountMapping[];
   addBacks: AddBack[];
   taxContext: SourceFinancialContext;
+  documents: SourceDocument[];
+  documentLinks: DocumentLink[];
+  documentVersions: DocumentVersion[];
 };
 
 export type DealCoreDerivedContext = DealRawContext & {
@@ -116,6 +128,9 @@ export type DealCoreDerivedContext = DealRawContext & {
   driverAnalyses: DashboardData["driverAnalyses"];
   recommendedActions: DashboardData["recommendedActions"];
   executiveSummary: DashboardData["executiveSummary"];
+  documents: DashboardData["documents"];
+  documentLinks: DashboardData["documentLinks"];
+  documentVersions: DashboardData["documentVersions"];
 };
 
 export type DealDerivedContext = DealCoreDerivedContext & {
@@ -123,6 +138,7 @@ export type DealDerivedContext = DealCoreDerivedContext & {
   underwritingInputs: CreditScenarioInputs;
   defaultCreditScenario: CreditScenarioResult;
   completionSummary: DashboardData["completionSummary"];
+  backing: DashboardData["backing"];
 };
 
 export { buildEmptyTaxSourceStatus, buildTaxSourceStatus } from "./tax-source-status.ts";
@@ -152,6 +168,9 @@ export function buildDealCoreDerivedContext(params: {
   accountMappings: AccountMapping[];
   addBacks: AddBack[];
   taxContext: SourceFinancialContext;
+  documents: SourceDocument[];
+  documentLinks: DocumentLink[];
+  documentVersions: DocumentVersion[];
   options?: DealDerivedContextOptions;
 }): DealCoreDerivedContext {
   const { company, periods, entries, accountMappings, addBacks, taxContext } = params;
@@ -281,6 +300,9 @@ export function buildDealCoreDerivedContext(params: {
     accountMappings,
     addBacks,
     taxContext,
+    documents: params.documents,
+    documentLinks: params.documentLinks,
+    documentVersions: params.documentVersions,
     selectedPeriodId: snapshot.periodId || selectedPeriodId,
     ebitdaBasis,
     baselineSnapshots,
@@ -344,7 +366,24 @@ export function buildDealDerivedContextFromCore(params: {
     taxSourceStatus: params.taxSourceStatus,
     underwritingInputs,
     defaultCreditScenario: underwritingAnalysis.creditScenario,
-    completionSummary: underwritingAnalysis.completionSummary
+    completionSummary: underwritingAnalysis.completionSummary,
+    backing: buildDealBackingContext({
+      companyId: params.core.company.id,
+      periodLabel: params.core.snapshot.label || null,
+      fiscalYear: params.core.snapshot.periodDate
+        ? Number.parseInt(params.core.snapshot.periodDate.slice(0, 4), 10)
+        : null,
+      entries: params.core.entries.filter(
+        (entry) => entry.period_id === params.core.snapshot.periodId
+      ),
+      documents: params.core.documents,
+      documentLinks: params.core.documentLinks,
+      addBackReviewItems: params.core.addBackReviewItems.filter(
+        (item) => item.periodId === params.core.snapshot.periodId
+      ),
+      underwritingAnalysis,
+      taxSourceStatus: params.taxSourceStatus
+    })
   };
 }
 
@@ -417,12 +456,26 @@ export const getDealRawContext = cache(async (companyId: string): Promise<DealRa
     }
   }
 
-  const taxContext = await getSourceFinancialContext({
-    companyId,
-    sourceType: "tax_return"
-  });
+  const [taxContext, documents, documentLinks, documentVersions] = await Promise.all([
+    getSourceFinancialContext({
+      companyId,
+      sourceType: "tax_return"
+    }),
+    getDocumentsForCompany(companyId),
+    getDocumentLinksForCompany(companyId),
+    getDocumentVersionsForCompany(companyId)
+  ]);
 
-  return { periods, entries, accountMappings, addBacks, taxContext };
+  return {
+    periods,
+    entries,
+    accountMappings,
+    addBacks,
+    taxContext,
+    documents,
+    documentLinks,
+    documentVersions
+  };
 });
 
 const getDealDerivedContextCached = cache(

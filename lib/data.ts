@@ -6,35 +6,35 @@ import {
   isActiveDealStage,
   isTerminalDealStage,
   type DealStage
-} from "@/lib/deal-stage";
-import { buildDataQualityReport } from "@/lib/data-quality";
-import { buildDataReadiness } from "@/lib/data-readiness";
+} from "./deal-stage.ts";
+import { buildDataQualityReport } from "./data-quality.ts";
+import { buildDataReadiness } from "./data-readiness.ts";
 import {
   buildEmptyTaxSourceStatus,
   DEFAULT_UNDERWRITING_INPUTS,
   EMPTY_SNAPSHOT,
   getCompanies,
   getDealDerivedContext
-} from "@/lib/deal-derived-context";
-import { buildDealDecision } from "@/lib/deal-decision";
+} from "./deal-derived-context.ts";
+import { buildDealDecision } from "./deal-decision.ts";
 import {
   buildEmptyDiligenceIssueFeedback,
   resolveDiligenceIssueActionTarget,
   summarizeDiligenceIssues,
   syncDiligenceIssuesForContext
-} from "@/lib/diligence-issues";
-import { groupDiligenceIssues } from "@/lib/diligence-issue-groups";
-import { deriveDiligenceReadiness } from "@/lib/diligence-readiness";
+} from "./diligence-issues.ts";
+import { groupDiligenceIssues } from "./diligence-issue-groups.ts";
+import { deriveDiligenceReadiness } from "./diligence-readiness.ts";
 import {
   derivePortfolioDealState,
   getPrimaryRiskSeverity,
   type PortfolioDealStatus,
   type PortfolioReadinessBlockerCategory,
   type PortfolioReadinessStateKey
-} from "@/lib/portfolio-deal-state";
-import { buildRiskFlags } from "@/lib/risk-flags";
-import { buildUnderwritingAnalysis } from "@/lib/underwriting/analysis";
-import type { Company, DashboardData, SimilarDeal } from "@/lib/types";
+} from "./portfolio-deal-state.ts";
+import { buildRiskFlags } from "./risk-flags.ts";
+import { buildUnderwritingAnalysis } from "./underwriting/analysis.ts";
+import type { Company, DashboardData, SimilarDeal } from "./types.ts";
 
 export type DealScreenerRow = {
   companyId: string;
@@ -48,6 +48,7 @@ export type DealScreenerRow = {
   isActiveStage: boolean;
   isTerminalStage: boolean;
   stageReadinessMismatchReason: string | null;
+  backingStatus: DashboardData["backing"]["summary"]["overall"]["status"];
   readinessStateKey: PortfolioReadinessStateKey;
   status: PortfolioDealStatus;
   blockerCount: number;
@@ -143,6 +144,45 @@ function buildEmptyDashboardData(companies: Company[]): DashboardData {
       dataQuality: emptyQuality
     }),
     taxSourceStatus: emptyTaxSourceStatus,
+    documents: [],
+    documentLinks: [],
+    documentVersions: [],
+    backing: {
+      sourceRequirements: [],
+      financialLineItems: [],
+      underwritingAdjustments: [],
+      underwritingMetrics: [],
+      summary: {
+        overall: {
+          id: "overall",
+          label: "Overall",
+          status: "unbacked",
+          href: "/",
+          note: "No deal selected"
+        },
+        financials: {
+          id: "financials",
+          label: "Financials",
+          status: "unbacked",
+          href: "/financials",
+          note: "No deal selected"
+        },
+        adjustments: {
+          id: "adjustments",
+          label: "Adjustments",
+          status: "unbacked",
+          href: "/",
+          note: "No deal selected"
+        },
+        creditInputs: {
+          id: "credit_inputs",
+          label: "Credit Inputs",
+          status: "unbacked",
+          href: "/",
+          note: "No deal selected"
+        }
+      }
+    },
     diligenceIssues: [],
     diligenceIssueSummary: summarizeDiligenceIssues([]),
     diligenceIssueGroups: [],
@@ -195,6 +235,10 @@ function buildDashboardDataForCompany(params: {
     dataQuality: context.dataQuality,
     readiness: context.readiness,
     taxSourceStatus: context.taxSourceStatus,
+    documents: context.documents,
+    documentLinks: context.documentLinks,
+    documentVersions: context.documentVersions,
+    backing: context.backing,
     diligenceIssues,
     diligenceIssueSummary: summarizeDiligenceIssues(diligenceIssues),
     diligenceIssueGroups,
@@ -293,6 +337,7 @@ async function buildDealScreenerRow(params: {
     isActiveStage: isActiveDealStage(stage),
     isTerminalStage: isTerminalDealStage(stage),
     stageReadinessMismatchReason: stageAssessment.stageReadinessMismatchReason,
+    backingStatus: context.backing.summary.overall.status,
     readinessStateKey: portfolioState.stateKey,
     status: portfolioState.status,
     blockerCount:

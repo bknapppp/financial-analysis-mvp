@@ -143,7 +143,7 @@ function workbookTask(overrides?: Partial<WorkbookFixItTask>): WorkbookFixItTask
   assert.equal(state.nextAction, "Enter loan terms");
   assert.equal(
     state.nextActionHref,
-    "/deal/company-1?fixSection=underwriting-workbench&fixField=underwriting-loanTermYears&tab=overview#underwriting-workbench"
+    "/deal/company-1/underwriting?fixSection=underwriting-workbench&fixField=underwriting-loanTermYears#underwriting-workbench"
   );
 }
 
@@ -167,7 +167,7 @@ function workbookTask(overrides?: Partial<WorkbookFixItTask>): WorkbookFixItTask
   assert.equal(state.nextAction, "Prepare output");
   assert.equal(
     state.nextActionHref,
-    "/deal/company-1?fixSection=underwriting-workbench&tab=overview#underwriting-workbench"
+    "/deal/company-1/underwriting?fixSection=underwriting-workbench#underwriting-workbench"
   );
 }
 

@@ -2,7 +2,7 @@ import {
   normalizeAccountName,
   resolveMappingSelection,
   suggestAccountMapping
-} from "@/lib/auto-mapping";
+} from "./auto-mapping.ts";
 import type {
   AccountMapping,
   AuditConfidence,
@@ -15,7 +15,7 @@ import type {
   ReportingPeriod,
   StatementType,
   TraceableEntry
-} from "@/lib/types";
+} from "./types.ts";
 
 type MappingMeta = {
   matchedBy: "memory" | "saved_mapping" | "keyword" | "manual" | "csv_value";

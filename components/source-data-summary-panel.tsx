@@ -36,135 +36,77 @@ export function SourceDataSummaryPanel({ data }: SourceDataSummaryPanelProps) {
         )
     )
     .map((issue) => issue.title)
-    .slice(0, 4);
+    .slice(0, 3);
+  const missingRequirements = data.backing.sourceRequirements.filter(
+    (row) => row.status === "unbacked"
+  );
 
   return (
-    <section className="grid gap-4 xl:grid-cols-2">
-      <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel">
-        <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
-          Sources
-        </p>
-        <h2 className="mt-2 text-xl font-semibold text-slate-900">
-          Source availability
-        </h2>
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
-          <article className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-            <p className="text-sm font-semibold text-slate-900">Reported financials</p>
-            <p className="mt-3 text-sm text-slate-700">
-              {data.periods.length} period(s) loaded across {data.entries.length} row(s).
-            </p>
-            <p className="mt-1 text-sm text-slate-500">
-              Selected period: {data.snapshot.label || "None"}
-            </p>
-          </article>
-          <article className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-            <p className="text-sm font-semibold text-slate-900">Tax return source</p>
-            <p className="mt-3 text-sm text-slate-700">
-              {data.taxSourceStatus.documentCount} document(s), {data.taxSourceStatus.periodCount} period(s), {data.taxSourceStatus.rowCount} row(s).
-            </p>
-            <p className="mt-1 text-sm text-slate-500">
-              {data.taxSourceStatus.matchingPeriodLabel
-                ? `Matched period: ${data.taxSourceStatus.matchingPeriodLabel}`
-                : "No matched tax period"}
-            </p>
-          </article>
+    <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="max-w-3xl">
+          <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
+            Step 1
+          </p>
+          <h2 className="mt-2 text-xl font-semibold text-slate-900">Data Coverage</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Understand what&apos;s missing before moving deeper into issue resolution and reconciliation.
+          </p>
         </div>
-      </section>
+        <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700">
+          {formatComparisonStatus(data)}
+        </div>
+      </div>
 
-      <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel">
-        <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
-          Mapping & Coverage
-        </p>
-        <h2 className="mt-2 text-xl font-semibold text-slate-900">
-          Mapping state
-        </h2>
-        <div className="mt-4 space-y-2">
-          <div className="flex items-start justify-between gap-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
-            <span className="font-medium text-slate-900">Mapped coverage</span>
-            <span className="text-slate-700">
-              {Math.round(data.dataQuality.mappingCoveragePercent)}%
-            </span>
+      <div className="mt-5 grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <div className="grid gap-2 md:grid-cols-2">
+          <div className="flex items-start justify-between gap-4 rounded-xl border border-slate-200/70 bg-slate-50/70 px-3 py-2.5 text-sm">
+            <span className="font-medium text-slate-900">Mapping %</span>
+            <span className="text-slate-700">{Math.round(data.dataQuality.mappingCoveragePercent)}%</span>
           </div>
-          <div className="flex items-start justify-between gap-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
-            <span className="font-medium text-slate-900">Unmapped rows</span>
-            <span className="text-slate-700">
-              {data.dataQuality.mappingBreakdown.unmapped}
-            </span>
+          <div className="flex items-start justify-between gap-4 rounded-xl border border-slate-200/70 bg-slate-50/70 px-3 py-2.5 text-sm">
+            <span className="font-medium text-slate-900">Unmapped accounts</span>
+            <span className="text-slate-700">{data.dataQuality.mappingBreakdown.unmapped}</span>
           </div>
-          <div className="flex items-start justify-between gap-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+          <div className="flex items-start justify-between gap-4 rounded-xl border border-slate-200/70 bg-slate-50/70 px-3 py-2.5 text-sm">
             <span className="font-medium text-slate-900">Low-confidence rows</span>
             <span className="text-slate-700">{lowConfidenceRows}</span>
           </div>
-          <div className="flex items-start justify-between gap-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
-            <span className="font-medium text-slate-900">Broad classifications</span>
-            <span className="text-slate-700">
-              {data.taxSourceStatus.broadClassificationCount +
-                selectedEntries.filter((entry) =>
-                  [
-                    "Assets",
-                    "Liabilities",
-                    "Equity",
-                    "current_assets",
-                    "non_current_assets",
-                    "current_liabilities",
-                    "non_current_liabilities",
-                    "equity"
-                  ].includes(entry.category)
-                ).length}
-            </span>
+          <div className="flex items-start justify-between gap-4 rounded-xl border border-slate-200/70 bg-slate-50/70 px-3 py-2.5 text-sm">
+            <span className="font-medium text-slate-900">Missing documents</span>
+            <span className="text-slate-700">{missingRequirements.length}</span>
           </div>
-        </div>
-      </section>
-
-      <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel">
-        <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
-          Data Quality / Input Health
-        </p>
-        <h2 className="mt-2 text-xl font-semibold text-slate-900">
-          Canonical input health
-        </h2>
-        <div className="mt-4 space-y-2">
-          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+          <div className="rounded-xl border border-slate-200/70 bg-slate-50/70 px-3 py-2.5 text-sm text-slate-700 md:col-span-2">
             Missing categories:{" "}
             {data.dataQuality.missingCategories.length > 0
               ? data.dataQuality.missingCategories.join(", ")
               : "None"}
           </div>
-          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+          <div className="rounded-xl border border-slate-200/70 bg-slate-50/70 px-3 py-2.5 text-sm text-slate-700 md:col-span-2">
             Statement coverage confidence: {data.dataQuality.confidenceLabel}
           </div>
-          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-            Reconciliation readiness: {formatComparisonStatus(data)}
-          </div>
-          {(data.diligenceReadiness.blockingGroupKey === "source_data" ||
-            data.diligenceReadiness.blockingGroupKey === "reconciliation") ? (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-              Source readiness impact: {data.diligenceReadiness.readinessReason}
-            </div>
-          ) : null}
         </div>
-      </section>
 
-      <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel">
-        <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
-          Source Review Queue
-        </p>
-        <h2 className="mt-2 text-xl font-semibold text-slate-900">
-          Open Source Items
-        </h2>
-        <div className="mt-4 space-y-2">
-          {(sourceQueue.length > 0
-            ? sourceQueue
-            : ["No open source reconciliation items are currently surfaced."]).map((item) => (
-            <div
-              key={item}
-              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
-            >
-              {item}
+        <div className="rounded-2xl border border-slate-200/70 bg-slate-50/70 px-4 py-4">
+          <p className="text-sm font-semibold text-slate-900">Key issues</p>
+          <div className="mt-3 space-y-2">
+            {sourceQueue.length > 0 ? (
+              sourceQueue.map((issue) => (
+                <div key={issue} className="rounded-xl border border-slate-200/70 bg-white px-3 py-2 text-sm text-slate-700">
+                  {issue}
+                </div>
+              ))
+            ) : (
+              <div className="rounded-xl border border-slate-200/70 bg-white px-3 py-2 text-sm text-slate-700">
+                No open source reconciliation items are currently surfaced.
+              </div>
+            )}
+            <div className="rounded-xl border border-slate-200/70 bg-white px-3 py-2 text-sm text-slate-700">
+              {data.periods.length} period(s), {data.entries.length} row(s), {data.documents.length} document(s)
             </div>
-          ))}
+          </div>
         </div>
-      </section>
+      </div>
     </section>
   );
 }

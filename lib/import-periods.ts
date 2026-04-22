@@ -1,4 +1,4 @@
-import type { ReportingPeriod } from "@/lib/types";
+import type { ReportingPeriod } from "./types.ts";
 
 export type NormalizedImportPeriod = {
   key: string;

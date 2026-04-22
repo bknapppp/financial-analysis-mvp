@@ -27,6 +27,15 @@ type DiligenceIssuesPanelProps = {
   emptyMessage: string;
   allowManualCreate?: boolean;
   preferredGroups?: DiligenceIssueGroupKey[];
+  supportByIssueId?: Record<
+    string,
+    {
+      status: "backed" | "partial" | "unbacked";
+      detail: string;
+      documents?: string[];
+      ctaLabel?: string;
+    }
+  >;
 };
 
 const CATEGORY_OPTIONS: DiligenceIssueCategory[] = [
@@ -67,6 +76,12 @@ function formatLabel(value: string) {
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function formatBackingLabel(value: "backed" | "partial" | "unbacked") {
+  if (value === "backed") return "Backed";
+  if (value === "partial") return "Partially Backed";
+  return "Unbacked";
 }
 
 async function postIssueStatus(id: string, status: DiligenceIssueStatus) {
@@ -116,7 +131,8 @@ export function DiligenceIssuesPanel({
   description,
   emptyMessage,
   allowManualCreate = false,
-  preferredGroups
+  preferredGroups,
+  supportByIssueId = {}
 }: DiligenceIssuesPanelProps) {
   const router = useRouter();
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -210,13 +226,13 @@ export function DiligenceIssuesPanel({
             Diligence Issues
           </p>
           <h2 className="mt-2 text-xl font-semibold text-slate-900">{title}</h2>
-          <p className="mt-2 text-sm text-slate-600">{description}</p>
+          <p className="mt-1 text-sm text-slate-500">{description}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700">
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700">
             {summary.open} open
           </span>
-          <span className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-rose-800">
+          <span className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-medium text-rose-800">
             {summary.criticalOpen} critical
           </span>
           {allowManualCreate ? (
@@ -231,11 +247,8 @@ export function DiligenceIssuesPanel({
         </div>
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-500">
-        <span>Open: {summary.open}</span>
-        <span>In review: {summary.inReview}</span>
-        <span>Resolved: {summary.resolved}</span>
-        <span>Waived: {summary.waived}</span>
+      <div className="mt-4 text-xs text-slate-500">
+        Open {summary.open} · In review {summary.inReview} · Resolved {summary.resolved} · Waived {summary.waived}
       </div>
 
       {showCreateForm ? (
@@ -309,7 +322,7 @@ export function DiligenceIssuesPanel({
             {issueGroups.map((group) => (
               <span
                 key={group.groupKey}
-                className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700"
+                className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] text-slate-700"
               >
                 {group.groupLabel}: {group.issueCount}
               </span>
@@ -345,20 +358,36 @@ export function DiligenceIssuesPanel({
                             <div className="flex flex-wrap items-center gap-2">
                               <p className="text-sm font-semibold text-slate-900">{issue.title}</p>
                               <span
-                                className={`rounded-full px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.12em] ${statusClasses(
+                                className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${statusClasses(
                                   issue.status
                                 )}`}
                               >
                                 {formatLabel(issue.status)}
                               </span>
-                              <span className="rounded-full border border-white/70 px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.12em] text-slate-700">
+                              <span className="rounded-full border border-white/70 px-2.5 py-1 text-[11px] font-medium text-slate-700">
                                 {formatLabel(issue.severity)}
                               </span>
-                              <span className="rounded-full border border-white/70 px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.12em] text-slate-700">
+                              <span className="rounded-full border border-white/70 px-2.5 py-1 text-[11px] font-medium text-slate-700">
                                 {issue.source_type === "system" ? "System" : "Manual"}
                               </span>
                             </div>
                             <p className="mt-2 text-sm text-slate-700">{issue.description}</p>
+                            {supportByIssueId[issue.id] ? (
+                              <div className="mt-3 rounded-xl border border-slate-200 bg-white/80 px-3 py-2.5 text-sm text-slate-700">
+                                <p className="text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
+                                  Support
+                                </p>
+                                <p className="mt-1 text-sm text-slate-600">
+                                  {formatBackingLabel(supportByIssueId[issue.id]!.status)} ·{" "}
+                                  {supportByIssueId[issue.id]!.detail}
+                                </p>
+                                {supportByIssueId[issue.id]!.documents?.length ? (
+                                  <p className="mt-2 text-xs text-slate-500">
+                                    {supportByIssueId[issue.id]!.documents!.join(", ")}
+                                  </p>
+                                ) : null}
+                              </div>
+                            ) : null}
                             {group.hasMoreIssues ? (
                               <p className="mt-2 text-xs font-medium text-slate-500">
                                 +{group.remainingIssueCount} more in {group.groupLabel}
@@ -463,17 +492,28 @@ export function DiligenceIssuesPanel({
                                 <div className="flex flex-wrap items-center gap-2">
                                   <p className="text-sm font-semibold text-slate-900">{issue.title}</p>
                                   <span
-                                    className={`rounded-full px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.12em] ${statusClasses(
+                                    className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${statusClasses(
                                       issue.status
                                     )}`}
                                   >
                                     {formatLabel(issue.status)}
                                   </span>
-                                  <span className="rounded-full border border-white/70 px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.12em] text-slate-700">
+                                  <span className="rounded-full border border-white/70 px-2.5 py-1 text-[11px] font-medium text-slate-700">
                                     {formatLabel(issue.severity)}
                                   </span>
                                 </div>
                                 <p className="mt-2 text-sm text-slate-700">{issue.description}</p>
+                                {supportByIssueId[issue.id] ? (
+                                  <div className="mt-3 rounded-xl border border-slate-200 bg-white/80 px-3 py-2.5 text-sm text-slate-700">
+                                    <p className="text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
+                                      Support
+                                    </p>
+                                    <p className="mt-1 text-sm text-slate-600">
+                                      {formatBackingLabel(supportByIssueId[issue.id]!.status)} ·{" "}
+                                      {supportByIssueId[issue.id]!.detail}
+                                    </p>
+                                  </div>
+                                ) : null}
                               </div>
 
                               <div className="flex flex-wrap items-center gap-2">

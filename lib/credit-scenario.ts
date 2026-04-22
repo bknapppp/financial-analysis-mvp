@@ -12,7 +12,7 @@ function isPositiveNumber(value: number | null | undefined): value is number {
 
 function formatMultiple(value: number | null) {
   if (value === null || !Number.isFinite(value)) {
-    return "Not meaningful";
+    return "Unsupported";
   }
 
   return `${value.toFixed(2)}x`;
@@ -20,7 +20,7 @@ function formatMultiple(value: number | null) {
 
 function formatOptionalCurrency(value: number | null) {
   if (value === null || !Number.isFinite(value)) {
-    return "Not meaningful";
+    return "Unsupported";
   }
 
   return formatCurrency(value);
@@ -28,7 +28,7 @@ function formatOptionalCurrency(value: number | null) {
 
 function formatRatioPercent(value: number | null) {
   if (value === null || !Number.isFinite(value)) {
-    return "Not meaningful";
+    return "Unsupported";
   }
 
   return formatPercent(value * 100);
@@ -194,13 +194,13 @@ export function buildCreditScenario(params: {
 
   if (hasEbitdaInput && (ebitda as number) < 0) {
     adverseSignals.push("Negative EBITDA");
-    adverseSignals.push("Coverage not meaningful due to non-positive earnings");
+    adverseSignals.push("Coverage unsupported due to non-positive earnings");
     if (annualDebtService !== null) {
       adverseSignals.push("Debt service not supported");
     }
   } else if (hasEbitdaInput && (ebitda as number) === 0) {
     adverseSignals.push("Zero EBITDA");
-    adverseSignals.push("Coverage not meaningful due to non-positive earnings");
+    adverseSignals.push("Coverage unsupported due to non-positive earnings");
     if (annualDebtService !== null) {
       adverseSignals.push("Debt service not supported");
     }
@@ -219,7 +219,7 @@ export function buildCreditScenario(params: {
         value: dscr,
         display: formatMultiple(dscr),
         description: hasNonPositiveEbitda
-          ? "Not meaningful with non-positive EBITDA"
+          ? "Unsupported with non-positive EBITDA"
           : "EBITDA / Annual Debt Service",
         status: hasNonPositiveEbitda ? "weak" : evaluateDscr(dscr)
       }),
@@ -228,7 +228,7 @@ export function buildCreditScenario(params: {
         value: debtToEbitda,
         display: formatMultiple(debtToEbitda),
         description: hasNonPositiveEbitda
-          ? "Not meaningful with non-positive EBITDA"
+          ? "Unsupported with non-positive EBITDA"
           : "Loan Amount / EBITDA",
         status: hasNonPositiveEbitda ? "weak" : evaluateDebtToEbitda(debtToEbitda)
       }),
@@ -237,7 +237,7 @@ export function buildCreditScenario(params: {
         value: interestCoverage,
         display: formatMultiple(interestCoverage),
         description: hasNonPositiveEbitda
-          ? "Not meaningful with non-positive EBITDA"
+          ? "Unsupported with non-positive EBITDA"
           : "EBITDA / Annual Interest Expense",
         status: hasNonPositiveEbitda ? "weak" : evaluateInterestCoverage(interestCoverage)
       }),

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { focusFixItTarget } from "@/components/fix-it-focus";
 import { formatCreditScenarioCurrency } from "@/lib/credit-scenario";
@@ -21,6 +21,9 @@ type CreditScenarioPanelProps = {
   onEbitdaBasisChange: (basis: UnderwritingEbitdaBasis) => void;
   scenario: CreditScenarioResult;
   missingInputs: string[];
+  canonicalEbitda: number | null;
+  adjustedEbitda: number | null;
+  acceptedAddBackTotal: number;
 };
 
 export type InputFieldKey = keyof CreditScenarioInputs;
@@ -136,16 +139,12 @@ export function CreditScenarioPanel({
   ebitdaBasis,
   onEbitdaBasisChange,
   scenario,
-  missingInputs
+  missingInputs,
+  canonicalEbitda,
+  adjustedEbitda,
+  acceptedAddBackTotal
 }: CreditScenarioPanelProps) {
-  const selectedEbitda =
-    ebitdaBasis === "adjusted" ? snapshot.adjustedEbitda : snapshot.ebitda;
-  const parsedInputs = useMemo<CreditScenarioInputs>(
-    () => ({
-      ...parseCreditScenarioInputValues(inputValues)
-    }),
-    [inputValues]
-  );
+  const workbenchAdjustedEbitda = adjustedEbitda ?? null;
 
   const metrics = [
     scenario.metrics.dscr,
@@ -197,7 +196,7 @@ export function CreditScenarioPanel({
     <section
       id={UNDERWRITING_WORKBENCH_SECTION_ID}
       data-fix-section={UNDERWRITING_WORKBENCH_SECTION_ID}
-      className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel"
+      className="rounded-[1.75rem] border border-slate-200/70 bg-slate-50/55 p-5 shadow-panel"
     >
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
@@ -208,24 +207,25 @@ export function CreditScenarioPanel({
             Underwriting Workbench
           </h2>
           <p className="mt-1 text-sm text-slate-500">
+            Set structure assumptions
+          </p>
+          <p className="mt-2 text-sm text-slate-500">
             Size a financing case directly against the selected period&apos;s earnings base.
           </p>
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+          <div className="rounded-2xl border border-slate-200/70 bg-white/80 px-4 py-3">
             <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
-              EBITDA Basis
+              Adjusted EBITDA
             </p>
             <p className="mt-1 text-lg font-semibold text-slate-900">
-              {formatCreditScenarioCurrency(selectedEbitda)}
+              {formatCreditScenarioCurrency(workbenchAdjustedEbitda)}
             </p>
             <p className="mt-1 text-xs text-slate-500">
-              {ebitdaBasis === "adjusted"
-                ? "Adjusted earnings base"
-                : "Canonical computed EBITDA"}
+              Derived from the shared underwriting EBITDA chain
             </p>
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+          <div className="rounded-2xl border border-slate-200/70 bg-white/80 px-4 py-3">
             <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
               EBIT Reference
             </p>
@@ -240,7 +240,7 @@ export function CreditScenarioPanel({
       </div>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
-        <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <section className="rounded-2xl border border-slate-200/70 bg-white/80 p-4">
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
@@ -250,14 +250,14 @@ export function CreditScenarioPanel({
                 Enter debt sizing, pricing, and amortization assumptions for the current case.
               </p>
             </div>
-            <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600">
+            <span className="rounded-full border border-slate-200/80 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
               Local scenario
             </span>
           </div>
-          <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+          <div className="mt-4 rounded-2xl border border-slate-200/70 bg-slate-50/70 px-4 py-3">
             <p className="text-sm font-medium text-slate-900">Use EBITDA</p>
             <div className="mt-3 grid gap-3 md:grid-cols-2">
-              <label className="flex items-start gap-3 rounded-xl border border-slate-200 px-3 py-3">
+              <label className="flex items-start gap-3 rounded-xl border border-slate-200/80 bg-white px-3 py-3">
                 <input
                   type="radio"
                   name="underwriting-ebitda-basis"
@@ -268,11 +268,11 @@ export function CreditScenarioPanel({
                 <span>
                   <span className="block text-sm font-medium text-slate-900">Computed</span>
                   <span className="mt-1 block text-xs text-slate-500">
-                    {formatCreditScenarioCurrency(snapshot.ebitda)}
+                    {formatCreditScenarioCurrency(canonicalEbitda)}
                   </span>
                 </span>
               </label>
-              <label className="flex items-start gap-3 rounded-xl border border-slate-200 px-3 py-3">
+              <label className="flex items-start gap-3 rounded-xl border border-slate-200/80 bg-white px-3 py-3">
                 <input
                   type="radio"
                   name="underwriting-ebitda-basis"
@@ -283,13 +283,13 @@ export function CreditScenarioPanel({
                 <span>
                   <span className="block text-sm font-medium text-slate-900">Adjusted</span>
                   <span className="mt-1 block text-xs text-slate-500">
-                    {formatCreditScenarioCurrency(snapshot.adjustedEbitda)}
+                    {formatCreditScenarioCurrency(workbenchAdjustedEbitda)}
                   </span>
                 </span>
               </label>
             </div>
             <p className="mt-3 text-xs text-slate-500">
-              Approved add-backs: {formatCreditScenarioCurrency(snapshot.acceptedAddBacks)}
+              Approved add-backs: {formatCreditScenarioCurrency(acceptedAddBackTotal)}
             </p>
           </div>
           <div className="mt-4 grid gap-3 md:grid-cols-2">
@@ -311,7 +311,7 @@ export function CreditScenarioPanel({
                       })
                     }
                     placeholder={field.placeholder}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none ring-0 placeholder:text-slate-400 focus:border-slate-400"
+                    className="w-full rounded-xl border border-slate-200/80 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none ring-0 placeholder:text-slate-400 focus:border-slate-400"
                   />
                   {field.suffix ? (
                     <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs font-medium uppercase tracking-[0.08em] text-slate-400">
@@ -328,115 +328,129 @@ export function CreditScenarioPanel({
         </section>
 
         <div className="space-y-4">
-          {!hasAnyAssumption ? (
-            <section className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-              <p className="text-sm font-medium text-slate-900">
-                Enter financing assumptions to evaluate debt service capacity and leverage.
-              </p>
-              <p className="mt-1 text-sm text-slate-500">
-                Once loan amount, rate, term, amortization, and collateral value are entered, the workbench will calculate annual debt service, coverage, leverage, and LTV against the selected EBITDA basis.
-              </p>
-            </section>
-          ) : null}
-
-          {scenario.adverseSignals.length > 0 ? (
-            <section className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4">
-              <p className="text-sm font-medium text-slate-900">
-                Adverse credit signals
-              </p>
-              <div className="mt-2 space-y-1 text-sm text-slate-700">
-                {scenario.adverseSignals.map((signal) => (
-                  <p key={signal}>{signal}</p>
-                ))}
-              </div>
-            </section>
-          ) : null}
-
-          <section className="rounded-2xl border border-slate-200 bg-white p-4">
+          <section className="rounded-2xl border border-slate-200/70 bg-white/80 p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
-                  Debt Service Summary
+                  Indicative Credit
                 </p>
                 <p className="mt-2 text-sm text-slate-600">
-                  First-year scheduled debt burden based on the stated financing structure.
-                </p>
-              </div>
-              {hasDebtServiceOutputs ? (
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
-                  Formula-driven
-                </span>
-              ) : null}
-            </div>
-            <div className="mt-4 grid gap-3 md:grid-cols-3">
-              <MetricTile
-                label="Annual Interest"
-                value={formatCreditScenarioCurrency(scenario.annualInterestExpense)}
-                helper="First-year cash interest"
-                muted={!hasDebtServiceOutputs}
-              />
-              <MetricTile
-                label="Annual Principal"
-                value={formatCreditScenarioCurrency(scenario.annualPrincipalPayment)}
-                helper="Scheduled amortization"
-                muted={!hasDebtServiceOutputs}
-              />
-              <MetricTile
-                label="Annual Debt Service"
-                value={formatCreditScenarioCurrency(scenario.annualDebtService)}
-                helper="Interest + principal"
-                muted={!hasDebtServiceOutputs}
-              />
-            </div>
-          </section>
-
-          <section className="rounded-2xl border border-slate-200 bg-white p-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
-                  Key Credit Ratios
-                </p>
-                <p className="mt-2 text-sm text-slate-600">
-                  Coverage, leverage, and collateral metrics sized off the selected EBITDA basis.
+                  Debt service, leverage, and collateral readout from the current structure inputs.
                 </p>
               </div>
               {hasRatioOutputs ? (
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
-                  Strong / Moderate / Weak
+                <span className="rounded-full border border-slate-200/80 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
+                  Indicative only
                 </span>
               ) : null}
             </div>
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              {metrics.map((metric) => (
-                <div
-                  key={metric.label}
-                  className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900">{metric.label}</p>
-                      <p className="mt-1 text-xs text-slate-500">
-                        {metricDescription(metric)}
-                      </p>
-                    </div>
-                    <span
-                      className={`rounded-full border px-2.5 py-1 text-xs font-medium ${statusClass(
-                        metric
-                      )}`}
-                    >
-                      {metric.statusLabel}
-                    </span>
-                  </div>
-                  <p className="mt-4 text-2xl font-semibold tracking-tight text-slate-950">
-                    {metricValueDisplay(metric)}
+
+            {!hasAnyAssumption ? (
+              <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-4 py-3">
+                <p className="text-sm font-medium text-slate-900">
+                  Enter financing assumptions to evaluate debt service capacity and leverage.
+                </p>
+                <p className="mt-1 text-sm text-slate-500">
+                  Once loan amount, rate, term, amortization, and collateral value are entered, the workbench will calculate annual debt service, coverage, leverage, and LTV against the selected EBITDA basis.
+                </p>
+              </div>
+            ) : null}
+
+            {scenario.adverseSignals.length > 0 ? (
+              <div className="mt-4 rounded-2xl border border-amber-200/70 bg-amber-50/80 px-4 py-3">
+                <p className="text-sm font-medium text-slate-900">Adverse credit signals</p>
+                <div className="mt-2 space-y-1 text-sm text-slate-700">
+                  {scenario.adverseSignals.map((signal) => (
+                    <p key={signal}>{signal}</p>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            <div className="mt-4 border-t border-slate-200/80 pt-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
+                    Debt Service Summary
+                  </p>
+                  <p className="mt-2 text-sm text-slate-600">
+                    First-year scheduled debt burden based on the stated financing structure.
                   </p>
                 </div>
-              ))}
+                {hasDebtServiceOutputs ? (
+                  <span className="rounded-full border border-slate-200/80 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
+                    Formula-driven
+                  </span>
+                ) : null}
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                <MetricTile
+                  label="Annual Interest"
+                  value={formatCreditScenarioCurrency(scenario.annualInterestExpense)}
+                  helper="First-year cash interest"
+                  muted={!hasDebtServiceOutputs}
+                />
+                <MetricTile
+                  label="Annual Principal"
+                  value={formatCreditScenarioCurrency(scenario.annualPrincipalPayment)}
+                  helper="Scheduled amortization"
+                  muted={!hasDebtServiceOutputs}
+                />
+                <MetricTile
+                  label="Annual Debt Service"
+                  value={formatCreditScenarioCurrency(scenario.annualDebtService)}
+                  helper="Interest + principal"
+                  muted={!hasDebtServiceOutputs}
+                />
+              </div>
             </div>
-          </section>
 
-          <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="mt-4 border-t border-slate-200/80 pt-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
+                    Preliminary Credit
+                  </p>
+                  <p className="mt-2 text-sm text-slate-600">
+                    Coverage, leverage, and collateral metrics sized off the selected EBITDA basis.
+                  </p>
+                </div>
+                {hasRatioOutputs ? (
+                  <span className="rounded-full border border-slate-200/80 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
+                    Strong / Moderate / Weak
+                  </span>
+                ) : null}
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                {metrics.map((metric) => (
+                  <div
+                    key={metric.label}
+                    className="rounded-2xl border border-slate-200/70 bg-slate-50/80 px-4 py-4"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">{metric.label}</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {metricDescription(metric)}
+                        </p>
+                      </div>
+                      <span
+                        className={`rounded-full border px-2.5 py-1 text-xs font-medium ${statusClass(
+                          metric
+                        )}`}
+                      >
+                        {metric.statusLabel}
+                      </span>
+                    </div>
+                    <p className="mt-4 text-2xl font-semibold tracking-tight text-slate-950">
+                      {metricValueDisplay(metric)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200/80 pt-4">
               <div>
                 <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
                   Maturity Profile
@@ -458,14 +472,14 @@ export function CreditScenarioPanel({
             </div>
           </section>
 
-          <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <section className="rounded-2xl border border-slate-200/70 bg-white/80 p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
-                  Structure Readiness
+                  Constraints
                 </p>
                 <p className="mt-2 text-sm text-slate-600">
-                  Keep financing outputs in the same workflow as the inputs that unlock them.
+                  One compact view of what still limits the indicative credit picture.
                 </p>
               </div>
               <span
@@ -482,21 +496,20 @@ export function CreditScenarioPanel({
             </div>
 
             {blockedItems.length > 0 ? (
-              <div className="mt-4 space-y-2">
-                {blockedItems.map((item) => (
-                  <div
-                    key={item.label}
-                    className="rounded-xl bg-white px-3 py-3"
-                  >
-                    <p className="text-sm font-semibold text-slate-900">{item.label}</p>
-                    <p className="mt-1 text-sm text-slate-600">
-                      {buildReasonText(item.label, missingInputs)}
+              <div className="mt-4 rounded-xl border border-slate-200/70 bg-slate-50/80 px-3 py-3">
+                <p className="text-sm font-medium text-slate-900">
+                  The outputs above remain indicative until a few assumptions are completed.
+                </p>
+                <div className="mt-2 space-y-1 text-sm text-slate-600">
+                  {blockedItems.map((item) => (
+                    <p key={item.label}>
+                      {item.label}: {buildReasonText(item.label, missingInputs)}
                     </p>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             ) : (
-              <div className="mt-4 rounded-xl bg-white px-3 py-3">
+              <div className="mt-4 rounded-xl border border-slate-200/70 bg-slate-50/80 px-3 py-3">
                 <p className="text-sm font-medium text-slate-900">
                   All core structure metrics are currently computable from the entered inputs.
                 </p>
@@ -525,7 +538,7 @@ function MetricTile({
   return (
     <div
       className={`rounded-2xl border p-4 ${
-        muted ? "border-slate-200 bg-slate-50" : "border-slate-200 bg-white"
+        muted ? "border-slate-200/70 bg-slate-50/80" : "border-slate-200/70 bg-white"
       }`}
     >
       <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">

@@ -1,4 +1,4 @@
-import { buildDealState } from "@/lib/deal-state";
+import { buildDealState } from "../deal-state.ts";
 import type {
   CreditScenarioInputs,
   CreditScenarioResult,

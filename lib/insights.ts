@@ -4,7 +4,7 @@ import type {
   Insight,
   PeriodDriverAnalysis,
   PeriodSnapshot
-} from "@/lib/types";
+} from "./types.ts";
 
 function percentChange(current: number | null, previous: number | null) {
   if (

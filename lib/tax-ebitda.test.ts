@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { buildManualTaxDevFixtures, buildManualTaxIngestionPlan } from "./manual-tax-ingestion.ts";
-import { calculateTaxDerivedEbitda } from "./tax-ebitda.ts";
+import { calculateTaxDerivedEbitda, classifyTaxEbitdaBucket } from "./tax-ebitda.ts";
 import type { SourceFinancialEntry } from "./types.ts";
 
 async function buildSourceEntriesFromFixture(params: {
@@ -110,6 +110,79 @@ assert.equal(depreciationTrace?.bucket, "depreciation");
 
 const interestTrace = fy2023Result.traceRows.find((row) => row.accountName === "Interest");
 assert.equal(interestTrace?.bucket, "interest");
+
+const cogsPriorityOverRevenueResult = classifyTaxEbitdaBucket({
+  id: "cogs-priority-1",
+  account_name: "Cost of sales",
+  statement_type: "income",
+  amount: -125000,
+  category: "Revenue",
+  addback_flag: false,
+  matched_by: "keyword_rule",
+  confidence: "high",
+  mapping_explanation: "Broad sales matcher might otherwise map this to Revenue.",
+  created_at: "2026-04-09T00:00:00.000Z",
+  source_period_id: "priority-period",
+  source_document_id: "priority-doc",
+  source_type: "tax_return",
+  source_file_name: "priority.json",
+  upload_id: "priority-upload",
+  source_period_label: "Tax Year 2023",
+  source_year: 2023,
+  source_currency: "USD",
+  source_confidence: "unknown"
+});
+assert.equal(
+  cogsPriorityOverRevenueResult.bucket,
+  "cogs",
+  "Cost of sales must classify as COGS before any broad sales-based revenue rule."
+);
+
+const costOfRevenueClassification = classifyTaxEbitdaBucket({
+  id: "cogs-priority-2",
+  account_name: "Cost of revenue",
+  statement_type: "income",
+  amount: -90000,
+  category: "Revenue",
+  addback_flag: false,
+  matched_by: "keyword_rule",
+  confidence: "high",
+  mapping_explanation: "Explicit COGS synonym should not fall through to Revenue.",
+  created_at: "2026-04-09T00:00:00.000Z",
+  source_period_id: "priority-period",
+  source_document_id: "priority-doc",
+  source_type: "tax_return",
+  source_file_name: "priority.json",
+  upload_id: "priority-upload",
+  source_period_label: "Tax Year 2023",
+  source_year: 2023,
+  source_currency: "USD",
+  source_confidence: "unknown"
+});
+assert.equal(costOfRevenueClassification.bucket, "cogs");
+
+const cogsAcronymClassification = classifyTaxEbitdaBucket({
+  id: "cogs-priority-3",
+  account_name: "COGS",
+  statement_type: "income",
+  amount: -50000,
+  category: "Revenue",
+  addback_flag: false,
+  matched_by: "keyword_rule",
+  confidence: "high",
+  mapping_explanation: "Acronym must map to COGS regardless of upstream category noise.",
+  created_at: "2026-04-09T00:00:00.000Z",
+  source_period_id: "priority-period",
+  source_document_id: "priority-doc",
+  source_type: "tax_return",
+  source_file_name: "priority.json",
+  upload_id: "priority-upload",
+  source_period_label: "Tax Year 2023",
+  source_year: 2023,
+  source_currency: "USD",
+  source_confidence: "unknown"
+});
+assert.equal(cogsAcronymClassification.bucket, "cogs");
 
 const partialEntries: SourceFinancialEntry[] = [
   {

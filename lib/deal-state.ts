@@ -1,4 +1,4 @@
-import { buildFixItHref } from "@/lib/fix-it";
+import { buildFixItHref } from "./fix-it.ts";
 import type {
   CreditScenarioResult,
   DataQualityReport,
@@ -6,7 +6,7 @@ import type {
   ReconciliationReport,
   UnderwritingCompletionSection,
   UnderwritingCompletionSummary
-} from "@/lib/types";
+} from "./types.ts";
 
 export type DealIssue = {
   id: string;

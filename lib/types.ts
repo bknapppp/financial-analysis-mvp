@@ -6,6 +6,30 @@ export type FinancialSourceType = "reported_financials" | "tax_return";
 
 export type FinancialSourceConfidence = "high" | "medium" | "low" | "unknown";
 
+export type DocumentType =
+  | "income_statement"
+  | "balance_sheet"
+  | "cash_flow"
+  | "tax_return"
+  | "bank_statement"
+  | "debt_schedule"
+  | "payroll_report"
+  | "loan_agreement"
+  | "other";
+
+export type BackingStatus = "backed" | "partial" | "unbacked";
+
+export type EntityType =
+  | "source_requirement"
+  | "financial_line_item"
+  | "underwriting_adjustment"
+  | "issue"
+  | "underwriting_metric";
+
+export type DocumentSourceKind = "manual" | "import" | "integration";
+
+export type DocumentStatus = "active" | "archived";
+
 export type NormalizedCategory =
   | "Revenue"
   | "COGS"
@@ -63,12 +87,38 @@ export type ReportingPeriod = {
 export type SourceDocument = {
   id: string;
   company_id: string;
+  name: string | null;
+  document_type: DocumentType | null;
+  period_label: string | null;
+  fiscal_year: number | null;
+  uploaded_at: string | null;
+  uploaded_by: string | null;
+  source_kind: DocumentSourceKind | null;
+  status: DocumentStatus | null;
   source_type: FinancialSourceType;
   source_file_name: string | null;
   upload_id: string | null;
   source_currency: string | null;
   source_confidence: FinancialSourceConfidence | null;
   created_at: string;
+};
+
+export type DocumentLink = {
+  id: string;
+  company_id: string;
+  document_id: string;
+  entity_type: EntityType;
+  entity_id: string;
+  created_at: string;
+};
+
+export type DocumentVersion = {
+  id: string;
+  document_id: string;
+  version_number: number;
+  file_url: string | null;
+  storage_path: string | null;
+  uploaded_at: string;
 };
 
 export type SourceReportingPeriod = {
@@ -379,6 +429,19 @@ export type EbitdaExplainability = {
 
 export type UnderwritingEbitdaBasis = "computed" | "adjusted";
 
+export type UnderwritingScenarioKey = "base" | "upside" | "downside";
+
+export type UnderwritingScenario = {
+  uplift: number;
+  interestRate: number | null;
+  debt: number | null;
+};
+
+export type UnderwritingScenarioState = {
+  selected: UnderwritingScenarioKey;
+  scenarios: Record<UnderwritingScenarioKey, UnderwritingScenario>;
+};
+
 export type DashboardSeriesPoint = {
   label: string;
   revenue: number;
@@ -627,9 +690,12 @@ export type DiligenceIssueLinkedPage =
 export type DiligenceIssueCode =
   | "missing_revenue"
   | "missing_cogs"
+  | "missing_income_statement"
+  | "missing_balance_sheet"
   | "required_mappings_incomplete"
   | "source_coverage_incomplete"
   | "low_mapping_confidence"
+  | "financial_line_item_unbacked"
   | "balance_sheet_out_of_balance"
   | "ebitda_basis_unavailable"
   | "gross_profit_reconciliation_mismatch"
@@ -641,8 +707,88 @@ export type DiligenceIssueCode =
   | "adjusted_ebitda_unavailable"
   | "dscr_not_meaningful_non_positive_earnings"
   | "debt_sizing_outputs_unavailable"
+  | "debt_schedule_missing_for_credit_metric"
   | "underwriting_inputs_incomplete"
-  | "add_back_review_incomplete";
+  | "add_back_review_incomplete"
+  | "underwriting_adjustment_unbacked";
+
+export type SourceRequirementDefinition = {
+  id: string;
+  label: string;
+  groupLabel: string;
+  documentTypes: DocumentType[];
+  periodLabel: string | null;
+  fiscalYear: number | null;
+};
+
+export type DocumentRowActionTarget = {
+  entityType: EntityType;
+  entityId: string;
+};
+
+export type SourceRequirementBacking = SourceRequirementDefinition & {
+  status: BackingStatus;
+  documents: SourceDocument[];
+  linkedDocuments: SourceDocument[];
+  missingReason: string | null;
+  actionTarget: DocumentRowActionTarget;
+};
+
+export type FinancialLineItemBacking = {
+  id: string;
+  label: string;
+  status: BackingStatus;
+  documents: SourceDocument[];
+  linkedDocuments: SourceDocument[];
+  sourceRequirementIds: string[];
+  note: string | null;
+  actionTarget: DocumentRowActionTarget;
+};
+
+export type UnderwritingAdjustmentBacking = {
+  adjustmentId: string;
+  label: string;
+  status: BackingStatus;
+  documents: SourceDocument[];
+  linkedDocuments: SourceDocument[];
+  note: string | null;
+  actionTarget: DocumentRowActionTarget;
+};
+
+export type UnderwritingMetricBacking = {
+  id: string;
+  label: string;
+  status: BackingStatus;
+  documents: SourceDocument[];
+  linkedDocuments: SourceDocument[];
+  requiredSupportLabels: string[];
+  missingSupportLabels: string[];
+  note: string | null;
+  actionTarget: DocumentRowActionTarget;
+};
+
+export type BackingSummaryItem = {
+  id: string;
+  label: string;
+  status: BackingStatus;
+  href: string;
+  note: string | null;
+};
+
+export type DealBackingSummary = {
+  overall: BackingSummaryItem;
+  financials: BackingSummaryItem;
+  adjustments: BackingSummaryItem;
+  creditInputs: BackingSummaryItem;
+};
+
+export type DealBackingContext = {
+  sourceRequirements: SourceRequirementBacking[];
+  financialLineItems: FinancialLineItemBacking[];
+  underwritingAdjustments: UnderwritingAdjustmentBacking[];
+  underwritingMetrics: UnderwritingMetricBacking[];
+  summary: DealBackingSummary;
+};
 
 export type DiligenceIssue = {
   id: string;
@@ -821,6 +967,8 @@ export type InvestmentOverviewSummary = {
 
 export type UnderwritingAnalysis = {
   ebitdaBasis: UnderwritingEbitdaBasis;
+  canonicalEbitda: number | null;
+  adjustedEbitda: number | null;
   selectedEbitda: number | null;
   underwritingInputs: CreditScenarioInputs;
   missingInputs: string[];
@@ -934,6 +1082,10 @@ export type DashboardData = {
   dataQuality: DataQualityReport;
   readiness: DataReadiness;
   taxSourceStatus: TaxSourceStatus;
+  documents: SourceDocument[];
+  documentLinks: DocumentLink[];
+  documentVersions: DocumentVersion[];
+  backing: DealBackingContext;
   diligenceIssues: DiligenceIssue[];
   diligenceIssueSummary: DiligenceIssueSummary;
   diligenceIssueGroups: DiligenceIssueGroup[];

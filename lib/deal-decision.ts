@@ -1,4 +1,4 @@
-import type { CreditScenarioResult, PeriodSnapshot } from "@/lib/types";
+import type { CreditScenarioResult, PeriodSnapshot } from "./types.ts";
 
 export type DealRecommendation = "approve" | "caution" | "decline";
 

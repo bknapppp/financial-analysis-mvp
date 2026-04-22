@@ -1,4 +1,4 @@
-import { getCanonicalPeriodAdjustment } from "@/lib/add-backs";
+import { getCanonicalPeriodAdjustment } from "./add-backs.ts";
 import type {
   AddBack,
   AddBackReviewItem,
@@ -7,7 +7,7 @@ import type {
   DataReadiness,
   PeriodSnapshot,
   ReconciliationReport
-} from "@/lib/types";
+} from "./types.ts";
 
 function dedupeMessages(messages: string[]) {
   return Array.from(

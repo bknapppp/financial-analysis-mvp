@@ -1352,7 +1352,11 @@ export function CsvImportSection({
               ))}
             </div>
 
-            <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200">
+            <details className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
+              <summary className="cursor-pointer list-none text-sm font-medium text-slate-900">
+                Raw data tables
+              </summary>
+              <div className="mt-3 overflow-x-auto rounded-2xl border border-slate-200 bg-white">
               <table className="min-w-full divide-y divide-slate-200 text-sm">
                 <thead className="bg-slate-50">
                   <tr>
@@ -1378,13 +1382,14 @@ export function CsvImportSection({
                   ))}
                 </tbody>
               </table>
-            </div>
+              </div>
 
-            {selectedSheet!.rows.length > 8 ? (
-              <p className="mt-3 text-sm text-slate-500">
-                Showing the first 8 rows of {selectedSheet!.rows.length}.
-              </p>
-            ) : null}
+              {selectedSheet!.rows.length > 8 ? (
+                <p className="mt-3 text-sm text-slate-500">
+                  Showing the first 8 rows of {selectedSheet!.rows.length}.
+                </p>
+              ) : null}
+            </details>
 
             {showParserDebug && wideStatementDebug ? (
               <div className="mt-4 rounded-2xl border border-sky-200 bg-sky-50/70 p-4">

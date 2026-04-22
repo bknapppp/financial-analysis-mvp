@@ -1,4 +1,4 @@
-import { suggestAccountMapping } from "@/lib/auto-mapping";
+import { suggestAccountMapping } from "./auto-mapping.ts";
 import type {
   AccountMapping,
   DataQualityReport,
@@ -6,7 +6,7 @@ import type {
   MappingClassification,
   PeriodSnapshot,
   StatementType
-} from "@/lib/types";
+} from "./types.ts";
 
 function classifyEntryMapping(
   entry: FinancialEntry,

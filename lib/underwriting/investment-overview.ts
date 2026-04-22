@@ -102,13 +102,22 @@ export function buildInvestmentOverview(params: {
 
   if (
     taxSourceStatus.comparisonComputable &&
-    taxSourceStatus.computedEbitdaDeltaPercent !== null &&
-    Math.abs(taxSourceStatus.computedEbitdaDeltaPercent) >= 0.1
+    (
+      (taxSourceStatus.reportedEbitdaDeltaPercent !== null &&
+        Math.abs(taxSourceStatus.reportedEbitdaDeltaPercent) >= 0.1) ||
+      (taxSourceStatus.computedEbitdaDeltaPercent !== null &&
+        Math.abs(taxSourceStatus.computedEbitdaDeltaPercent) >= 0.1)
+    )
   ) {
     financialIntegrityItems.push(
-      `Tax vs computed EBITDA divergence is ${formatDeltaPercent(
-        taxSourceStatus.computedEbitdaDeltaPercent
-      )} for the matched period.`
+      taxSourceStatus.reportedEbitdaDeltaPercent !== null &&
+      Math.abs(taxSourceStatus.reportedEbitdaDeltaPercent) >= 0.1
+        ? `Tax vs reported EBITDA divergence is ${formatDeltaPercent(
+            taxSourceStatus.reportedEbitdaDeltaPercent
+          )} for the matched period.`
+        : `Tax vs computed EBITDA divergence is ${formatDeltaPercent(
+            taxSourceStatus.computedEbitdaDeltaPercent
+          )} for the matched period.`
     );
   } else if (taxSourceStatus.comparisonStatus === "partial") {
     financialIntegrityItems.push(

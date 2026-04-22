@@ -1,11 +1,11 @@
-import { formatCurrency, formatPercent } from "@/lib/formatters";
+import { formatCurrency, formatPercent } from "./formatters.ts";
 import type {
   AddBackReviewItem,
   CreditScenarioResult,
   DataQualityReport,
   DataReadiness,
   PeriodSnapshot
-} from "@/lib/types";
+} from "./types.ts";
 
 export type RiskFlagSeverity = "high" | "medium" | "low";
 

@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { buildBalanceSheet as buildSnapshotBalanceSheet, buildIncomeStatement as buildSnapshotIncomeStatement } from "@/lib/calculations";
 import { AddBackReviewPanel } from "@/components/add-back-review-panel";
+import { BackingChip } from "@/components/backing-chip";
 import {
   CreditScenarioPanel,
   DEFAULT_CREDIT_SCENARIO_INPUT_VALUES,
@@ -23,27 +24,30 @@ import { DealStageSelect } from "@/components/deal-stage-select";
 import { DealNextActionsPanel } from "@/components/deal-next-actions-panel";
 import { DiligenceFeedbackPanel } from "@/components/diligence-feedback-panel";
 import { DiligenceIssuesPanel } from "@/components/diligence-issues-panel";
-import { DiligenceReadinessPanel } from "@/components/diligence-readiness-panel";
+import { BackingSummaryPanel } from "@/components/backing-summary-panel";
+import { DocumentDrawer } from "@/components/document-drawer";
 import { InvestmentOverviewPanel } from "@/components/investment-overview-panel";
 import { MultiPeriodSummaryTable } from "@/components/multi-period-summary-table";
 import { PerformanceDrivers } from "@/components/performance-drivers";
-import { RiskFlagsPanel } from "@/components/risk-flags-panel";
+import { ProFormaPanel } from "@/components/pro-forma-panel";
 import { StatementTable } from "@/components/statement-table";
-import { UnderwritingCompletionPanel } from "@/components/underwriting-completion-panel";
 import { UnderwritingSnapshotPanel } from "@/components/underwriting-snapshot-panel";
-import { buildDealState } from "@/lib/deal-state";
+import { buildDealActionHref, buildDealState } from "@/lib/deal-state";
 import { getDealStageDisplay, getDealStageLabel } from "@/lib/deal-stage";
-import { groupDiligenceIssues } from "@/lib/diligence-issue-groups";
 import { devLog } from "@/lib/debug";
 import { ADD_BACK_LAYER_SECTION_ID } from "@/lib/fix-it";
 import { formatCurrency, formatPercent } from "@/lib/formatters";
+import { buildRiskFlags, type RiskFlag, type RiskFlagSeverity } from "@/lib/risk-flags";
 import { buildUnderwritingAnalysis } from "@/lib/underwriting/analysis";
+import { buildEbitdaChain } from "@/lib/underwriting/ebitda";
 import type {
   DashboardData,
   NormalizedPeriodOutput,
   NormalizedStatement,
   PeriodSnapshot,
-  UnderwritingEbitdaBasis
+  UnderwritingEbitdaBasis,
+  UnderwritingScenario,
+  UnderwritingScenarioState
 } from "@/lib/types";
 
 export type DealWorkspaceSection = "overview" | "financials" | "underwriting";
@@ -54,6 +58,25 @@ type DealWorkspaceViewProps = {
 };
 
 type FinancialsMode = "reported" | "adjusted";
+
+function createDefaultUnderwritingScenario(): UnderwritingScenario {
+  return {
+    uplift: 0,
+    interestRate: null,
+    debt: null
+  };
+}
+
+function createDefaultUnderwritingScenarioState(): UnderwritingScenarioState {
+  return {
+    selected: "base",
+    scenarios: {
+      base: createDefaultUnderwritingScenario(),
+      upside: createDefaultUnderwritingScenario(),
+      downside: createDefaultUnderwritingScenario()
+    }
+  };
+}
 
 function toNormalizedStatementRows(
   rows: Array<{ label: string; value: number | null }>,
@@ -100,15 +123,16 @@ function buildReportedIncomeStatement(params: {
 function buildAdjustedIncomeStatement(params: {
   normalizedOutput: NormalizedPeriodOutput | null;
   snapshot: PeriodSnapshot;
+  adjustedEbitda: number | null;
 }): NormalizedStatement {
-  const { normalizedOutput, snapshot } = params;
+  const { normalizedOutput, snapshot, adjustedEbitda } = params;
 
   if (normalizedOutput?.incomeStatement) {
     return {
       ...normalizedOutput.incomeStatement,
       title: "Income Statement",
       footerLabel: "Adjusted EBITDA",
-      footerValue: snapshot.adjustedEbitda
+      footerValue: adjustedEbitda
     };
   }
 
@@ -123,7 +147,7 @@ function buildAdjustedIncomeStatement(params: {
       "Adjusted EBITDA"
     ]),
     footerLabel: "Adjusted EBITDA",
-    footerValue: snapshot.adjustedEbitda
+    footerValue: adjustedEbitda
   };
 }
 
@@ -240,12 +264,23 @@ export function DealWorkspaceView({ data, section }: DealWorkspaceViewProps) {
   const [showValidationDetails, setShowValidationDetails] = useState(false);
   const [underwritingInputValues, setUnderwritingInputValues] =
     useState<CreditScenarioInputValues>(DEFAULT_CREDIT_SCENARIO_INPUT_VALUES);
+  const [underwritingScenarioState, setUnderwritingScenarioState] =
+    useState<UnderwritingScenarioState>(createDefaultUnderwritingScenarioState);
   const [underwritingEbitdaBasis, setUnderwritingEbitdaBasis] =
     useState<UnderwritingEbitdaBasis>("computed");
   const [selectedPeriodId, setSelectedPeriodId] = useState(data.snapshot.periodId || "");
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isDeletingCompany, setIsDeletingCompany] = useState(false);
   const [isDeletingPeriod, setIsDeletingPeriod] = useState(false);
+  const [documentDrawerState, setDocumentDrawerState] = useState<{
+    mode: "view" | "upload" | "link";
+    title: string;
+    description?: string | null;
+    targetEntityType?: "source_requirement" | "financial_line_item" | "underwriting_adjustment" | "issue" | "underwriting_metric" | null;
+    targetEntityId?: string | null;
+    targetDocumentType?: DashboardData["documents"][number]["document_type"] | null;
+    documentId?: string | null;
+  } | null>(null);
 
   const availablePeriods = useMemo(() => {
     const entryCountsByPeriodId = new Map<string, number>();
@@ -300,6 +335,25 @@ export function DealWorkspaceView({ data, section }: DealWorkspaceViewProps) {
       null,
     [data.normalizedOutput, data.normalizedPeriods, effectiveSnapshot.periodId]
   );
+  const effectiveBridge = effectiveNormalizedOutput?.bridge ?? data.ebitdaBridge ?? null;
+  const effectiveCanonicalEbitda =
+    effectiveBridge?.canonicalEbitda ?? effectiveSnapshot.ebitda ?? effectiveSnapshot.reportedEbitda ?? null;
+  const effectiveReportedEbitda =
+    effectiveBridge?.reportedEbitdaReference ?? effectiveSnapshot.reportedEbitda ?? effectiveCanonicalEbitda;
+  const effectiveAddBackTotal =
+    effectiveBridge?.addBackTotal ?? effectiveSnapshot.acceptedAddBacks ?? 0;
+  const selectedUnderwritingScenario =
+    underwritingScenarioState.scenarios[underwritingScenarioState.selected];
+  const effectiveEbitdaChain = useMemo(
+    () =>
+      buildEbitdaChain({
+        canonicalEbitda: effectiveCanonicalEbitda,
+        acceptedAddbacks: effectiveAddBackTotal,
+        uplift: selectedUnderwritingScenario.uplift
+      }),
+    [effectiveAddBackTotal, effectiveCanonicalEbitda, selectedUnderwritingScenario.uplift]
+  );
+  const effectiveAdjustedEbitda = effectiveEbitdaChain.adjustedEbitda;
 
   const selectedPeriodAfterFallback = effectiveSnapshot.periodId || "";
   const chosenPeriodHasData = availablePeriods.some(
@@ -339,9 +393,10 @@ export function DealWorkspaceView({ data, section }: DealWorkspaceViewProps) {
           })
         : buildAdjustedIncomeStatement({
             normalizedOutput: effectiveNormalizedOutput,
-            snapshot: effectiveSnapshot
+            snapshot: effectiveSnapshot,
+            adjustedEbitda: effectiveEbitdaChain.adjustedEbitda
           }),
-    [effectiveNormalizedOutput, effectiveSnapshot, mode]
+    [effectiveEbitdaChain.adjustedEbitda, effectiveNormalizedOutput, effectiveSnapshot, mode]
   );
 
   const balanceSheet = useMemo(
@@ -473,14 +528,11 @@ export function DealWorkspaceView({ data, section }: DealWorkspaceViewProps) {
   const currentSection = sectionLabel(section);
   const intent = sectionIntentCopy(section);
   const stageDisplay = getDealStageDisplay(data.stage);
-  const effectiveBridge = effectiveNormalizedOutput?.bridge ?? data.ebitdaBridge ?? null;
   const ebitdaExplainability =
     effectiveNormalizedOutput?.ebitdaExplainability ??
     effectiveSnapshot.ebitdaExplainability ??
     null;
   const addBackThresholdPercent = 25;
-  const effectiveAddBackTotal =
-    effectiveBridge?.addBackTotal ?? effectiveSnapshot.acceptedAddBacks ?? 0;
   const missingExplainabilityComponents =
     ebitdaExplainability?.missingComponents ?? [];
   const bridgeInvalidReasons = effectiveBridge?.invalidReasons ?? [];
@@ -514,14 +566,22 @@ export function DealWorkspaceView({ data, section }: DealWorkspaceViewProps) {
       ? "Applied adjustments"
       : "Proposed adjustments";
   const adjustedEbitdaDisplay =
-    data.readiness.status === "blocked"
-      ? "Unavailable"
-      : formatCurrency(effectiveSnapshot.adjustedEbitda);
+    effectiveEbitdaChain.adjustedEbitda === null
+      ? "Unsupported"
+      : formatCurrency(effectiveEbitdaChain.adjustedEbitda);
+  const ebitdaSupportContext =
+    effectiveEbitdaChain.adjustedEbitda === null
+      ? "EBITDA cannot be computed from the available financial data."
+      : data.readiness.status === "ready"
+        ? null
+        : "Based on partial financial support";
   const topStripStatusMessage =
-    data.readiness.status === "blocked"
-      ? `Adjusted EBITDA unavailable - ${financialStatusLabel.toLowerCase()}`
+    effectiveEbitdaChain.adjustedEbitda === null
+      ? `Adjusted EBITDA unsupported - ${financialStatusLabel.toLowerCase()}`
       : data.readiness.status === "caution"
         ? "Adjusted EBITDA pending validation"
+        : data.readiness.status === "blocked"
+          ? "Adjusted EBITDA available with partial support"
         : "Adjusted EBITDA supported";
   const constructionNotes = [
     mode === "adjusted"
@@ -555,7 +615,8 @@ export function DealWorkspaceView({ data, section }: DealWorkspaceViewProps) {
         taxSourceStatus: data.taxSourceStatus,
         reconciliation: data.reconciliation,
         underwritingInputs: parsedUnderwritingInputs,
-        ebitdaBasis: underwritingEbitdaBasis
+        ebitdaBasis: underwritingEbitdaBasis,
+        acceptedAddBackTotal: effectiveAddBackTotal
       }),
     [
       data.dataQuality,
@@ -564,7 +625,8 @@ export function DealWorkspaceView({ data, section }: DealWorkspaceViewProps) {
       data.taxSourceStatus,
       effectiveSnapshot,
       parsedUnderwritingInputs,
-      underwritingEbitdaBasis
+      underwritingEbitdaBasis,
+      effectiveAddBackTotal
     ]
   );
   const acceptedAddBackItemsForSnapshot = useMemo(
@@ -629,24 +691,117 @@ export function DealWorkspaceView({ data, section }: DealWorkspaceViewProps) {
       ),
     [activeIssues]
   );
-  const underwritingIssueGroups = useMemo(
-    () => groupDiligenceIssues({ issues: underwritingIssues }),
-    [underwritingIssues]
-  );
-  const financialIssueGroups = useMemo(
-    () => groupDiligenceIssues({ issues: financialIssues }),
-    [financialIssues]
-  );
   const addBackImpactSummary = {
     canonicalEbitda: effectiveSnapshot.ebitda,
     totalAddBacks: effectiveAddBackTotal,
-    adjustedEbitda: effectiveSnapshot.adjustedEbitda,
+    adjustedEbitda: effectiveEbitdaChain.adjustedEbitda,
     periodLabel: effectiveSnapshot.label,
     thresholdPercent: addBackThresholdPercent,
     exceedsThreshold:
       addBackShareOfEbitdaPercent !== null &&
       addBackShareOfEbitdaPercent >= addBackThresholdPercent
   };
+  const currentAdjustmentBacking = useMemo(
+    () =>
+      Object.fromEntries(
+        data.backing.underwritingAdjustments.map((item) => [
+          item.adjustmentId,
+          {
+            status: item.status,
+            documentNames: item.documents.map((document) => document.name ?? document.source_file_name ?? "Document")
+          }
+        ])
+      ),
+    [data.backing.underwritingAdjustments]
+  );
+  const currentMetricBacking = useMemo(
+    () => ({
+      ebitda: data.backing.financialLineItems.find((item) => item.id === "ebitda")?.status,
+      dscr: data.backing.underwritingMetrics.find((item) => item.id === "dscr")?.status,
+      ltv: data.backing.underwritingMetrics.find((item) => item.id === "ltv")?.status,
+      debtToEbitda:
+        data.backing.underwritingMetrics.find((item) => item.id === "debt_to_ebitda")?.status
+    }),
+    [data.backing]
+  );
+  const underwritingRiskFlags = useMemo(
+    () =>
+      buildRiskFlags({
+        snapshot: effectiveSnapshot,
+        creditScenario: underwritingAnalysis.creditScenario,
+        readiness: data.readiness,
+        dataQuality: data.dataQuality,
+        acceptedAddBackItems: acceptedAddBackItemsForSnapshot
+      }),
+    [
+      acceptedAddBackItemsForSnapshot,
+      data.dataQuality,
+      data.readiness,
+      effectiveSnapshot,
+      underwritingAnalysis.creditScenario
+    ]
+  );
+  const primaryNextAction = dealState.actions[0] ?? null;
+  const financialBackingPanelRows = useMemo(
+    () => [
+      {
+        id: "revenue",
+        label: "Revenue",
+        status: data.backing.financialLineItems.find((item) => item.id === "revenue")?.status ?? "unbacked",
+        href: financialsHref,
+        note:
+          data.backing.financialLineItems.find((item) => item.id === "revenue")?.documents
+            .map((document) => document.name ?? document.source_file_name ?? "Document")
+            .join(", ") || null
+      },
+      {
+        id: "cogs",
+        label: "COGS",
+        status: data.backing.financialLineItems.find((item) => item.id === "cogs")?.status ?? "unbacked",
+        href: financialsHref,
+        note:
+          data.backing.financialLineItems.find((item) => item.id === "cogs")?.note ?? null
+      },
+      {
+        id: "ebitda",
+        label: "EBITDA",
+        status: data.backing.financialLineItems.find((item) => item.id === "ebitda")?.status ?? "unbacked",
+        href: financialsHref,
+        note:
+          data.backing.financialLineItems.find((item) => item.id === "ebitda")?.note ?? null
+      },
+      {
+        id: "cash_flow",
+        label: "Cash Flow Basis",
+        status: data.backing.sourceRequirements.find((item) => item.id === "cash_flow")?.status ?? "unbacked",
+        href: sourceDataHref,
+        note:
+          data.backing.sourceRequirements.find((item) => item.id === "cash_flow")?.missingReason ??
+          null
+      }
+    ],
+    [data.backing, financialsHref, sourceDataHref]
+  );
+
+  function openSupportDrawer(params: {
+    mode?: "view" | "upload" | "link";
+    title: string;
+    description?: string | null;
+    targetEntityType?: "source_requirement" | "financial_line_item" | "underwriting_adjustment" | "issue" | "underwriting_metric" | null;
+    targetEntityId?: string | null;
+    targetDocumentType?: DashboardData["documents"][number]["document_type"] | null;
+    documentId?: string | null;
+  }) {
+    setDocumentDrawerState({
+      mode: params.mode ?? "view",
+      title: params.title,
+      description: params.description ?? null,
+      targetEntityType: params.targetEntityType ?? null,
+      targetEntityId: params.targetEntityId ?? null,
+      targetDocumentType: params.targetDocumentType ?? null,
+      documentId: params.documentId ?? null
+    });
+  }
 
   async function deleteCompany() {
     if (!data.company || isDeletingCompany) {
@@ -887,50 +1042,48 @@ export function DealWorkspaceView({ data, section }: DealWorkspaceViewProps) {
         </section>
 
         {section === "overview" ? (
-          <section className="space-y-6">
+          <section className="space-y-4">
             <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel">
               <div className="max-w-3xl">
                 <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
-                  Summary Metrics
+                  Earnings Profile
                 </p>
                 <h2 className="mt-2 text-xl font-semibold text-slate-900">
-                  Current Period Summary
+                  Earnings Profile
                 </h2>
                 <p className="mt-1 text-sm text-slate-500">
-                  Headline metrics and current review status for the selected period.
+                  Operating trend, current-period performance, and the main drivers behind the latest move.
                 </p>
               </div>
-              <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                  <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
-                    Lifecycle Stage
-                  </p>
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <span
-                      className={`inline-flex rounded-md border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] ${stageDisplay.badgeClassName}`}
-                    >
-                      {getDealStageLabel(data.stage)}
-                    </span>
-                    <span className="text-xs text-slate-500">
-                      Updated{" "}
-                      {data.company?.stage_updated_at
-                        ? new Intl.DateTimeFormat("en-US", {
-                            month: "short",
-                            day: "numeric",
-                            year: "numeric"
-                          }).format(new Date(data.company.stage_updated_at))
-                        : "not set"}
-                    </span>
-                  </div>
-                  <p className="mt-2 text-sm text-slate-600">
-                    Readiness remains tracked separately as {data.diligenceReadiness.readinessLabel}.
-                  </p>
-                  {data.stageAssessment.stageReadinessMismatchReason ? (
-                    <p className="mt-2 text-sm text-amber-700">
-                      {data.stageAssessment.stageReadinessMismatchReason}
-                    </p>
-                  ) : null}
+              <div className="mt-5 space-y-5 rounded-[1.25rem] bg-slate-50 p-4">
+                <div className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
+                  <DashboardCharts series={data.series} showOuterCard={false} />
+                  <PerformanceDrivers analyses={data.driverAnalyses} showOuterCard={false} />
                 </div>
+                <details className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <summary className="cursor-pointer list-none text-sm font-medium text-slate-900">
+                    View multi-period summary
+                  </summary>
+                  <div className="mt-4">
+                    <MultiPeriodSummaryTable snapshots={data.snapshots} showOuterCard={false} />
+                  </div>
+                </details>
+              </div>
+            </section>
+
+            <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel">
+              <div className="max-w-3xl">
+                <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
+                  Deal Economics
+                </p>
+                <h2 className="mt-2 text-xl font-semibold text-slate-900">
+                  Deal Economics
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  High-value support metrics for the selected period.
+                </p>
+              </div>
+              <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <SummaryMetricCard
                   label="Revenue"
                   value={formatCurrency(effectiveSnapshot.revenue)}
@@ -944,107 +1097,115 @@ export function DealWorkspaceView({ data, section }: DealWorkspaceViewProps) {
                 <SummaryMetricCard
                   label="Adjusted EBITDA"
                   value={adjustedEbitdaDisplay}
-                  helper={adjustmentsLabel}
+                  helper={
+                    adjustedEbitdaDisplay === "Unsupported"
+                      ? "Requires a canonical EBITDA value"
+                      : ebitdaSupportContext ?? adjustmentsLabel
+                  }
                 />
                 <SummaryMetricCard
                   label="EBITDA Margin"
                   value={formatPercent(effectiveSnapshot.ebitdaMarginPercent)}
                   helper="Period margin"
                 />
-                <SummaryMetricCard
-                  label="Mapping Coverage"
-                  value={formatPercent(data.dataQuality.mappingCoveragePercent)}
-                  helper={data.dataQuality.confidenceLabel}
-                />
-                <SummaryMetricCard
-                  label="Reconciliation"
-                  value={data.reconciliation.label}
-                  helper={financialStatusLabel}
-                />
-              </div>
-              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                {financialStatusMessage}
               </div>
             </section>
 
-            {companyId ? (
-              <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
-                <DiligenceReadinessPanel
-                  readiness={data.diligenceReadiness}
-                  issueGroups={data.diligenceIssueGroups}
-                  title="Diligence Readiness"
-                  description="Current readiness state derived from open diligence issues."
-                />
-                <DiligenceIssuesPanel
-                  companyId={companyId}
-                  periodId={effectiveSnapshot.periodId}
-                  issues={activeIssues}
-                  currentPage="overview"
-                  title="Open Issues"
-                  description="Current structured diligence issues for the selected deal."
-                  emptyMessage="No open diligence issues are currently tracked for this deal."
-                />
-              </div>
-            ) : null}
-
-            <DiligenceFeedbackPanel
-              feedback={data.diligenceIssueFeedback}
-              title="Recent Issue Changes"
+            <DecisionBanner
+              title="Decision Status"
+              status={data.diligenceReadiness.readinessLabel}
+              summary={data.diligenceReadiness.readinessReason}
+              details={financialStatusMessage}
+              blockers={
+                data.diligenceReadiness.blockerIssueTitles.length > 0
+                  ? data.diligenceReadiness.blockerIssueTitles.slice(0, 3)
+                  : data.diligenceReadiness.primaryBlockerIssueTitle
+                    ? [data.diligenceReadiness.primaryBlockerIssueTitle]
+                    : data.diligenceReadiness.primaryBlockerLabel
+                      ? [data.diligenceReadiness.primaryBlockerLabel]
+                      : []
+              }
+              metadata={[
+                `Stage: ${getDealStageLabel(data.stage)}`,
+                `${activeIssues.length} open issue${activeIssues.length === 1 ? "" : "s"}`
+              ]}
+              actionHref={
+                companyId && primaryNextAction
+                  ? buildDealActionHref(primaryNextAction, companyId)
+                  : null
+              }
+              actionLabel={primaryNextAction?.label ?? null}
             />
 
-            <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel">
-              <div className="max-w-3xl">
-                <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
-                  Performance & Trends
-                </p>
-                <h2 className="mt-2 text-xl font-semibold text-slate-900">
-                  Performance & Trends
-                </h2>
-                <p className="mt-1 text-sm text-slate-500">
-                  Revenue, earnings, and trend context for a quick summary read.
-                </p>
-              </div>
-              <div className="mt-5 space-y-6 rounded-[1.5rem] bg-slate-50 p-4">
-                <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
-                  <DashboardCharts series={data.series} showOuterCard={false} />
-                  <PerformanceDrivers analyses={data.driverAnalyses} showOuterCard={false} />
+            <BackingSummaryPanel
+              rows={[
+                data.backing.summary.financials,
+                data.backing.summary.adjustments,
+                data.backing.summary.creditInputs,
+                data.backing.summary.overall
+              ]}
+              description="Support across the critical decision layers."
+            />
+
+            <InvestmentOverviewPanel
+              overview={investmentOverview}
+              detailHref={sourceDataHref}
+              eyebrow="Investment Considerations"
+              title="Investment Considerations"
+              compact
+            />
+
+            <section className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-panel">
+              <details>
+                <summary className="cursor-pointer list-none">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div className="max-w-3xl">
+                      <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
+                        Diagnostics
+                      </p>
+                      <h2 className="mt-1 text-lg font-semibold text-slate-900">
+                        View details
+                      </h2>
+                      <p className="mt-1 text-sm text-slate-500">
+                        Lower-priority issue detail, recent changes, and supporting diagnostics.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700">
+                        {data.diligenceReadiness.activeIssueCount} active
+                      </span>
+                      <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700">
+                        {data.diligenceReadiness.criticalIssueCount} critical
+                      </span>
+                    </div>
+                  </div>
+                </summary>
+
+                <div className="mt-5 space-y-5 border-t border-slate-200 pt-5">
+                  <DiligenceFeedbackPanel
+                    feedback={data.diligenceIssueFeedback}
+                    title="Recent Issue Changes"
+                  />
+
+                  {companyId ? (
+                    <DiligenceIssuesPanel
+                      companyId={companyId}
+                      periodId={effectiveSnapshot.periodId}
+                      issues={activeIssues}
+                      currentPage="overview"
+                      title="Open Issues"
+                      description="Structured diligence issues and supporting detail for this deal."
+                      emptyMessage="No open diligence issues are currently tracked for this deal."
+                    />
+                  ) : null}
                 </div>
-                <MultiPeriodSummaryTable snapshots={data.snapshots} showOuterCard={false} />
-              </div>
+              </details>
             </section>
           </section>
         ) : null}
 
         {section === "underwriting" ? (
           <section className="space-y-6">
-            <section>
-              <UnderwritingSnapshotPanel
-                snapshot={effectiveSnapshot}
-                scenario={underwritingAnalysis.creditScenario}
-                ebitdaBasis={underwritingEbitdaBasis}
-                missingInputs={underwritingAnalysis.missingInputs}
-              />
-            </section>
-
-            <section
-              id={ADD_BACK_LAYER_SECTION_ID}
-              className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel"
-            >
-              <AddBackReviewPanel
-                companyId={data.company?.id ?? null}
-                periods={data.periods}
-                items={data.addBackReviewItems}
-                periodId={effectiveSnapshot.periodId}
-                title="Required adjustments"
-                eyebrow="Underwriting Adjustments"
-                description="Review, document, and approve add-backs before using adjusted EBITDA in the credit case."
-                impactSummary={addBackImpactSummary}
-                showOuterCard={false}
-                density="compact"
-                manualEntryMode="collapsible"
-              />
-            </section>
-
             <CreditScenarioPanel
               snapshot={effectiveSnapshot}
               inputValues={underwritingInputValues}
@@ -1053,19 +1214,127 @@ export function DealWorkspaceView({ data, section }: DealWorkspaceViewProps) {
               onEbitdaBasisChange={setUnderwritingEbitdaBasis}
               scenario={underwritingAnalysis.creditScenario}
               missingInputs={underwritingAnalysis.missingInputs}
+              canonicalEbitda={effectiveCanonicalEbitda}
+              adjustedEbitda={effectiveAdjustedEbitda}
+              acceptedAddBackTotal={underwritingAnalysis.acceptedAddBackTotal}
             />
 
-            <section className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
-              <InvestmentOverviewPanel overview={investmentOverview} detailHref={sourceDataHref} />
-              <RiskFlagsPanel
-                snapshot={effectiveSnapshot}
-                creditScenario={underwritingAnalysis.creditScenario}
-                readiness={data.readiness}
-                dataQuality={data.dataQuality}
-                acceptedAddBackItems={acceptedAddBackItemsForSnapshot}
-                blockers={completionSummary.blockers}
+            <section
+              id={ADD_BACK_LAYER_SECTION_ID}
+              className="rounded-[1.75rem] border border-slate-200/70 bg-white p-4 shadow-panel"
+            >
+              <AddBackReviewPanel
+                companyId={data.company?.id ?? null}
+                periods={data.periods}
+                items={data.addBackReviewItems}
+                periodId={effectiveSnapshot.periodId}
+                title="EBITDA Adjustments"
+                eyebrow="Earnings Adjustments"
+                description="Normalize earnings"
+                impactSummary={addBackImpactSummary}
+                showOuterCard={false}
+                density="compact"
+                manualEntryMode="collapsible"
+                backingByAdjustmentId={currentAdjustmentBacking}
+                onAttachSupport={(entityId) =>
+                  openSupportDrawer({
+                    mode: "link",
+                    title: "Adjustment support",
+                    description: "Link a supporting document to this underwriting adjustment.",
+                    targetEntityType: "underwriting_adjustment",
+                    targetEntityId: entityId,
+                    targetDocumentType: "other"
+                  })
+                }
               />
             </section>
+
+            <section className="pt-1 md:pt-2">
+              <ProFormaPanel
+                canonicalEbitda={effectiveCanonicalEbitda}
+                reportedEbitda={effectiveReportedEbitda}
+                workbenchInputValues={underwritingInputValues}
+                acceptedAddBackTotal={effectiveAddBackTotal}
+                scenarioState={underwritingScenarioState}
+                onScenarioStateChange={setUnderwritingScenarioState}
+                ebitdaContextMessage={ebitdaSupportContext}
+              />
+            </section>
+
+            <section>
+              <UnderwritingSnapshotPanel
+                snapshot={effectiveSnapshot}
+                scenario={underwritingAnalysis.creditScenario}
+                ebitdaBasis={underwritingEbitdaBasis}
+                missingInputs={underwritingAnalysis.missingInputs}
+                canonicalEbitda={underwritingAnalysis.canonicalEbitda}
+                adjustedEbitda={underwritingAnalysis.adjustedEbitda}
+                backingByMetric={currentMetricBacking}
+                onMetricSupportClick={(metricId) => {
+                  if (metricId === "ebitda") {
+                    const item = data.backing.financialLineItems.find((entry) => entry.id === "ebitda");
+                    openSupportDrawer({
+                      title: "EBITDA support",
+                      description: item?.note,
+                      targetEntityType: "financial_line_item",
+                      targetEntityId: "ebitda",
+                      targetDocumentType: "income_statement",
+                      documentId: item?.documents[0]?.id ?? null
+                    });
+                    return;
+                  }
+
+                  const metricBacking = data.backing.underwritingMetrics.find((entry) =>
+                    metricId === "debtToEbitda"
+                      ? entry.id === "debt_to_ebitda"
+                      : entry.id === metricId
+                  );
+                  openSupportDrawer({
+                    title: `${metricBacking?.label ?? metricId} support`,
+                    description: metricBacking?.note,
+                    targetEntityType: "underwriting_metric",
+                    targetEntityId: metricBacking?.id ?? metricId,
+                    targetDocumentType: "debt_schedule",
+                    documentId: metricBacking?.documents[0]?.id ?? null
+                  });
+                }}
+              />
+            </section>
+
+            <UnderwritingRisksPanel
+              riskFlags={underwritingRiskFlags}
+              blockers={completionSummary.blockers}
+              missingItems={completionSummary.missingItems}
+              issues={underwritingIssues}
+            />
+
+            {isDevelopment ? (
+              <section className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-xs text-slate-700">
+                <p className="font-medium uppercase tracking-[0.12em] text-slate-500">
+                  EBITDA Debug
+                </p>
+                <div className="mt-2 grid gap-1 md:grid-cols-2">
+                  <p>canonicalEbitda: {formatCurrency(effectiveEbitdaChain.canonicalEbitda)}</p>
+                  <p>acceptedAddbacks: {formatCurrency(effectiveEbitdaChain.acceptedAddbacks)}</p>
+                  <p>adjustedEbitda (computed): {formatCurrency(effectiveEbitdaChain.adjustedEbitda)}</p>
+                  <p>proFormaEbitda: {formatCurrency(effectiveEbitdaChain.proFormaEbitda)}</p>
+                </div>
+              </section>
+            ) : null}
+
+            <details className="rounded-[1.6rem] border border-slate-200/80 bg-white p-4 shadow-panel">
+              <summary className="cursor-pointer list-none">
+                <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
+                  Underwriting Summary
+                </p>
+                <h2 className="mt-1 text-lg font-semibold text-slate-900">
+                  Underwriting Summary
+                </h2>
+              </summary>
+              <div className="mt-4">
+                <InvestmentOverviewPanel overview={investmentOverview} detailHref={sourceDataHref} />
+              </div>
+            </details>
 
             {companyId ? (
               <DealNextActionsPanel
@@ -1080,84 +1349,6 @@ export function DealWorkspaceView({ data, section }: DealWorkspaceViewProps) {
             <DiligenceFeedbackPanel
               feedback={data.diligenceIssueFeedback}
               title="Underwriting Issue Changes"
-            />
-
-            <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="max-w-3xl">
-                  <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
-                    Readiness
-                  </p>
-                  <h2 className="mt-2 text-xl font-semibold text-slate-900">
-                    {data.diligenceReadiness.readinessLabel}
-                  </h2>
-                  <p className="mt-2 text-sm text-slate-600">
-                    {data.diligenceReadiness.readinessReason}
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {underwritingIssueGroups.slice(0, 3).map((group) => (
-                    <span
-                      key={group.groupKey}
-                      className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700"
-                    >
-                      {group.groupLabel}: {group.issueCount}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </section>
-
-            {financialIssueGroups.length > 0 ? (
-              <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="max-w-3xl">
-                    <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
-                      Validation Context
-                    </p>
-                    <h2 className="mt-2 text-lg font-semibold text-slate-900">
-                      {data.diligenceReadiness.readinessLabel}
-                    </h2>
-                    <p className="mt-2 text-sm text-slate-600">
-                      {data.diligenceReadiness.readinessReason}
-                    </p>
-                    {data.diligenceReadiness.primaryBlockerIssueTitle ? (
-                      <p className="mt-2 text-sm font-medium text-slate-900">
-                        Primary blocker: {data.diligenceReadiness.primaryBlockerIssueTitle}
-                      </p>
-                    ) : null}
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {financialIssueGroups.slice(0, 2).map((group) => (
-                      <span
-                        key={group.groupKey}
-                        className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700"
-                      >
-                        {group.groupLabel}: {group.issueCount}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              </section>
-            ) : null}
-
-            {companyId ? (
-              <DiligenceIssuesPanel
-                companyId={companyId}
-                periodId={effectiveSnapshot.periodId}
-                issues={underwritingIssues}
-                currentPage="underwriting"
-                title="Underwriting Issues"
-                description="Open underwriting, earnings, and credit issues tied to the current deal facts."
-                emptyMessage="No open underwriting issues are currently tracked."
-                allowManualCreate
-                preferredGroups={["underwriting", "credit", "adjustments"]}
-              />
-            ) : null}
-
-            <UnderwritingCompletionPanel
-              companyId={companyId}
-              summary={completionSummary}
             />
           </section>
         ) : null}
@@ -1189,9 +1380,9 @@ export function DealWorkspaceView({ data, section }: DealWorkspaceViewProps) {
                   <p className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">
                     {adjustedEbitdaDisplay}
                   </p>
-                  {data.readiness.status !== "ready" ? (
+                  {ebitdaSupportContext ? (
                     <p className="mt-1 text-xs leading-5 text-slate-500">
-                      {financialStatusLabel}
+                      {ebitdaSupportContext}
                     </p>
                   ) : null}
                 </div>
@@ -1228,7 +1419,7 @@ export function DealWorkspaceView({ data, section }: DealWorkspaceViewProps) {
             </section>
 
             <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel">
-              <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_22rem] xl:items-start">
+              <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_20rem] xl:items-start">
                 <div className="space-y-5">
                   <StatementTable
                     statement={incomeStatement}
@@ -1239,6 +1430,49 @@ export function DealWorkspaceView({ data, section }: DealWorkspaceViewProps) {
                 </div>
 
                 <aside className="space-y-5">
+                  <section className="rounded-[1.5rem] bg-slate-50 p-4">
+                    <div className="border-b border-slate-200 pb-3">
+                      <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
+                        Data Backing
+                      </p>
+                      <p className="mt-1 text-sm text-slate-500">
+                        Critical financial support at a glance.
+                      </p>
+                    </div>
+                    <div className="space-y-2 pt-3">
+                      {financialBackingPanelRows.map((row) => (
+                        <button
+                          key={row.id}
+                          type="button"
+                          onClick={() => {
+                            const item =
+                              data.backing.financialLineItems.find((entry) => entry.id === row.id) ??
+                              data.backing.sourceRequirements.find((entry) => entry.id === row.id);
+                            openSupportDrawer({
+                              title: `${row.label} support`,
+                              description: row.note,
+                              targetEntityType:
+                                row.id === "cash_flow" ? "source_requirement" : "financial_line_item",
+                              targetEntityId: row.id,
+                              targetDocumentType:
+                                row.id === "cash_flow" ? "cash_flow" : "income_statement",
+                              documentId: item?.documents[0]?.id ?? null
+                            });
+                          }}
+                          className="flex w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-left"
+                        >
+                          <div>
+                            <p className="text-sm font-medium text-slate-900">{row.label}</p>
+                            {row.note ? (
+                              <p className="mt-1 text-xs text-slate-500">{row.note}</p>
+                            ) : null}
+                          </div>
+                          <BackingChip status={row.status} size="compact" />
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+
                   <section className="rounded-[1.5rem] bg-slate-50 p-4">
                     <div className="border-b border-slate-200 pb-3">
                       <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
@@ -1274,12 +1508,18 @@ export function DealWorkspaceView({ data, section }: DealWorkspaceViewProps) {
                           {adjustedEbitdaDisplay}
                         </p>
                       </div>
-                      {data.readiness.status !== "ready" || bridgeWarnings.length ? (
+                      {(ebitdaSupportContext !== null && adjustedEbitdaDisplay !== "Unsupported") ||
+                      bridgeWarnings.length ||
+                      adjustedEbitdaDisplay === "Unsupported" ? (
                         <div className="rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-700">
                           <p className="text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
                             Status
                           </p>
-                          <p className="mt-1 font-medium text-slate-900">{financialStatusLabel}</p>
+                          <p className="mt-1 font-medium text-slate-900">
+                            {adjustedEbitdaDisplay === "Unsupported"
+                              ? "EBITDA not available"
+                              : financialStatusLabel}
+                          </p>
                           <p className="mt-1 text-sm leading-5 text-slate-600">{financialStatusMessage}</p>
                           {bridgeWarnings.length ? (
                             <p className="mt-2 text-xs text-amber-700">
@@ -1291,55 +1531,44 @@ export function DealWorkspaceView({ data, section }: DealWorkspaceViewProps) {
                     </div>
                   </section>
 
-                  <section className="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-4">
-                    <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
-                      Adjustment Ownership
-                    </p>
-                    <p className="mt-2 text-sm text-slate-700">
-                      Adjustment editing is maintained on the Underwriting page.
-                    </p>
-                    <Link
-                      href={underwritingHref}
-                      className="mt-3 inline-flex rounded-xl bg-white px-3 py-2 text-sm font-medium text-slate-900 hover:bg-slate-100"
-                    >
-                      Open Underwriting
-                    </Link>
-                  </section>
-
-                  <section className="border-t border-slate-200 pt-5">
-                    <div className="rounded-[1.5rem] bg-slate-50 p-4">
-                      <div className="border-b border-slate-200 pb-3">
-                        <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
-                          Construction Notes
+                  <details className="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-4">
+                    <summary className="cursor-pointer list-none text-sm font-medium text-slate-900">
+                      Construction notes
+                    </summary>
+                    <div className="pt-3">
+                      <ul className="space-y-2 text-sm leading-5 text-slate-600">
+                        {constructionNotes.map((note) => (
+                          <li key={note}>{note}</li>
+                        ))}
+                      </ul>
+                      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-3">
+                        <p className="text-sm text-slate-600">
+                          Adjustment editing is maintained on the Underwriting page.
                         </p>
-                        <p className="mt-1 text-sm text-slate-500">
-                          Short context for how the EBITDA output is being presented.
-                        </p>
+                        <Link
+                          href={underwritingHref}
+                          className="inline-flex rounded-xl bg-white px-3 py-2 text-sm font-medium text-slate-900 hover:bg-slate-100"
+                        >
+                          Open Underwriting
+                        </Link>
                       </div>
-                      <div className="pt-3">
-                        <ul className="space-y-2 text-sm leading-5 text-slate-600">
-                          {constructionNotes.map((note) => (
-                            <li key={note}>{note}</li>
-                          ))}
-                        </ul>
-                        {(bridgeWarnings.length > 1 || bridgeInvalidReasons.length > 0) ? (
-                          <details className="mt-3 text-sm text-slate-600">
-                            <summary className="cursor-pointer font-medium text-slate-900">
-                              View construction detail
-                            </summary>
-                            <div className="mt-2 space-y-2">
-                              {bridgeInvalidReasons.map((reason) => (
-                                <p key={reason}>{reason}</p>
-                              ))}
-                              {bridgeWarnings.slice(1).map((warning) => (
-                                <p key={warning}>{warning}</p>
-                              ))}
-                            </div>
-                          </details>
-                        ) : null}
-                      </div>
+                      {(bridgeWarnings.length > 1 || bridgeInvalidReasons.length > 0) ? (
+                        <details className="mt-3 text-sm text-slate-600">
+                          <summary className="cursor-pointer font-medium text-slate-900">
+                            View detail
+                          </summary>
+                          <div className="mt-2 space-y-2">
+                            {bridgeInvalidReasons.map((reason) => (
+                              <p key={reason}>{reason}</p>
+                            ))}
+                            {bridgeWarnings.slice(1).map((warning) => (
+                              <p key={warning}>{warning}</p>
+                            ))}
+                          </div>
+                        </details>
+                      ) : null}
                     </div>
-                  </section>
+                  </details>
                 </aside>
               </div>
             </section>
@@ -1619,6 +1848,359 @@ export function DealWorkspaceView({ data, section }: DealWorkspaceViewProps) {
           </>
         ) : null}
       </div>
+      {companyId ? (
+        <DocumentDrawer
+          open={Boolean(documentDrawerState)}
+          onClose={() => setDocumentDrawerState(null)}
+          companyId={companyId}
+          mode={documentDrawerState?.mode ?? "view"}
+          title={documentDrawerState?.title ?? "Supporting documents"}
+          description={documentDrawerState?.description ?? null}
+          targetEntityType={documentDrawerState?.targetEntityType ?? null}
+          targetEntityId={documentDrawerState?.targetEntityId ?? null}
+          targetDocumentType={documentDrawerState?.targetDocumentType ?? null}
+          periodLabel={effectiveSnapshot.label || null}
+          fiscalYear={
+            effectiveSnapshot.periodDate
+              ? Number.parseInt(effectiveSnapshot.periodDate.slice(0, 4), 10)
+              : null
+          }
+          document={
+            data.documents.find((document) => document.id === documentDrawerState?.documentId) ??
+            null
+          }
+          documents={data.documents}
+          documentLinks={data.documentLinks}
+          documentVersions={data.documentVersions}
+          linkedIssues={data.diligenceIssues
+            .filter((issue) =>
+              documentDrawerState?.targetEntityType === "issue"
+                ? issue.id === documentDrawerState.targetEntityId
+                : true
+            )
+            .map((issue) => ({
+              id: issue.id,
+              title: issue.title,
+              status: issue.status
+            }))}
+        />
+      ) : null}
     </main>
+  );
+}
+
+function DecisionBanner({
+  title,
+  status,
+  summary,
+  details,
+  blockers,
+  metadata,
+  actionHref,
+  actionLabel
+}: {
+  title: string;
+  status: string;
+  summary: string;
+  details?: string | null;
+  blockers?: string[];
+  metadata: string[];
+  actionHref?: string | null;
+  actionLabel?: string | null;
+}) {
+  return (
+    <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="max-w-3xl">
+          <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
+            {title}
+          </p>
+          <h2 className="mt-2 text-2xl font-semibold text-slate-950">{status}</h2>
+          <p className="mt-2 text-sm text-slate-700">{summary}</p>
+          {blockers && blockers.length > 0 ? (
+            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                Blocked by
+              </p>
+              <ul className="mt-2 space-y-1 text-sm text-slate-800">
+                {blockers.map((blocker) => (
+                  <li key={blocker} className="flex gap-2">
+                    <span className="text-slate-400">-</span>
+                    <span>{blocker}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {details ? <p className="mt-3 text-sm text-slate-500">{details}</p> : null}
+        </div>
+        {actionHref && actionLabel ? (
+          <Link
+            href={actionHref}
+            className="inline-flex rounded-xl bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
+          >
+            {actionLabel}
+          </Link>
+        ) : null}
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        {metadata.map((item) => (
+          <span
+            key={item}
+            className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700"
+          >
+            {item}
+          </span>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+type UnderwritingRiskGroupKey = "earnings" | "credit" | "support";
+
+type UnderwritingRiskItem = {
+  title: string;
+  detail: string;
+  tone: RiskFlagSeverity | "neutral";
+};
+
+function underwritingRiskToneClasses(tone: UnderwritingRiskItem["tone"]) {
+  if (tone === "high") return "text-rose-900";
+  if (tone === "medium") return "text-amber-900";
+  if (tone === "low") return "text-slate-800";
+  return "text-slate-700";
+}
+
+function compactRiskDetail(detail: string) {
+  const normalized = detail
+    .replace(/\s+/g, " ")
+    .replace(/^This (blocker|input) is still /i, "")
+    .replace(/^This gap is still /i, "")
+    .trim()
+    .replace(/\.$/, "");
+
+  const firstClause = normalized.split(/[.;]/)[0]?.trim() ?? normalized;
+
+  if (!firstClause) {
+    return null;
+  }
+
+  return firstClause.length > 80 ? `${firstClause.slice(0, 77).trim()}...` : firstClause;
+}
+
+function classifyRiskFlagGroup(flag: RiskFlag): UnderwritingRiskGroupKey {
+  const text = `${flag.title} ${flag.description} ${flag.metric ?? ""}`.toLowerCase();
+
+  if (/(debt|coverage|collateral|ltv|leverage|interest)/.test(text)) {
+    return "credit";
+  }
+
+  if (/(ebitda|earnings|margin|adjustment|add-back)/.test(text)) {
+    return "earnings";
+  }
+
+  return "support";
+}
+
+function classifyTextRiskGroup(text: string): UnderwritingRiskGroupKey {
+  const normalized = text.toLowerCase();
+
+  if (/(debt|coverage|collateral|ltv|leverage|interest|loan|rate|amortization|purchase price)/.test(normalized)) {
+    return "credit";
+  }
+
+  if (/(ebitda|earnings|margin|adjustment|add-back|tax)/.test(normalized)) {
+    return "earnings";
+  }
+
+  return "support";
+}
+
+function classifyIssueRiskGroup(issue: DashboardData["diligenceIssues"][number]): UnderwritingRiskGroupKey {
+  if (issue.category === "credit") {
+    return "credit";
+  }
+
+  if (
+    issue.category === "underwriting" ||
+    issue.category === "tax"
+  ) {
+    return "earnings";
+  }
+
+  return "support";
+}
+
+function appendRiskItem(
+  target: UnderwritingRiskItem[],
+  item: UnderwritingRiskItem,
+  seen: Set<string>
+) {
+  const key = `${item.title}::${item.detail}`;
+
+  if (seen.has(key)) {
+    return;
+  }
+
+  seen.add(key);
+  target.push(item);
+}
+
+function buildUnderwritingRiskGroups(params: {
+  riskFlags: RiskFlag[];
+  blockers: string[];
+  missingItems: string[];
+  issues: DashboardData["diligenceIssues"];
+}) {
+  const groups: Record<UnderwritingRiskGroupKey, UnderwritingRiskItem[]> = {
+    earnings: [],
+    credit: [],
+    support: []
+  };
+
+  const seen = new Set<string>();
+
+  params.riskFlags.forEach((flag) => {
+    appendRiskItem(
+      groups[classifyRiskFlagGroup(flag)],
+      {
+        title: flag.title,
+        detail: flag.metric ?? flag.description,
+        tone: flag.severity
+      },
+      seen
+    );
+  });
+
+  params.blockers.forEach((blocker) => {
+    appendRiskItem(
+      groups[classifyTextRiskGroup(blocker)],
+      {
+        title: blocker,
+        detail: "underwriting output blocked",
+        tone: "neutral"
+      },
+      seen
+    );
+  });
+
+  params.missingItems.forEach((item) => {
+    appendRiskItem(
+      groups[classifyTextRiskGroup(item)],
+      {
+        title: item,
+        detail: "missing from workbench",
+        tone: "neutral"
+      },
+      seen
+    );
+  });
+
+  params.issues.forEach((issue) => {
+    appendRiskItem(
+      groups[classifyIssueRiskGroup(issue)],
+      {
+        title: issue.title,
+        detail: issue.description,
+        tone: issue.severity === "critical" || issue.severity === "high"
+          ? "high"
+          : issue.severity === "medium"
+            ? "medium"
+            : "low"
+      },
+      seen
+    );
+  });
+
+  return groups;
+}
+
+function UnderwritingRisksPanel({
+  riskFlags,
+  blockers,
+  missingItems,
+  issues
+}: {
+  riskFlags: RiskFlag[];
+  blockers: string[];
+  missingItems: string[];
+  issues: DashboardData["diligenceIssues"];
+}) {
+  const groups = buildUnderwritingRiskGroups({
+    riskFlags,
+    blockers,
+    missingItems,
+    issues
+  });
+
+  const orderedGroups: Array<{ key: UnderwritingRiskGroupKey; title: string; empty: string }> = [
+    {
+      key: "earnings",
+      title: "Earnings",
+      empty: "No active earnings gaps are currently surfaced."
+    },
+    {
+      key: "credit",
+      title: "Credit",
+      empty: "No active credit gaps are currently surfaced."
+    },
+    {
+      key: "support",
+      title: "Support",
+      empty: "No active support gaps are currently surfaced."
+    }
+  ];
+
+  return (
+    <details className="rounded-[1.6rem] border border-slate-200/80 bg-white p-4 shadow-panel">
+      <summary className="flex cursor-pointer list-none flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="max-w-3xl">
+          <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
+            Risks & Gaps
+          </p>
+          <h2 className="mt-1 text-lg font-semibold text-slate-900">
+            Risks & Gaps
+          </h2>
+        </div>
+        <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700">
+          {issues.length + blockers.length + missingItems.length} active items
+        </div>
+      </summary>
+
+      <div className="mt-3 grid gap-3 xl:grid-cols-3">
+        {orderedGroups.map((group) => (
+          <section key={group.key} className="rounded-2xl border border-slate-200/70 bg-slate-50/70 p-3.5">
+            <p className="text-sm font-semibold text-slate-900">{group.title}</p>
+            <div className="mt-2.5">
+              {groups[group.key].length > 0 ? (
+                <ul className="space-y-1.5">
+                  {groups[group.key].slice(0, 5).map((item) => {
+                    const compactDetail = compactRiskDetail(item.detail);
+
+                    return (
+                      <li
+                        key={`${group.key}-${item.title}-${item.detail}`}
+                        className={`flex gap-2 text-sm leading-5 ${underwritingRiskToneClasses(item.tone)}`}
+                      >
+                        <span>•</span>
+                        <span>
+                          <span className="font-medium text-slate-900">{item.title}</span>
+                          {compactDetail ? <span className="text-slate-600"> ({compactDetail})</span> : null}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <div className="rounded-xl border border-dashed border-slate-200 bg-white px-3 py-2 text-sm text-slate-500">
+                  {group.empty}
+                </div>
+              )}
+            </div>
+          </section>
+        ))}
+      </div>
+    </details>
   );
 }

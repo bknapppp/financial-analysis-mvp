@@ -35,26 +35,26 @@ export function DealNextActionsPanel({
   const warningActions = actionsWithIssues.filter((item) => item.issue.severity === "warning");
 
   return (
-    <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <details className="rounded-[1.6rem] border border-slate-200/80 bg-white p-4 shadow-panel">
+      <summary className="flex cursor-pointer list-none flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
             Next Actions
           </p>
-          <h2 className="mt-2 text-xl font-semibold text-slate-900">
-            Deterministic workflow queue
+          <h2 className="mt-1 text-lg font-semibold text-slate-900">
+            Workflow Queue
           </h2>
-          <p className="mt-2 text-sm text-slate-600">
+          <p className="mt-1 text-sm text-slate-600">
             Current data, reconciliation, mapping, and credit signals rolled up into the next concrete step.
           </p>
         </div>
         <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700">
           {completeness}% complete | {trustScore} trust
         </div>
-      </div>
+      </summary>
 
       {actionsWithIssues.length > 0 ? (
-        <div className="mt-5 space-y-4">
+        <div className="mt-4 space-y-3">
           {([["Blockers", blockerActions], ["Warnings", warningActions]] as const)
             .filter(([, items]) => items.length > 0)
             .map(([label, items]) => (
@@ -67,7 +67,7 @@ export function DealNextActionsPanel({
                   {items.map(({ action, issue }) => (
                     <div
                       key={action.id}
-                      className={`rounded-2xl border px-4 py-3 ${severityClasses(issue.severity)}`}
+                      className={`rounded-2xl border px-4 py-2.5 ${severityClasses(issue.severity)}`}
                     >
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div className="max-w-3xl">
@@ -90,10 +90,10 @@ export function DealNextActionsPanel({
             ))}
         </div>
       ) : (
-        <div className="mt-5 rounded-2xl border border-teal-200 bg-teal-50 px-4 py-4 text-sm text-slate-700">
+        <div className="mt-4 rounded-2xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-slate-700">
           No deal-state actions are currently required.
         </div>
       )}
-    </section>
+    </details>
   );
 }

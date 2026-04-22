@@ -2,11 +2,13 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { BackingChip } from "@/components/backing-chip";
 import { getAddBackTypeLabel } from "@/lib/add-backs";
 import { formatCurrency, formatPercent } from "@/lib/formatters";
 import type {
   AddBackClassificationConfidence,
   AddBackReviewItem,
+  BackingStatus,
   AddBackStatus,
   AddBackType,
   ReportingPeriod
@@ -31,6 +33,14 @@ type AddBackReviewPanelProps = {
   } | null;
   density?: "default" | "compact";
   manualEntryMode?: "expanded" | "collapsible";
+  backingByAdjustmentId?: Record<
+    string,
+    {
+      status: BackingStatus;
+      documentNames: string[];
+    }
+  >;
+  onAttachSupport?: (entityId: string) => void;
 };
 
 type EditableRowState = {
@@ -136,7 +146,9 @@ export function AddBackReviewPanel({
   showOuterCard = true,
   impactSummary = null,
   density = "default",
-  manualEntryMode = "expanded"
+  manualEntryMode = "expanded",
+  backingByAdjustmentId = {},
+  onAttachSupport
 }: AddBackReviewPanelProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -742,6 +754,7 @@ export function AddBackReviewPanel({
           const rowKey = getRowKey(item);
           const draft = getRowDraft(item);
           const isEditing = editingKey === rowKey;
+          const adjustmentBacking = backingByAdjustmentId[rowKey];
 
           return (
             <div
@@ -781,6 +794,23 @@ export function AddBackReviewPanel({
                   </p>
 
                   <p className="mt-1 text-sm leading-5 text-slate-600">{item.justification}</p>
+                  {adjustmentBacking ? (
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <BackingChip status={adjustmentBacking.status} size="compact" />
+                      <details className="text-[11px] text-slate-500">
+                        <summary className="cursor-pointer font-medium text-slate-600">
+                          {adjustmentBacking.documentNames.length > 0
+                            ? `${adjustmentBacking.documentNames.length} supporting document${
+                                adjustmentBacking.documentNames.length === 1 ? "" : "s"
+                              }`
+                            : "No supporting documents linked"}
+                        </summary>
+                        {adjustmentBacking.documentNames.length > 0 ? (
+                          <p className="mt-1">{adjustmentBacking.documentNames.join(", ")}</p>
+                        ) : null}
+                      </details>
+                    </div>
+                  ) : null}
 
                   <p className="mt-1 text-[11px] text-slate-400">
                     {item.entryCategory ? `${item.entryCategory} · ` : ""}
@@ -975,6 +1005,17 @@ export function AddBackReviewPanel({
                     >
                       {isEditing ? "Close edit" : "Edit"}
                     </button>
+                    {onAttachSupport ? (
+                      <button
+                        type="button"
+                        onClick={() => onAttachSupport(rowKey)}
+                        className={`rounded-xl border border-slate-200 ${
+                          density === "compact" ? "px-3 py-1.5" : "px-3 py-2"
+                        } text-sm font-medium text-slate-700 hover:bg-slate-50`}
+                      >
+                        Attach Document
+                      </button>
+                    ) : null}
                   </>
                 )}
               </div>

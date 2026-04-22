@@ -1,5 +1,5 @@
-import { getCanonicalPeriodAdjustment } from "@/lib/add-backs";
-import { normalizeAccountName } from "@/lib/auto-mapping";
+import { getCanonicalPeriodAdjustment } from "./add-backs.ts";
+import { normalizeAccountName } from "./auto-mapping.ts";
 import type {
   AddBack,
   FinancialEntry,
@@ -7,7 +7,7 @@ import type {
   ReconciliationIssue,
   ReconciliationReport,
   ReportingPeriod
-} from "@/lib/types";
+} from "./types.ts";
 
 type ToleranceRule = {
   exactTolerance: number;

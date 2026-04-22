@@ -72,6 +72,9 @@ function buildContext(): DealDerivedContext {
       entries: [],
       documents: []
     },
+    documents: [],
+    documentLinks: [],
+    documentVersions: [],
     selectedPeriodId: "period-1",
     ebitdaBasis: "adjusted",
     baselineSnapshots: [],
@@ -207,7 +210,7 @@ function buildContext(): DealDerivedContext {
       canComputeDebtService: false,
       adverseSignals: [
         "Negative EBITDA",
-        "Coverage not meaningful due to non-positive earnings"
+        "Coverage unsupported due to non-positive earnings"
       ],
       metrics: {
         dscr: {
@@ -328,6 +331,146 @@ function buildContext(): DealDerivedContext {
           ]
         }
       ]
+    },
+    backing: {
+      sourceRequirements: [
+        {
+          id: "income_statement",
+          label: "Income Statement",
+          groupLabel: "Financial Statements",
+          documentTypes: ["income_statement"],
+          periodLabel: "FY2025",
+          fiscalYear: 2025,
+          status: "unbacked",
+          documents: [],
+          linkedDocuments: [],
+          missingReason: "No supporting documents linked.",
+          actionTarget: {
+            entityType: "source_requirement",
+            entityId: "income_statement"
+          }
+        },
+        {
+          id: "balance_sheet",
+          label: "Balance Sheet",
+          groupLabel: "Financial Statements",
+          documentTypes: ["balance_sheet"],
+          periodLabel: "FY2025",
+          fiscalYear: 2025,
+          status: "unbacked",
+          documents: [],
+          linkedDocuments: [],
+          missingReason: "No supporting documents linked.",
+          actionTarget: {
+            entityType: "source_requirement",
+            entityId: "balance_sheet"
+          }
+        },
+        {
+          id: "debt_schedule",
+          label: "Debt Schedule",
+          groupLabel: "Debt & Credit",
+          documentTypes: ["debt_schedule"],
+          periodLabel: "FY2025",
+          fiscalYear: 2025,
+          status: "unbacked",
+          documents: [],
+          linkedDocuments: [],
+          missingReason: "No supporting documents linked.",
+          actionTarget: {
+            entityType: "source_requirement",
+            entityId: "debt_schedule"
+          }
+        }
+      ],
+      financialLineItems: [
+        {
+          id: "revenue",
+          label: "Revenue",
+          status: "unbacked",
+          documents: [],
+          linkedDocuments: [],
+          sourceRequirementIds: ["income_statement"],
+          note: "Line item exists but no supporting documents are linked.",
+          actionTarget: {
+            entityType: "financial_line_item",
+            entityId: "revenue"
+          }
+        },
+        {
+          id: "ebitda",
+          label: "EBITDA",
+          status: "unbacked",
+          documents: [],
+          linkedDocuments: [],
+          sourceRequirementIds: ["income_statement"],
+          note: "Line item exists but no supporting documents are linked.",
+          actionTarget: {
+            entityType: "financial_line_item",
+            entityId: "ebitda"
+          }
+        }
+      ],
+      underwritingAdjustments: [
+        {
+          adjustmentId: "review-1",
+          label: "Suggested review item",
+          status: "unbacked",
+          documents: [],
+          linkedDocuments: [],
+          note: "Support: No supporting documents linked.",
+          actionTarget: {
+            entityType: "underwriting_adjustment",
+            entityId: "review-1"
+          }
+        }
+      ],
+      underwritingMetrics: [
+        {
+          id: "dscr",
+          label: "DSCR",
+          status: "unbacked",
+          documents: [],
+          linkedDocuments: [],
+          requiredSupportLabels: ["Debt Schedule"],
+          missingSupportLabels: ["Debt Schedule"],
+          note: "Missing support: Debt Schedule",
+          actionTarget: {
+            entityType: "underwriting_metric",
+            entityId: "dscr"
+          }
+        }
+      ],
+      summary: {
+        overall: {
+          id: "overall",
+          label: "Overall",
+          status: "unbacked",
+          href: "/deal/company-1",
+          note: null
+        },
+        financials: {
+          id: "financials",
+          label: "Financials",
+          status: "unbacked",
+          href: "/financials?companyId=company-1",
+          note: null
+        },
+        adjustments: {
+          id: "adjustments",
+          label: "Adjustments",
+          status: "unbacked",
+          href: "/deal/company-1/underwriting",
+          note: null
+        },
+        creditInputs: {
+          id: "credit_inputs",
+          label: "Credit Inputs",
+          status: "unbacked",
+          href: "/deal/company-1/underwriting",
+          note: null
+        }
+      }
     }
   } as unknown as DealDerivedContext;
 }
@@ -338,8 +481,13 @@ function buildContext(): DealDerivedContext {
 
   assert.ok(issueCodes.includes("missing_revenue"));
   assert.ok(issueCodes.includes("missing_cogs"));
+  assert.ok(issueCodes.includes("missing_income_statement"));
+  assert.ok(issueCodes.includes("missing_balance_sheet"));
   assert.ok(issueCodes.includes("required_mappings_incomplete"));
+  assert.ok(issueCodes.includes("financial_line_item_unbacked"));
   assert.ok(issueCodes.includes("balance_sheet_out_of_balance"));
+  assert.ok(issueCodes.includes("underwriting_adjustment_unbacked"));
+  assert.ok(issueCodes.includes("debt_schedule_missing_for_credit_metric"));
   assert.ok(issueCodes.includes("ebitda_non_positive"));
   assert.ok(issueCodes.includes("dscr_not_meaningful_non_positive_earnings"));
 }

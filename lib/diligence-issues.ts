@@ -171,6 +171,13 @@ export function resolveDiligenceIssueActionTarget(
     actionLabel = "Review Reconciliation";
   } else if (issue.issue_code === "add_back_review_incomplete") {
     actionLabel = "Review Adjustments";
+  } else if (
+    issue.issue_code === "missing_income_statement" ||
+    issue.issue_code === "missing_balance_sheet"
+  ) {
+    actionLabel = "Review Source Data";
+  } else if (issue.issue_code === "underwriting_adjustment_unbacked") {
+    actionLabel = "Attach Support";
   }
 
   return {
@@ -388,6 +395,69 @@ export function buildSystemDiligenceIssueCandidatesForContext(
     );
   }
 
+  const incomeStatementBacking = context.backing.sourceRequirements.find(
+    (requirement) => requirement.id === "income_statement"
+  );
+  if (incomeStatementBacking?.status === "unbacked") {
+    candidates.push(
+      buildSystemIssueCandidate({
+        companyId,
+        periodId,
+        issueCode: "missing_income_statement",
+        title: "Income statement support missing",
+        description: "No backed income statement is linked for the selected period.",
+        category: "source_data",
+        severity: "critical",
+        linkedPage: "source_data",
+        linkedField: "income_statement",
+        actionLabel: "Upload or link the income statement"
+      })
+    );
+  }
+
+  const balanceSheetBacking = context.backing.sourceRequirements.find(
+    (requirement) => requirement.id === "balance_sheet"
+  );
+  if (balanceSheetBacking?.status === "unbacked") {
+    candidates.push(
+      buildSystemIssueCandidate({
+        companyId,
+        periodId,
+        issueCode: "missing_balance_sheet",
+        title: "Balance sheet support missing",
+        description: "No backed balance sheet is linked for the selected period.",
+        category: "source_data",
+        severity: "high",
+        linkedPage: "source_data",
+        linkedField: "balance_sheet",
+        actionLabel: "Upload or link the balance sheet"
+      })
+    );
+  }
+
+  const criticalFinancialBacking = context.backing.financialLineItems.filter((item) =>
+    ["revenue", "ebitda"].includes(item.id)
+  );
+  if (criticalFinancialBacking.some((item) => item.status === "unbacked")) {
+    candidates.push(
+      buildSystemIssueCandidate({
+        companyId,
+        periodId,
+        issueCode: "financial_line_item_unbacked",
+        title: "Core financial line items are unbacked",
+        description: `Missing support for ${criticalFinancialBacking
+          .filter((item) => item.status === "unbacked")
+          .map((item) => item.label)
+          .join(", ")}.`,
+        category: "financials",
+        severity: "high",
+        linkedPage: "financials",
+        linkedField: "backing",
+        actionLabel: "Review financial support"
+      })
+    );
+  }
+
   const balanceSheetRollup = buildBalanceSheetRollup(context.entries, periodId);
   const balanceSheetValidation = buildBalanceSheetValidation({
     entries: context.entries,
@@ -535,7 +605,7 @@ export function buildSystemDiligenceIssueCandidatesForContext(
 
   if (
     context.defaultCreditScenario.adverseSignals.includes(
-      "Coverage not meaningful due to non-positive earnings"
+      "Coverage unsupported due to non-positive earnings"
     )
   ) {
     candidates.push(
@@ -543,8 +613,8 @@ export function buildSystemDiligenceIssueCandidatesForContext(
         companyId,
         periodId,
         issueCode: "dscr_not_meaningful_non_positive_earnings",
-        title: "DSCR not meaningful with non-positive earnings",
-        description: "Debt service coverage is not meaningful while earnings remain non-positive.",
+        title: "DSCR unsupported with non-positive earnings",
+        description: "Debt service coverage is unsupported while earnings remain non-positive.",
         category: "credit",
         severity: "high",
         linkedPage: "underwriting",
@@ -608,6 +678,48 @@ export function buildSystemDiligenceIssueCandidatesForContext(
         linkedPage: "underwriting",
         linkedField: "add_backs",
         actionLabel: "Review add-backs"
+      })
+    );
+  }
+
+  const unbackedAdjustmentCount = context.backing.underwritingAdjustments.filter(
+    (adjustment) => adjustment.status === "unbacked"
+  ).length;
+  if (unbackedAdjustmentCount > 0) {
+    candidates.push(
+      buildSystemIssueCandidate({
+        companyId,
+        periodId,
+        issueCode: "underwriting_adjustment_unbacked",
+        title: "Underwriting adjustments need support",
+        description: `${unbackedAdjustmentCount} underwriting adjustment(s) have no linked support.`,
+        category: "underwriting",
+        severity: "medium",
+        linkedPage: "underwriting",
+        linkedField: "add_backs",
+        actionLabel: "Attach support to adjustments"
+      })
+    );
+  }
+
+  const dscrBacking = context.backing.underwritingMetrics.find((metric) => metric.id === "dscr");
+  if (
+    dscrBacking?.missingSupportLabels.some((label) => label === "Debt Schedule") ||
+    context.backing.sourceRequirements.find((requirement) => requirement.id === "debt_schedule")
+      ?.status === "unbacked"
+  ) {
+    candidates.push(
+      buildSystemIssueCandidate({
+        companyId,
+        periodId,
+        issueCode: "debt_schedule_missing_for_credit_metric",
+        title: "Debt schedule support missing for credit metrics",
+        description: "Debt sizing metrics need a linked debt schedule for the selected period.",
+        category: "credit",
+        severity: "high",
+        linkedPage: "underwriting",
+        linkedField: "credit_outputs",
+        actionLabel: "Upload or link debt support"
       })
     );
   }

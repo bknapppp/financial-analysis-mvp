@@ -7,17 +7,17 @@ import {
   parseStatementType,
   resolveMappingSelection,
   sanitizeCategoryForStatementType,
-} from "@/lib/auto-mapping";
-import { getCellValue } from "@/lib/import-preview";
+} from "./auto-mapping.ts";
+import { getCellValue } from "./import-preview.ts";
 import type {
   AccountMapping,
   AuditConfidence,
   AuditMatchedBy,
   NormalizedCategory,
   StatementType
-} from "@/lib/types";
-import { devLog } from "@/lib/debug";
-import type { ImportColumnMapping, RawImportRow } from "@/lib/import-preview";
+} from "./types.ts";
+import { devLog } from "./debug.ts";
+import type { ImportColumnMapping, RawImportRow } from "./import-preview.ts";
 
 export type ImportPreviewRow = {
   rowNumber: number;

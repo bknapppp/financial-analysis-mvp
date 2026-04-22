@@ -1,6 +1,6 @@
 import ExcelJS from "exceljs";
-import { buildReportSections, type ReportCell, type ReportSection } from "@/lib/report-export";
-import type { DashboardData } from "@/lib/types";
+import { buildReportSections, type ReportCell, type ReportSection } from "./report-export.ts";
+import type { DashboardData } from "./types.ts";
 
 function sanitizeSheetName(value: string) {
   const cleaned = value.replace(/[:\\/?*\[\]]/g, "").trim();

@@ -11,6 +11,7 @@ import type {
   PeriodSnapshot,
   ReportingPeriod
 } from "./types";
+import { getAdjustedEbitda } from "./underwriting/ebitda";
 
 const KEYWORD_RULES: Array<{
   type: AddBackType;
@@ -279,10 +280,10 @@ export function calculateAdjustedEbitdaForPeriod(params: {
   return {
     ...adjustment,
     canonicalEbitda: params.canonicalEbitda,
-    adjustedEbitda:
-      params.canonicalEbitda === null
-        ? null
-        : params.canonicalEbitda + adjustment.acceptedAddBackTotal
+    adjustedEbitda: getAdjustedEbitda({
+      canonicalEbitda: params.canonicalEbitda,
+      acceptedAddbacks: adjustment.acceptedAddBackTotal
+    })
   };
 }
 

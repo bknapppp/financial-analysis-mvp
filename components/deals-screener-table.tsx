@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, type MouseEvent } from "react";
-import { DealStageSelect } from "@/components/deal-stage-select";
 import {
   DEAL_STAGE_OPTIONS,
   compareDealStages,
@@ -12,7 +11,6 @@ import {
   type DealStage,
   type DealStageFilter
 } from "@/lib/deal-stage";
-import { buildFixItHref } from "@/lib/fix-it";
 import { isRecentlyUpdated, type PortfolioDealStatus } from "@/lib/portfolio-deal-state";
 import type { DealScreenerRow } from "@/lib/data";
 
@@ -102,20 +100,6 @@ function rowTone(status: PortfolioDealStatus) {
   return "border-l-rose-300";
 }
 
-function riskTone(severity: DealScreenerRow["riskSeverity"]) {
-  if (severity === "high") return "border-rose-200 bg-rose-50 text-rose-900";
-  if (severity === "medium") return "border-amber-200 bg-amber-50 text-amber-900";
-  if (severity === "low") return "border-slate-200 bg-slate-50 text-slate-700";
-  return "border-slate-200 bg-white text-slate-500";
-}
-
-function riskLabel(severity: DealScreenerRow["riskSeverity"]) {
-  if (severity === "high") return "High";
-  if (severity === "medium") return "Medium";
-  if (severity === "low") return "Low";
-  return "None";
-}
-
 function compareValues(
   left: DealScreenerRow,
   right: DealScreenerRow,
@@ -185,22 +169,6 @@ function SummaryCard(props: {
         <p className={`mt-1 text-sm ${props.active ? "text-slate-200" : "text-slate-500"}`}>{props.detail}</p>
       ) : null}
     </button>
-  );
-}
-
-function ActionLink(props: {
-  href: string;
-  label: string;
-  onStop: (event: MouseEvent<HTMLAnchorElement>) => void;
-}) {
-  return (
-    <Link
-      href={props.href}
-      onClick={props.onStop}
-      className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-    >
-      {props.label}
-    </Link>
   );
 }
 
@@ -369,15 +337,6 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
     industryFilter !== "all" ||
     quickFilter !== "all" ||
     staleOnly;
-
-  const columns: Array<{ key: SortKey; label: string; align?: "left" | "right" }> = [
-    { key: "companyName", label: "Company" },
-    { key: "stage", label: "Stage" },
-    { key: "urgency", label: "Readiness" },
-    { key: "completionPercent", label: "Completion %", align: "right" },
-    { key: "currentBlocker", label: "Current Blocker" },
-    { key: "lastUpdated", label: "Last Updated" }
-  ];
 
   return (
     <section className="space-y-4">
@@ -629,184 +588,94 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
           ) : null}
         </div>
 
-        <div className="mt-4 rounded-xl border border-slate-200">
-          <table className="min-w-full divide-y divide-slate-200 text-[13px]">
-            <thead className="bg-slate-50">
-              <tr>
-                {columns.map((column) => (
-                  <th
-                    key={column.key}
-                    className={`px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400 ${
-                      column.align === "right" ? "text-right" : "text-left"
-                    }`}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => updateSort(column.key)}
-                      className={`inline-flex items-center gap-1 whitespace-nowrap ${
-                        column.align === "right" ? "ml-auto" : ""
-                      }`}
-                    >
-                      <span>{column.label}</span>
-                      <span className="text-[10px] text-slate-400">
-                        {sortKey === column.key ? (sortDirection === "asc" ? "\u25b2" : "\u25bc") : "\u2195"}
-                      </span>
-                    </button>
-                  </th>
-                ))}
-                <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                  Next Action
-                </th>
-                <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200 bg-white">
-              {filteredRows.length > 0 ? (
-                filteredRows.map((row) => (
-                  <tr
-                    key={row.companyId}
-                    className={`cursor-pointer border-l-2 align-top transition-colors hover:bg-slate-50 focus-within:bg-slate-50 ${rowTone(
-                      row.status
-                    )}`}
-                    onClick={() => router.push(`/deal/${row.companyId}`)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        router.push(`/deal/${row.companyId}`);
-                      }
-                    }}
-                    tabIndex={0}
-                    role="link"
-                    aria-label={`Open ${row.companyName}`}
-                  >
-                    <td className="px-3 py-3">
-                      <Link
-                        href={`/deal/${row.companyId}`}
-                        className="font-medium text-slate-900 hover:text-slate-950"
-                        onClick={stopRowNavigation}
-                      >
-                        {row.companyName}
-                      </Link>
-                      {row.industry ? (
-                        <p className="mt-1 text-xs text-slate-500">{row.industry}</p>
-                      ) : null}
-                    </td>
-                    <td className="px-3 py-3">
-                      <div className="max-w-[180px]">
-                        <DealStageSelect
-                          companyId={row.companyId}
-                          stage={row.stage}
-                          stageUpdatedAt={row.stageUpdatedAt}
-                          compact
-                          showUpdatedAt
-                          ariaLabel={`Update lifecycle stage for ${row.companyName}`}
-                        />
-                      </div>
-                    </td>
-                    <td className="px-3 py-3">
-                      <div className="flex flex-col gap-1">
+        <div className="mt-4 space-y-3">
+          {filteredRows.length > 0 ? (
+            filteredRows.map((row) => {
+              const blockerText =
+                row.primaryBlockerIssueTitle ??
+                row.currentBlocker ??
+                row.primaryRisk ??
+                "No active blocker";
+
+              return (
+                <div
+                  key={row.companyId}
+                  className={`cursor-pointer rounded-2xl border border-slate-200 border-l-4 bg-white p-4 transition-colors hover:bg-slate-50 focus-within:bg-slate-50 ${rowTone(
+                    row.status
+                  )}`}
+                  onClick={() => router.push(`/deal/${row.companyId}`)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      router.push(`/deal/${row.companyId}`);
+                    }
+                  }}
+                  tabIndex={0}
+                  role="link"
+                  aria-label={`Open ${row.companyName}`}
+                >
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-start gap-2">
+                        <Link
+                          href={`/deal/${row.companyId}`}
+                          className="min-w-0 text-lg font-semibold tracking-tight text-slate-950 hover:text-slate-950"
+                          onClick={stopRowNavigation}
+                        >
+                          {row.companyName}
+                        </Link>
                         <span
-                          className={`inline-flex w-fit rounded-md border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] ${statusTone(
+                          className={`inline-flex w-fit rounded-md border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${statusTone(
                             row.status
                           )}`}
                         >
-                          {row.status}
-                        </span>
-                        <span className="text-xs text-slate-500">
                           {row.diligenceReadinessLabel}
                         </span>
-                        {row.primaryBlockerLabel ? (
-                          <span className="text-xs text-slate-500">
-                            {row.primaryBlockerLabel}
-                          </span>
-                        ) : null}
-                        {row.stageReadinessMismatchReason ? (
-                          <span className="text-xs text-amber-700">
-                            {row.stageReadinessMismatchReason}
-                          </span>
-                        ) : null}
                       </div>
-                    </td>
-                    <td className="px-3 py-3 text-right tabular-nums text-slate-700">
-                      {formatCompletion(row.completionPercent)}
-                    </td>
-                    <td className="max-w-[220px] px-3 py-3 text-[12px] text-slate-700">
-                      {row.primaryBlockerIssueTitle || row.currentBlocker ? (
-                        <span className="block truncate">
-                          {row.primaryBlockerIssueTitle ?? row.currentBlocker}
+
+                      <p className="mt-3 max-w-3xl text-sm font-medium leading-6 text-slate-800">
+                        {blockerText}
+                      </p>
+
+                    </div>
+
+                    <div className="w-full rounded-xl bg-slate-50 px-4 py-3 lg:w-[260px] lg:flex-none">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                          Completion
                         </span>
-                      ) : row.primaryRisk ? (
-                        <div className="flex flex-col gap-1">
-                          <span className={`inline-flex w-fit rounded-md border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${riskTone(row.riskSeverity)}`}>
-                            {riskLabel(row.riskSeverity)}
-                          </span>
-                          <span className="block truncate">{row.primaryRisk}</span>
-                        </div>
-                      ) : null}
-                    </td>
-                    <td className="px-3 py-3">
-                      <div className="flex flex-col gap-1">
-                        <span className="text-slate-400">{formatDate(row.lastUpdated)}</span>
-                        {!isRecentlyUpdated(row.lastUpdated, now) && row.lastUpdated ? (
-                          <span className="inline-flex w-fit rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-900">
-                            Stale
-                          </span>
-                        ) : null}
+                        <span className="text-sm font-semibold tabular-nums text-slate-950">
+                          {formatCompletion(row.completionPercent)}
+                        </span>
                       </div>
-                    </td>
-                    <td className="max-w-[180px] px-3 py-3 text-[12px] text-slate-700">
+                      <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
+                        <div
+                          className="h-full rounded-full bg-slate-900 transition-[width]"
+                          style={{ width: `${row.completionPercent}%` }}
+                          aria-hidden="true"
+                        />
+                      </div>
+                      <div className="mt-3 text-xs text-slate-500">
+                        <span className="font-medium text-slate-600">Last updated</span>{" "}
+                        <span>{formatDate(row.lastUpdated)}</span>
+                      </div>
                       <Link
                         href={row.nextActionHref}
                         onClick={stopRowNavigation}
-                        className="inline-flex rounded-lg border border-slate-200 px-2.5 py-1.5 font-medium text-slate-700 hover:bg-slate-50"
+                        className="mt-3 inline-flex w-full items-center justify-center rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 lg:w-auto"
                       >
                         {row.nextAction}
                       </Link>
-                    </td>
-                    <td className="px-3 py-3">
-                      <div className="flex flex-wrap gap-2">
-                        <ActionLink
-                          href={`/deal/${row.companyId}`}
-                          label="Overview"
-                          onStop={stopRowNavigation}
-                        />
-                        <ActionLink
-                          href={`/financials?companyId=${row.companyId}`}
-                          label="Financials"
-                          onStop={stopRowNavigation}
-                        />
-                        {row.hasAddBacks ? (
-                          <ActionLink
-                            href={buildFixItHref("Review add-backs", `/deal/${row.companyId}`)}
-                            label="Add-Backs"
-                            onStop={stopRowNavigation}
-                          />
-                        ) : null}
-                        <ActionLink
-                          href={`/source-data?companyId=${row.companyId}`}
-                          label="Source Data"
-                          onStop={stopRowNavigation}
-                        />
-                        <ActionLink
-                          href={`/deal/${row.companyId}?tab=adjustments`}
-                          label="Adjustments"
-                          onStop={stopRowNavigation}
-                        />
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={columns.length + 2} className="px-4 py-8 text-center text-sm text-slate-500">
-                    No deals match the current filters.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <div className="px-4 py-8 text-center text-sm text-slate-500">
+              No deals match the current filters.
+            </div>
+          )}
         </div>
 
         <div className="mt-3 flex flex-col gap-2 px-1 text-[11px] text-slate-500 md:flex-row md:items-center md:justify-between">

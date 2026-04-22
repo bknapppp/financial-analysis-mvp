@@ -1,6 +1,6 @@
-import { buildDealActionHref, buildDealState, type DealScreenerOutputs } from "@/lib/deal-state";
-import { deriveDiligenceReadiness } from "@/lib/diligence-readiness";
-import type { RiskFlagSeverity } from "@/lib/risk-flags";
+import { buildDealActionHref, buildDealState, type DealScreenerOutputs } from "./deal-state.ts";
+import { deriveDiligenceReadiness } from "./diligence-readiness.ts";
+import type { RiskFlagSeverity } from "./risk-flags.ts";
 import { buildFixItHref } from "./fix-it.ts";
 import type { WorkbookFixItTask } from "./workbook-fix-its.ts";
 import type {
@@ -11,7 +11,7 @@ import type {
   UnderwritingCompletionSection,
   UnderwritingCompletionSectionKey,
   UnderwritingCompletionSummary
-} from "@/lib/types";
+} from "./types.ts";
 
 export type PortfolioReadinessStateKey =
   | "needs_source_upload"

@@ -1,4 +1,4 @@
-import type { AddBackReviewItem, DashboardData, NormalizedStatement } from "@/lib/types";
+import type { AddBackReviewItem, DashboardData, NormalizedStatement } from "./types.ts";
 
 export type ReportCellKind = "text" | "number" | "percent";
 

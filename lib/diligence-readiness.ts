@@ -153,6 +153,8 @@ export function deriveDiligenceReadiness(params: {
     hasHighOrCritical(groups, ["source_data", "financial_validation", "reconciliation"]) ||
     hasIssueCode(activeIssues, "missing_revenue") ||
     hasIssueCode(activeIssues, "missing_cogs") ||
+    hasIssueCode(activeIssues, "missing_income_statement") ||
+    hasIssueCode(activeIssues, "missing_balance_sheet") ||
     hasIssueCode(activeIssues, "required_mappings_incomplete") ||
     hasIssueCode(activeIssues, "ebitda_basis_unavailable")
   ) {
@@ -163,6 +165,8 @@ export function deriveDiligenceReadiness(params: {
         (hasIssueCode(activeIssues, "missing_revenue") ||
           hasIssueCode(activeIssues, "missing_cogs") ||
           sourceGroup.criticalCount > 0)
+        || hasIssueCode(activeIssues, "missing_income_statement")
+        || hasIssueCode(activeIssues, "missing_balance_sheet")
           ? "Critical source-data issues remain open"
           : validationGroup?.criticalCount
             ? "Critical financial validation issues remain open"
@@ -182,7 +186,8 @@ export function deriveDiligenceReadiness(params: {
     severityTotals.high > 0 ||
     reconciliationGroup?.issueCount ||
     validationGroup?.issueCount ||
-    hasIssueCode(activeIssues, "adjusted_ebitda_unavailable")
+    hasIssueCode(activeIssues, "adjusted_ebitda_unavailable") ||
+    hasIssueCode(activeIssues, "financial_line_item_unbacked")
   ) {
     return buildBaseReadiness({
       state: "needs_validation",
@@ -203,7 +208,9 @@ export function deriveDiligenceReadiness(params: {
   if (hasAnyGroup(groups, ["underwriting", "credit", "adjustments"])) {
     return buildBaseReadiness({
       state: "under_review",
-      readinessReason: creditGroup?.issueCount
+      readinessReason: hasIssueCode(activeIssues, "debt_schedule_missing_for_credit_metric")
+        ? "Credit support remains incomplete"
+        : creditGroup?.issueCount
         ? "Underwriting and credit issues remain open"
         : adjustmentsGroup?.issueCount
           ? "Adjustment review remains open"

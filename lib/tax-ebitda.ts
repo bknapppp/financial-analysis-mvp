@@ -47,16 +47,23 @@ const TAX_BUCKET_RULES: TaxBucketRule[] = [
     explanation: "Classified as contra-revenue because the raw tax line references returns or allowances."
   },
   {
+    bucket: "cogs",
+    mode: "contains",
+    patterns: [
+      "cost of goods sold",
+      "cost of sales",
+      "cost of goods",
+      "cost of revenue",
+      "cogs"
+    ],
+    explanation:
+      "Classified as COGS from the raw tax line label. This rule is evaluated before broad revenue rules to prevent sales-based false positives."
+  },
+  {
     bucket: "gross_revenue",
     mode: "contains",
     patterns: ["gross receipts", "gross sales", "net sales", "sales"],
     explanation: "Classified as gross revenue from the raw tax line label."
-  },
-  {
-    bucket: "cogs",
-    mode: "contains",
-    patterns: ["cost of goods sold", "cost of sales", "cogs"],
-    explanation: "Classified as COGS from the raw tax line label."
   },
   {
     bucket: "officer_compensation",
