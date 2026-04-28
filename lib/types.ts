@@ -155,7 +155,7 @@ export type SourceFinancialEntry = {
   account_name: string;
   statement_type: StatementType;
   amount: number;
-  category: NormalizedCategory;
+  category: NormalizedCategory | null;
   addback_flag: boolean;
   matched_by?: AuditMatchedBy | null;
   confidence?: AuditConfidence | null;

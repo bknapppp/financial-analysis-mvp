@@ -50,7 +50,7 @@ create table if not exists public.source_financial_entries (
   account_name text not null,
   statement_type statement_type not null,
   amount numeric(14, 2) not null,
-  category normalized_category not null,
+  category normalized_category,
   addback_flag boolean not null default false,
   matched_by text,
   confidence text,

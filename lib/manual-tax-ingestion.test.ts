@@ -39,6 +39,14 @@ const charitable = mapManualTaxEntry({
 });
 assert.equal(charitable.mappedCategory, "Non-operating");
 
+const unmatchedTaxLine = mapManualTaxEntry({
+  accountName: "Mystery local tax adjustment",
+  amount: -25000
+});
+assert.equal(unmatchedTaxLine.mappedCategory, null);
+assert.equal(unmatchedTaxLine.matchedRule, "unknown");
+assert.equal(unmatchedTaxLine.mappingSource, "fallback");
+
 const fixtures = buildManualTaxDevFixtures("company-xyz");
 assert.equal(fixtures.length, 2);
 assert.equal(fixtures[0].periods.length, 1);

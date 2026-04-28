@@ -23,7 +23,7 @@ type TaxImportRowPayload = {
   accountName: string;
   amount: number;
   statementType: StatementType;
-  category: NormalizedCategory;
+  category: NormalizedCategory | null;
   addbackFlag?: boolean;
   matchedBy?: AuditMatchedBy | null;
   confidence?: AuditConfidence | null;
@@ -61,7 +61,7 @@ type SourceEntryRow = {
   account_name: string;
   statement_type: StatementType;
   amount: number;
-  category: NormalizedCategory;
+  category: NormalizedCategory | null;
   addback_flag: boolean;
   matched_by?: AuditMatchedBy | null;
   confidence?: AuditConfidence | null;
@@ -93,7 +93,7 @@ function buildEntryKey(
   accountName: string,
   statementType: StatementType,
   _amount: number,
-  _category: NormalizedCategory,
+  _category: NormalizedCategory | null,
   _addbackFlag: boolean
 ) {
   return [accountName.trim().toLowerCase(), statementType].join("::");
@@ -524,7 +524,7 @@ export async function insertTaxReturnFinancialContext(params: TaxSourceImportPar
         account_name: string;
         statement_type: StatementType;
         amount: number;
-        category: NormalizedCategory;
+        category: NormalizedCategory | null;
         addback_flag: boolean;
         matched_by: AuditMatchedBy;
         confidence: AuditConfidence;

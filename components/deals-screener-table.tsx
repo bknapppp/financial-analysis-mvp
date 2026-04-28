@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, type MouseEvent } from "react";
+import { useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
 import {
   DEAL_STAGE_OPTIONS,
   compareDealStages,
@@ -66,6 +66,60 @@ function formatDate(value: string | null) {
 
 function formatCompletion(value: number) {
   return `${value}%`;
+}
+
+function formatCompactCurrency(value: number | null) {
+  if (value === null) {
+    return MISSING_VALUE;
+  }
+
+  const absoluteValue = Math.abs(value);
+  const formatter =
+    absoluteValue >= 1_000_000
+      ? new Intl.NumberFormat("en-US", {
+          notation: "compact",
+          compactDisplay: "short",
+          minimumFractionDigits: 1,
+          maximumFractionDigits: 1
+        })
+      : new Intl.NumberFormat("en-US", {
+          notation: "compact",
+          compactDisplay: "short",
+          maximumFractionDigits: 0
+        });
+
+  return `$${formatter.format(value)}`;
+}
+
+function getExportState(row: DealScreenerRow) {
+  const isFullyReady =
+    row.readinessStateKey === "ready_for_output" && row.backingStatus === "backed";
+  const isPartialReady =
+    !isFullyReady &&
+    row.readinessStateKey !== "needs_source_upload" &&
+    row.backingStatus !== "unbacked";
+
+  if (isFullyReady) {
+    return {
+      disabled: false,
+      label: "Export Model",
+      tooltip: undefined
+    };
+  }
+
+  if (isPartialReady) {
+    return {
+      disabled: false,
+      label: "Export Model (Partial)",
+      tooltip: "Exports available financials with noted gaps"
+    };
+  }
+
+  return {
+    disabled: true,
+    label: "Export Model",
+    tooltip: "Complete required inputs to export model"
+  };
 }
 
 function statusTone(status: PortfolioDealStatus) {
@@ -325,7 +379,7 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
     setSummaryFilter((current) => (current === nextFilter ? "all" : nextFilter));
   }
 
-  function stopRowNavigation(event: MouseEvent<HTMLAnchorElement>) {
+  function stopRowNavigation(event: ReactMouseEvent<HTMLElement>) {
     event.stopPropagation();
   }
 
@@ -596,6 +650,14 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
                 row.currentBlocker ??
                 row.primaryRisk ??
                 "No active blocker";
+              const exportState = getExportState(row);
+              const exportHref = `/api/deals/${row.companyId}/export`;
+              const financialAnchor =
+                row.adjustedEbitda !== null || row.ebitda !== null
+                  ? `EBITDA ${formatCompactCurrency(row.adjustedEbitda ?? row.ebitda)}`
+                  : row.revenue !== null
+                    ? `Revenue ${formatCompactCurrency(row.revenue)}`
+                    : null;
 
               return (
                 <div
@@ -637,6 +699,23 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
                         {blockerText}
                       </p>
 
+                      <div className="mt-2.5 space-y-1.5">
+                        {row.industry ? (
+                          <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold leading-none text-slate-700">
+                            {row.industry}
+                          </div>
+                        ) : null}
+                        <div
+                          className={
+                            financialAnchor
+                              ? "text-sm font-semibold leading-5 text-slate-900"
+                              : "text-sm leading-5 text-slate-400"
+                          }
+                        >
+                          {financialAnchor ?? "No financials available"}
+                        </div>
+                      </div>
+
                     </div>
 
                     <div className="w-full rounded-xl bg-slate-50 px-4 py-3 lg:w-[260px] lg:flex-none">
@@ -659,13 +738,36 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
                         <span className="font-medium text-slate-600">Last updated</span>{" "}
                         <span>{formatDate(row.lastUpdated)}</span>
                       </div>
-                      <Link
-                        href={row.nextActionHref}
-                        onClick={stopRowNavigation}
-                        className="mt-3 inline-flex w-full items-center justify-center rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 lg:w-auto"
-                      >
-                        {row.nextAction}
-                      </Link>
+                      <div className="mt-3 flex flex-col gap-2">
+                        <Link
+                          href={row.nextActionHref}
+                          onClick={stopRowNavigation}
+                          className="inline-flex w-full items-center justify-center rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
+                        >
+                          {row.nextAction}
+                        </Link>
+                        {exportState.disabled ? (
+                          <div title={exportState.tooltip} className="w-full">
+                            <button
+                              type="button"
+                              disabled
+                              onClick={stopRowNavigation}
+                              className="inline-flex w-full items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-400 opacity-70"
+                            >
+                              {exportState.label}
+                            </button>
+                          </div>
+                        ) : (
+                          <a
+                            href={exportHref}
+                            title={exportState.tooltip}
+                            onClick={stopRowNavigation}
+                            className="inline-flex w-full items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+                          >
+                            {exportState.label}
+                          </a>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>

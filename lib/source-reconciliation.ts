@@ -6,6 +6,7 @@ import {
 import { ADD_BACK_SELECT, isAddBacksSchemaError } from "./add-back-schema.ts";
 import { buildSnapshots } from "./calculations.ts";
 import { getSourceFinancialContext } from "./financial-sources.ts";
+import { normalizeReportedValue } from "./reported-sign-normalization.ts";
 import { getTaxDerivedEbitdaForSourcePeriod, type TaxDerivedEbitdaResult } from "./tax-ebitda.ts";
 import { getSupabaseServerClient } from "./supabase.ts";
 import type {
@@ -111,7 +112,7 @@ function safeDeltaPct(base: number | null, candidate: number | null) {
     return null;
   }
 
-  return (base - candidate) / base;
+  return (base - candidate) / Math.abs(base);
 }
 
 function matchesTaxPeriod(params: {
@@ -145,44 +146,74 @@ export function buildSourceReconciliation(params: {
   adjustedEbitda: number | null;
   taxResult: TaxDerivedEbitdaResult | null;
 }): SourceReconciliationResult {
-  const revenueDelta = safeDelta(params.reportedRevenue, params.taxResult?.components.rawSigned.netRevenue ?? null);
-  const revenueDeltaPct = safeDeltaPct(
-    params.reportedRevenue,
-    params.taxResult?.components.rawSigned.netRevenue ?? null
-  );
+  const normalizedReportedRevenue = normalizeReportedValue({
+    kind: "revenue",
+    value: params.reportedRevenue
+  });
+  const normalizedTaxRevenue = normalizeReportedValue({
+    kind: "revenue",
+    value: params.taxResult?.components.rawSigned.netRevenue ?? null
+  });
+  const normalizedComputedEbitda = normalizeReportedValue({
+    kind: "ebitda",
+    value: params.reconstructedEbitda,
+    referenceValues: [params.taxResult?.taxDerivedEBITDA ?? null, params.adjustedEbitda]
+  });
+  const normalizedTaxEbitda = normalizeReportedValue({
+    kind: "ebitda",
+    value: params.taxResult?.taxDerivedEBITDA ?? null,
+    referenceValues: [params.reconstructedEbitda, params.adjustedEbitda]
+  });
+  const normalizedReportedEbitdaReference = normalizeReportedValue({
+    kind: "ebitda",
+    value: params.reportedEbitdaReference ?? null,
+    referenceValues: [
+      params.reconstructedEbitda,
+      params.taxResult?.taxDerivedEBITDA ?? null,
+      params.adjustedEbitda
+    ]
+  });
+  const normalizedAdjustedEbitda = normalizeReportedValue({
+    kind: "ebitda",
+    value: params.adjustedEbitda,
+    referenceValues: [params.reconstructedEbitda, params.taxResult?.taxDerivedEBITDA ?? null]
+  });
+
+  const revenueDelta = safeDelta(normalizedReportedRevenue, normalizedTaxRevenue);
+  const revenueDeltaPct = safeDeltaPct(normalizedReportedRevenue, normalizedTaxRevenue);
   const computedVsTaxDelta = safeDelta(
-    params.reconstructedEbitda,
-    params.taxResult?.taxDerivedEBITDA ?? null
+    normalizedComputedEbitda,
+    normalizedTaxEbitda
   );
   const reportedReferenceVsTaxDeltaPct = safeDeltaPct(
-    params.reportedEbitdaReference ?? null,
-    params.taxResult?.taxDerivedEBITDA ?? null
+    normalizedReportedEbitdaReference,
+    normalizedTaxEbitda
   );
   const reportedReferenceVsTaxDelta = safeDelta(
-    params.reportedEbitdaReference ?? null,
-    params.taxResult?.taxDerivedEBITDA ?? null
+    normalizedReportedEbitdaReference,
+    normalizedTaxEbitda
   );
   const computedVsTaxDeltaPct = safeDeltaPct(
-    params.reconstructedEbitda,
-    params.taxResult?.taxDerivedEBITDA ?? null
+    normalizedComputedEbitda,
+    normalizedTaxEbitda
   );
   const adjustedVsTaxDelta = safeDelta(
-    params.adjustedEbitda,
-    params.taxResult?.taxDerivedEBITDA ?? null
+    normalizedAdjustedEbitda,
+    normalizedTaxEbitda
   );
   const adjustedVsTaxDeltaPct = safeDeltaPct(
-    params.adjustedEbitda,
-    params.taxResult?.taxDerivedEBITDA ?? null
+    normalizedAdjustedEbitda,
+    normalizedTaxEbitda
   );
   const addbacksAmount =
-    params.reconstructedEbitda !== null && params.adjustedEbitda !== null
-      ? params.adjustedEbitda - params.reconstructedEbitda
+    normalizedComputedEbitda !== null && normalizedAdjustedEbitda !== null
+      ? normalizedAdjustedEbitda - normalizedComputedEbitda
       : null;
   const addbacksPctOfComputed =
-    params.reconstructedEbitda !== null &&
-    params.reconstructedEbitda !== 0 &&
+    normalizedComputedEbitda !== null &&
+    normalizedComputedEbitda !== 0 &&
     addbacksAmount !== null
-      ? addbacksAmount / params.reconstructedEbitda
+      ? addbacksAmount / Math.abs(normalizedComputedEbitda)
       : null;
 
   const flags: SourceReconciliationFlag[] = [];
@@ -191,7 +222,7 @@ export function buildSourceReconciliation(params: {
     revenueDeltaPct !== null &&
     revenueDelta !== null &&
     revenueDeltaPct > REVENUE_DELTA_THRESHOLD_PCT &&
-    (params.taxResult?.components.rawSigned.netRevenue ?? null) !== null
+    normalizedTaxRevenue !== null
   ) {
     flags.push({
       type: "tax_revenue_lower_than_reported",
@@ -205,7 +236,7 @@ export function buildSourceReconciliation(params: {
     computedVsTaxDeltaPct !== null &&
     computedVsTaxDelta !== null &&
     computedVsTaxDeltaPct > EBITDA_DELTA_THRESHOLD_PCT &&
-    (params.taxResult?.taxDerivedEBITDA ?? null) !== null
+    normalizedTaxEbitda !== null
   ) {
     flags.push({
       type: "tax_ebitda_lower_than_computed",
@@ -219,7 +250,7 @@ export function buildSourceReconciliation(params: {
     adjustedVsTaxDeltaPct !== null &&
     adjustedVsTaxDelta !== null &&
     adjustedVsTaxDeltaPct > EBITDA_DELTA_THRESHOLD_PCT &&
-    (params.taxResult?.taxDerivedEBITDA ?? null) !== null
+    normalizedTaxEbitda !== null
   ) {
     flags.push({
       type: "tax_ebitda_much_lower_than_adjusted",
@@ -249,16 +280,16 @@ export function buildSourceReconciliation(params: {
     periodLabel: params.reportedPeriod?.label ?? null,
     taxPeriodLabel: params.taxResult?.periodLabel ?? null,
     revenue: {
-      reported: params.reportedRevenue,
-      tax: params.taxResult?.components.rawSigned.netRevenue ?? null,
+      reported: normalizedReportedRevenue,
+      tax: normalizedTaxRevenue,
       delta: revenueDelta,
       deltaPct: revenueDeltaPct
     },
     ebitda: {
-      computed: params.reconstructedEbitda,
-      reportedReference: params.reportedEbitdaReference ?? null,
-      adjusted: params.adjustedEbitda,
-      tax: params.taxResult?.taxDerivedEBITDA ?? null
+      computed: normalizedComputedEbitda,
+      reportedReference: normalizedReportedEbitdaReference,
+      adjusted: normalizedAdjustedEbitda,
+      tax: normalizedTaxEbitda
     },
     comparisons: {
       reportedReferenceVsTax: {
@@ -280,10 +311,10 @@ export function buildSourceReconciliation(params: {
     },
     coverage: {
       hasReportedFinancials:
-        params.reportedRevenue !== null || params.reconstructedEbitda !== null,
+        normalizedReportedRevenue !== null || normalizedComputedEbitda !== null,
       hasTaxData: params.taxResult !== null && params.taxResult.entryCount > 0,
-      hasAdjustedEBITDA: params.adjustedEbitda !== null,
-      hasReportedEbitdaReference: (params.reportedEbitdaReference ?? null) !== null
+      hasAdjustedEBITDA: normalizedAdjustedEbitda !== null,
+      hasReportedEbitdaReference: normalizedReportedEbitdaReference !== null
     },
     explainability: {
       taxCoverageStatus: params.taxResult?.coverage.status ?? "not_loaded",
@@ -294,12 +325,12 @@ export function buildSourceReconciliation(params: {
         params.taxResult === null
           ? null
           : {
-              reportedRevenue: params.reportedRevenue,
-              taxRevenue: params.taxResult.components.rawSigned.netRevenue,
-              computedEbitda: params.reconstructedEbitda,
-              reportedEbitdaReference: params.reportedEbitdaReference ?? null,
-              adjustedEbitda: params.adjustedEbitda,
-              taxEbitda: params.taxResult.taxDerivedEBITDA,
+              reportedRevenue: normalizedReportedRevenue,
+              taxRevenue: normalizedTaxRevenue,
+              computedEbitda: normalizedComputedEbitda,
+              reportedEbitdaReference: normalizedReportedEbitdaReference,
+              adjustedEbitda: normalizedAdjustedEbitda,
+              taxEbitda: normalizedTaxEbitda,
               taxEbitdaIncludingInterest:
                 params.taxResult.taxDerivedEBITDAIncludingInterest
             }

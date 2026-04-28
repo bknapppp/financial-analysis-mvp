@@ -11,7 +11,8 @@ import type {
   PeriodSnapshot,
   ReportingPeriod
 } from "./types";
-import { getAdjustedEbitda } from "./underwriting/ebitda";
+import { getAdjustedEbitda } from "./underwriting/ebitda.ts";
+import { normalizeReportedValue } from "./reported-sign-normalization.ts";
 
 const KEYWORD_RULES: Array<{
   type: AddBackType;
@@ -86,6 +87,15 @@ function buildKeywordSuggestion(
   entry: FinancialEntry,
   companyId: string
 ): AddBackSuggestion | null {
+  const normalizedExpenseAmount = normalizeReportedValue({
+    kind: "expense",
+    value: Number(entry.amount)
+  });
+
+  if (normalizedExpenseAmount === null || normalizedExpenseAmount <= 0) {
+    return null;
+  }
+
   const accountName = normalizeText(entry.account_name);
 
   for (const rule of KEYWORD_RULES) {
@@ -103,7 +113,7 @@ function buildKeywordSuggestion(
       linkedEntryId: entry.id,
       type: rule.type,
       description: entry.account_name,
-      amount: Number(entry.amount),
+      amount: normalizedExpenseAmount,
       classificationConfidence: rule.confidence,
       source: "system",
       status: "suggested",
@@ -135,14 +145,30 @@ function buildSpikeSuggestion(
 
   const recentHistory = history.slice(-2);
   const averagePriorAmount =
-    recentHistory.reduce((total, item) => total + Number(item.amount), 0) /
+    recentHistory.reduce(
+      (total, item) =>
+        total +
+        (normalizeReportedValue({
+          kind: "expense",
+          value: Number(item.amount)
+        }) ?? 0),
+      0
+    ) /
     recentHistory.length;
 
   if (averagePriorAmount <= 0) {
     return null;
   }
 
-  const currentAmount = Number(entry.amount);
+  const currentAmount = normalizeReportedValue({
+    kind: "expense",
+    value: Number(entry.amount)
+  });
+
+  if (currentAmount === null || currentAmount <= 0) {
+    return null;
+  }
+
   const ratio = currentAmount / averagePriorAmount;
 
   if (ratio < 2 || currentAmount - averagePriorAmount < 1000) {
@@ -312,7 +338,10 @@ export function generateAddBackSuggestions(params: {
       (entry) =>
         entry.statement_type === "income" &&
         entry.category === "Operating Expenses" &&
-        Number(entry.amount) > 0
+        (normalizeReportedValue({
+          kind: "expense",
+          value: Number(entry.amount)
+        }) ?? 0) > 0
     )
     .forEach((entry) => {
       const candidates = [

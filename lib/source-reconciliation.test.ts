@@ -256,6 +256,72 @@ const zeroRevenueResult = buildSourceReconciliation({
 assert.equal(zeroRevenueResult.revenue.deltaPct, null);
 assert.equal(zeroRevenueResult.comparisons.computedVsTax.deltaPct, null);
 
+const normalizedSignConventionResult = buildSourceReconciliation({
+  companyId: "company-1",
+  periodId: "reported-period-3",
+  reportedPeriod: {
+    id: "reported-period-3",
+    company_id: "company-1",
+    label: "FY2023 alt signs",
+    period_date: "2023-12-31",
+    created_at: "2026-04-09T00:00:00.000Z"
+  },
+  reportedRevenue: -5200000,
+  reconstructedEbitda: 900000,
+  reportedEbitdaReference: -950000,
+  adjustedEbitda: 1400000,
+  taxResult: baseTaxResult
+});
+assert.equal(normalizedSignConventionResult.revenue.reported, 5200000);
+assert.equal(
+  normalizedSignConventionResult.comparisons.reportedReferenceVsTax.delta,
+  fullResult.comparisons.reportedReferenceVsTax.delta
+);
+assert.equal(
+  normalizedSignConventionResult.comparisons.reportedReferenceVsTax.deltaPct,
+  fullResult.comparisons.reportedReferenceVsTax.deltaPct
+);
+assert.equal(
+  normalizedSignConventionResult.revenue.deltaPct,
+  fullResult.revenue.deltaPct
+);
+
+const negativeBaseResult = buildSourceReconciliation({
+  companyId: "company-1",
+  periodId: "reported-period-4",
+  reportedPeriod: {
+    id: "reported-period-4",
+    company_id: "company-1",
+    label: "Loss period",
+    period_date: "2023-10-31",
+    created_at: "2026-04-09T00:00:00.000Z"
+  },
+  reportedRevenue: 1000,
+  reconstructedEbitda: -100,
+  reportedEbitdaReference: -100,
+  adjustedEbitda: -80,
+  taxResult: {
+    ...baseTaxResult,
+    sourcePeriodId: "tax-period-4",
+    taxDerivedEBITDA: -120,
+    taxDerivedEBITDAIncludingInterest: -100,
+    components: {
+      ...baseTaxResult.components,
+      rawSigned: {
+        ...baseTaxResult.components.rawSigned,
+        netRevenue: 1000
+      },
+      display: {
+        ...baseTaxResult.components.display,
+        netRevenue: 1000
+      }
+    }
+  }
+});
+assert.equal(negativeBaseResult.comparisons.computedVsTax.delta, 20);
+assert.equal(negativeBaseResult.comparisons.computedVsTax.deltaPct, 0.2);
+assert.equal(negativeBaseResult.flags[0]?.type, "tax_ebitda_lower_than_computed");
+
 const reportedSnapshot = {
   revenue: 5200000,
   ebitda: 900000,

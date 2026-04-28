@@ -9,6 +9,7 @@ import type {
 } from "./types";
 import { calculateAdjustedEbitdaForPeriod } from "./add-backs.ts";
 import { buildIncomeStatementAggregationDebug } from "./income-statement-rollup.ts";
+import { normalizeReportedValue } from "./reported-sign-normalization.ts";
 
 function sumAmounts(entries: FinancialEntry[]) {
   return entries.reduce((total, entry) => total + Number(entry.amount), 0);
@@ -255,6 +256,14 @@ function calculateSnapshotForPeriod(
     ? netIncome + nonOperating + taxExpense + depreciationAndAmortization
     : null;
   const ebitda = computedEbitda;
+  const normalizedReportedEbitda = normalizeReportedValue({
+    kind: "ebitda",
+    value: metricOrNull({
+      total: incomeStatementDebug.ebitda.total,
+      source: incomeStatementDebug.ebitda.source
+    }),
+    referenceValues: [computedEbitda, ebit, netIncome]
+  });
   const ebitdaSource: IncomeStatementMetricDebug["ebitda"]["source"] =
     canComputeEbitdaBottomUp ? "bottom_up" : "none";
   const incomeStatementMetricDebug: IncomeStatementMetricDebug = {
@@ -328,7 +337,7 @@ function calculateSnapshotForPeriod(
     nonOperating,
     taxExpense,
     depreciationAndAmortization,
-    reportedEbitda,
+    reportedEbitda: normalizedReportedEbitda,
     incomeStatementDebug,
     incomeStatementMetricDebug
   });
@@ -347,7 +356,7 @@ function calculateSnapshotForPeriod(
     netIncome,
     ebit,
     reportedOperatingIncome,
-    reportedEbitda,
+    reportedEbitda: normalizedReportedEbitda,
     ebitda,
     acceptedAddBacks,
     adjustedEbitda,

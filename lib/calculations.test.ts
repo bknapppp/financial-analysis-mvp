@@ -285,6 +285,24 @@ function snapshotFromEntries(entries: FinancialEntry[], addBacks: AddBack[] = []
   const snapshot = snapshotFromEntries([
     createNamedIncomeEntry("Revenue", "Revenue", 1000),
     createNamedIncomeEntry("COGS", "COGS", 400),
+    createNamedIncomeEntry("G&A", "Operating Expenses", 120),
+    createNamedIncomeEntry("Sales & Marketing", "Operating Expenses", 180),
+    createNamedIncomeEntry("Depreciation", "Depreciation / Amortization", 50),
+    createNamedIncomeEntry("Interest Expense", "Non-operating", 20),
+    createNamedIncomeEntry("Tax Expense", "Tax Expense", 30),
+    createNamedIncomeEntry("Net Income", "Net Income", 200),
+    createNamedIncomeEntry("Reported EBITDA", "EBITDA", -350)
+  ]);
+
+  assert.equal(snapshot.ebitda, 300);
+  assert.equal(snapshot.reportedEbitda, 350);
+  assert.equal(snapshot.ebitdaExplainability?.reportedEbitda, 350);
+}
+
+{
+  const snapshot = snapshotFromEntries([
+    createNamedIncomeEntry("Revenue", "Revenue", 1000),
+    createNamedIncomeEntry("COGS", "COGS", 400),
     createNamedIncomeEntry("Total Operating Expenses", "Operating Expenses", 350),
     createNamedIncomeEntry("Depreciation", "Depreciation / Amortization", 50)
   ]);

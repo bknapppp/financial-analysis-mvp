@@ -561,4 +561,74 @@ const unknownTrace = unknownLineResult.traceRows.find(
 assert.equal(unknownTrace?.bucket, null);
 assert.equal(unknownTrace?.classification, "unknown");
 
+const manualPlanWithUnknown = await buildManualTaxIngestionPlan(
+  {
+    companyId,
+    sourceType: "tax_return",
+    periods: [
+      {
+        label: "FY2023 Manual Unknown",
+        periodDate: "2023-12-31",
+        entries: [
+          { accountName: "Gross receipts", amount: 1000 },
+          { accountName: "Cost of goods sold", amount: -400 },
+          { accountName: "Rent", amount: -300 },
+          { accountName: "Mystery local tax adjustment", amount: -25000 }
+        ]
+      }
+    ]
+  },
+  {
+    savedMappings: []
+  }
+);
+const manualUnknownPeriod = manualPlanWithUnknown.periods[0];
+assert.ok(manualUnknownPeriod, "Expected manual tax plan period");
+const manualUnknownEntries: SourceFinancialEntry[] = manualUnknownPeriod.entries.map(
+  (entry, index) => ({
+    id: `manual-unknown-${index + 1}`,
+    account_name: entry.rawAccountName,
+    statement_type: entry.statementType,
+    amount: entry.amount,
+    category: entry.mappedCategory,
+    addback_flag: false,
+    matched_by: entry.mappingMethod,
+    confidence: entry.mappingConfidence,
+    mapping_explanation: entry.mappingExplanation,
+    created_at: "2026-04-09T00:00:00.000Z",
+    source_period_id: "manual-unknown-period",
+    source_document_id: "manual-unknown-doc",
+    source_type: "tax_return",
+    source_file_name: "manual-unknown.json",
+    upload_id: "manual-unknown-upload",
+    source_period_label: manualUnknownPeriod.sourcePeriodLabel,
+    source_year: manualUnknownPeriod.sourceYear,
+    source_currency: "USD",
+    source_confidence: "unknown"
+  })
+);
+const manualUnknownResult = calculateTaxDerivedEbitda({
+  companyId,
+  sourcePeriodId: "manual-unknown-period",
+  period: {
+    label: manualUnknownPeriod.label,
+    period_date: manualUnknownPeriod.periodDate
+  },
+  entries: manualUnknownEntries
+});
+assert.equal(manualUnknownResult.taxDerivedEBITDA, 300);
+assert.equal(
+  manualUnknownResult.coverage.status,
+  "partial",
+  "Unmatched manual tax labels must reduce completeness."
+);
+assert.equal(manualUnknownResult.coverage.unknownEntryCount, 1);
+assert.equal(manualUnknownResult.components.rawSigned.operatingExpensesOther, 0);
+assert.equal(
+  manualUnknownResult.traceRows.find(
+    (row) => row.accountName === "Mystery local tax adjustment"
+  )?.classification,
+  "unknown"
+);
+
 console.log("tax-ebitda tests passed");

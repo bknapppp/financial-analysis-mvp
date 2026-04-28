@@ -41,7 +41,7 @@ export type ManualTaxMappedEntry = {
   normalizedAccountName: string;
   amount: number;
   statementType: StatementType;
-  mappedCategory: NormalizedCategory;
+  mappedCategory: NormalizedCategory | null;
   mappingMethod: AuditMatchedBy;
   mappingConfidence: AuditConfidence;
   mappingSource: "company_memory" | "shared_memory" | "rule_engine" | "fallback";
@@ -87,7 +87,7 @@ export type ManualTaxIngestionResult = {
 
 export type ManualTaxPreviewRow = {
   accountName: string;
-  mappedCategory: NormalizedCategory;
+  mappedCategory: NormalizedCategory | null;
   confidence: AuditConfidence;
   mappingMethod: AuditMatchedBy;
   mappingSource: ManualTaxMappedEntry["mappingSource"];
@@ -378,7 +378,7 @@ function mapManualTaxEntryFromRules(
     normalizedAccountName,
     amount: Number(entry.amount),
     statementType: "income",
-    mappedCategory: "Operating Expenses",
+    mappedCategory: null,
     mappingMethod: "manual",
     mappingConfidence: "low",
     mappingSource: "fallback",
@@ -386,8 +386,8 @@ function mapManualTaxEntryFromRules(
     memorySourceType: null,
     matchedMemoryKey: null,
     mappingExplanation:
-      'No explicit tax mapping rule matched this label. Defaulted to Operating Expenses for v1 while preserving the raw tax line name for review.',
-    matchedRule: "fallback_operating_expenses"
+      "No explicit tax mapping rule matched this label. Left unclassified so tax EBITDA excludes it and source completeness is reduced.",
+    matchedRule: "unknown"
   };
 }
 
@@ -592,7 +592,7 @@ type InMemoryStore = {
     accountName: string;
     statementType: "income";
     amount: number;
-    category: NormalizedCategory;
+    category: NormalizedCategory | null;
     matchedBy: AuditMatchedBy;
     confidence: AuditConfidence;
     mappingExplanation: string;
@@ -770,6 +770,10 @@ export async function ingestManualTaxPayload(
 
   for (const period of plan.periods) {
     for (const entry of period.entries) {
+      if (!entry.mappedCategory) {
+        continue;
+      }
+
       try {
         await saveConfirmedMappingToMemory({
           supabase,
