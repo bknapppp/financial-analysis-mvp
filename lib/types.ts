@@ -68,6 +68,9 @@ export type NormalizedCategory =
 export type Company = {
   id: string;
   name: string;
+  deal_name?: string | null;
+  deal_type?: string | null;
+  status?: string | null;
   industry: string | null;
   base_currency: string;
   stage: DealStage;

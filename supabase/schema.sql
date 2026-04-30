@@ -124,6 +124,9 @@ $$;
 create table if not exists public.companies (
   id uuid primary key default gen_random_uuid(),
   name text not null,
+  deal_name text,
+  deal_type text,
+  status text not null default 'New',
   industry text,
   base_currency text not null default 'USD',
   stage deal_stage not null default 'new',

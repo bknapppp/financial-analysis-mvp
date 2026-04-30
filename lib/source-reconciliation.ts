@@ -112,7 +112,9 @@ function safeDeltaPct(base: number | null, candidate: number | null) {
     return null;
   }
 
-  return (base - candidate) / Math.abs(base);
+  const delta = base - candidate;
+
+  return Math.abs(delta) / Math.abs(base);
 }
 
 function matchesTaxPeriod(params: {

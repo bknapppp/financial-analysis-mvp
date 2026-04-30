@@ -2,7 +2,14 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { Plus, X } from "lucide-react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+  type MouseEvent as ReactMouseEvent
+} from "react";
 import {
   DEAL_STAGE_OPTIONS,
   compareDealStages,
@@ -33,6 +40,15 @@ type SummaryFilter =
   | "missing_critical_inputs"
   | "recently_updated";
 type QuickFilter = "all" | "blocked" | "ready";
+type DealType = "Search Fund" | "PE" | "Broker" | "SBA" | "Other";
+
+const DEAL_TYPE_OPTIONS: DealType[] = [
+  "Search Fund",
+  "PE",
+  "Broker",
+  "SBA",
+  "Other"
+];
 
 const STATUS_ORDER: Record<PortfolioDealStatus, number> = {
   "Needs source data": 0,
@@ -46,6 +62,67 @@ const STATUS_ORDER: Record<PortfolioDealStatus, number> = {
 };
 
 const MISSING_VALUE = "\u2014";
+
+function buildNewDealRow(company: {
+  id: string;
+  name: string;
+  deal_name: string | null;
+  deal_type: string | null;
+  status: string | null;
+  industry: string | null;
+  stage_updated_at: string | null;
+  stage_notes: string | null;
+  created_at: string;
+}): DealScreenerRow {
+  return {
+    companyId: company.id,
+    dealName: company.deal_name ?? company.name,
+    companyName: company.name,
+    dealType: company.deal_type,
+    sourceStatus: company.status,
+    industry: company.industry,
+    stage: "new",
+    stageLabel: "New",
+    stageSortOrder: 0,
+    stageUpdatedAt: company.stage_updated_at,
+    stageNotes: company.stage_notes,
+    isActiveStage: true,
+    isTerminalStage: false,
+    stageReadinessMismatchReason: null,
+    backingStatus: "unbacked",
+    readinessStateKey: "needs_source_upload",
+    status: "Needs source data",
+    blockerCount: 0,
+    openIssueCount: 0,
+    criticalIssueCount: 0,
+    diligenceReadinessLabel: "Not Ready",
+    diligenceReadinessReason: "Source data has not been uploaded yet.",
+    diligenceReadinessRank: 0,
+    primaryBlockerLabel: "Source Data",
+    primaryBlockerIssueTitle: null,
+    primaryBlockerCategory: "source_data",
+    completionPercent: 0,
+    currentBlocker: "Upload source data to begin diligence.",
+    nextAction: "Add Source Data",
+    nextActionHref: `/source-data?companyId=${company.id}`,
+    revenue: null,
+    ebitda: null,
+    adjustedEbitda: null,
+    acceptedAddBacks: null,
+    ebitdaMarginPercent: null,
+    addBacksPercent: null,
+    hasAddBacks: false,
+    addBacksAboveThreshold: false,
+    dscr: null,
+    debtToEbitda: null,
+    ltv: null,
+    decision: "caution",
+    primaryRisk: null,
+    riskSeverity: null,
+    lastUpdated: company.created_at,
+    owner: null
+  };
+}
 
 function formatDate(value: string | null) {
   if (!value) {
@@ -229,6 +306,7 @@ function SummaryCard(props: {
 export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
   const router = useRouter();
   const now = useMemo(() => new Date(), []);
+  const [localRows, setLocalRows] = useState(rows);
   const [query, setQuery] = useState("");
   const [stageFilter, setStageFilter] = useState<DealStageFilter>("active");
   const [statusFilter, setStatusFilter] = useState<PortfolioDealStatus | "all">("all");
@@ -239,40 +317,53 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
   const [staleOnly, setStaleOnly] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("urgency");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  const [isNewDealOpen, setIsNewDealOpen] = useState(false);
+  const [dealName, setDealName] = useState("");
+  const [companyName, setCompanyName] = useState("");
+  const [industry, setIndustry] = useState("");
+  const [dealType, setDealType] = useState<DealType>("Search Fund");
+  const [formError, setFormError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    setLocalRows(rows);
+  }, [rows]);
 
   const industries = useMemo(
     () =>
       Array.from(
         new Set(
-          rows
+          localRows
             .map((row) => row.industry)
             .filter((industry): industry is string => Boolean(industry))
         )
       ).sort((left, right) => left.localeCompare(right)),
-    [rows]
+    [localRows]
   );
 
   const portfolioSummary = useMemo(() => {
     return {
-      activeDeals: rows.filter((row) => row.isActiveStage).length,
-      inDiligence: rows.filter((row) => row.stage === "diligence").length,
-      icReady: rows.filter((row) => row.stage === "ic_ready").length,
-      closing: rows.filter((row) => row.stage === "closing").length,
-      missingCriticalInputs: rows.filter(
+      activeDeals: localRows.filter((row) => row.isActiveStage).length,
+      inDiligence: localRows.filter((row) => row.stage === "diligence").length,
+      icReady: localRows.filter((row) => row.stage === "ic_ready").length,
+      closing: localRows.filter((row) => row.stage === "closing").length,
+      missingCriticalInputs: localRows.filter(
         (row) => row.criticalIssueCount > 0 || row.diligenceReadinessLabel === "Not Ready"
       ).length,
-      recentlyUpdatedDeals: rows.filter((row) => isRecentlyUpdated(row.lastUpdated, now)).length
+      recentlyUpdatedDeals: localRows.filter((row) => isRecentlyUpdated(row.lastUpdated, now)).length
     };
-  }, [now, rows]);
+  }, [localRows, now]);
 
   const filteredRows = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
-    const stageFiltered = filterRowsByDealStage(rows, stageFilter);
+    const stageFiltered = filterRowsByDealStage(localRows, stageFilter);
     const searched = stageFiltered.filter((row) => {
       if (
         normalizedQuery &&
         ![
           row.companyName,
+          row.dealName,
+          row.dealType ?? "",
           row.industry ?? "",
           row.stageLabel,
           row.status,
@@ -350,7 +441,7 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
     now,
     query,
     riskFilter,
-    rows,
+    localRows,
     stageFilter,
     quickFilter,
     sortDirection,
@@ -383,6 +474,93 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
     event.stopPropagation();
   }
 
+  function closeNewDealModal() {
+    if (isSubmitting) {
+      return;
+    }
+
+    setIsNewDealOpen(false);
+    setFormError(null);
+  }
+
+  function resetNewDealForm() {
+    setDealName("");
+    setCompanyName("");
+    setIndustry("");
+    setDealType("Search Fund");
+    setFormError(null);
+  }
+
+  async function handleCreateDeal(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const trimmedDealName = dealName.trim();
+    const trimmedCompanyName = companyName.trim();
+
+    if (!trimmedDealName || !trimmedCompanyName) {
+      setFormError("Deal name and company name are required.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    setFormError(null);
+
+    try {
+      const response = await fetch("/api/companies", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          dealName: trimmedDealName,
+          companyName: trimmedCompanyName,
+          industry: industry.trim(),
+          dealType
+        })
+      });
+      const payload = (await response.json()) as {
+        data?: {
+          id: string;
+          name: string;
+          deal_name: string | null;
+          deal_type: string | null;
+          status: string | null;
+          industry: string | null;
+          stage_updated_at: string | null;
+          stage_notes: string | null;
+          created_at: string;
+        };
+        error?: string;
+      };
+
+      if (!response.ok || !payload.data) {
+        setFormError(payload.error ?? "Deal could not be created.");
+        return;
+      }
+
+      const newRow = buildNewDealRow(payload.data);
+      setLocalRows((currentRows) => [
+        newRow,
+        ...currentRows.filter((row) => row.companyId !== newRow.companyId)
+      ]);
+      setSummaryFilter("all");
+      setStageFilter("active");
+      setStatusFilter("all");
+      setRiskFilter("all");
+      setIndustryFilter("all");
+      setQuickFilter("all");
+      setStaleOnly(false);
+      resetNewDealForm();
+      setIsNewDealOpen(false);
+      router.push(`/source-data?companyId=${payload.data.id}`);
+      router.refresh();
+    } catch {
+      setFormError("Deal could not be created. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   const hasActiveFilters =
     summaryFilter !== "all" ||
     stageFilter !== "active" ||
@@ -395,14 +573,27 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
   return (
     <section className="space-y-4">
       <section className="rounded-[1.5rem] border border-slate-200 bg-white px-4 py-4 shadow-panel md:px-5">
-        <div className="border-b border-slate-200 pb-4">
-          <p className="text-[10px] font-medium uppercase tracking-[0.26em] text-slate-400">
-            Portfolio Command Center
-          </p>
-          <h1 className="mt-1 text-2xl font-semibold text-slate-950">All Deals</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Monitor lifecycle stage, readiness, blockers, and risk across the portfolio.
-          </p>
+        <div className="flex flex-col gap-4 border-b border-slate-200 pb-4 md:flex-row md:items-start md:justify-between">
+          <div className="min-w-0">
+            <p className="text-[10px] font-medium uppercase tracking-[0.26em] text-slate-400">
+              Portfolio Command Center
+            </p>
+            <h1 className="mt-1 text-2xl font-semibold text-slate-950">All Deals</h1>
+            <p className="mt-1 text-sm text-slate-500">
+              Monitor lifecycle stage, readiness, blockers, and risk across the portfolio.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              resetNewDealForm();
+              setIsNewDealOpen(true);
+            }}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800 md:w-auto"
+          >
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            New Deal
+          </button>
         </div>
 
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
@@ -674,7 +865,7 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
                   }}
                   tabIndex={0}
                   role="link"
-                  aria-label={`Open ${row.companyName}`}
+                  aria-label={`Open ${row.dealName}`}
                 >
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div className="min-w-0 flex-1">
@@ -684,8 +875,13 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
                           className="min-w-0 text-lg font-semibold tracking-tight text-slate-950 hover:text-slate-950"
                           onClick={stopRowNavigation}
                         >
-                          {row.companyName}
+                          {row.dealName}
                         </Link>
+                        {row.dealType ? (
+                          <span className="inline-flex rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600">
+                            {row.dealType}
+                          </span>
+                        ) : null}
                         <span
                           className={`inline-flex w-fit rounded-md border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${statusTone(
                             row.status
@@ -694,6 +890,9 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
                           {row.diligenceReadinessLabel}
                         </span>
                       </div>
+                      {row.dealName !== row.companyName ? (
+                        <p className="mt-1 text-sm text-slate-500">{row.companyName}</p>
+                      ) : null}
 
                       <p className="mt-3 max-w-3xl text-sm font-medium leading-6 text-slate-800">
                         {blockerText}
@@ -785,6 +984,130 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
           <span>Click any row to open the deal workspace overview</span>
         </div>
       </section>
+
+      {isNewDealOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 px-4 py-6"
+          role="presentation"
+          onClick={closeNewDealModal}
+        >
+          <form
+            onSubmit={handleCreateDeal}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="new-deal-title"
+            className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-4">
+              <div>
+                <p className="text-[10px] font-medium uppercase tracking-[0.24em] text-slate-400">
+                  New Pipeline Record
+                </p>
+                <h2 id="new-deal-title" className="mt-1 text-xl font-semibold text-slate-950">
+                  Add Deal
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={closeNewDealModal}
+                disabled={isSubmitting}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-60"
+                aria-label="Close new deal modal"
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </div>
+
+            <div className="mt-5 grid gap-4">
+              <div>
+                <label htmlFor="deal-name" className="mb-1.5 block text-sm font-medium text-slate-700">
+                  Deal Name <span className="text-rose-600">*</span>
+                </label>
+                <input
+                  id="deal-name"
+                  required
+                  value={dealName}
+                  onChange={(event) => setDealName(event.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-slate-400"
+                  placeholder="Project Atlas"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="company-name" className="mb-1.5 block text-sm font-medium text-slate-700">
+                  Company Name <span className="text-rose-600">*</span>
+                </label>
+                <input
+                  id="company-name"
+                  required
+                  value={companyName}
+                  onChange={(event) => setCompanyName(event.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-slate-400"
+                  placeholder="Atlas Components"
+                />
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label htmlFor="industry" className="mb-1.5 block text-sm font-medium text-slate-700">
+                    Industry
+                  </label>
+                  <input
+                    id="industry"
+                    value={industry}
+                    onChange={(event) => setIndustry(event.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-slate-400"
+                    placeholder="Manufacturing"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="deal-type" className="mb-1.5 block text-sm font-medium text-slate-700">
+                    Deal Type
+                  </label>
+                  <select
+                    id="deal-type"
+                    value={dealType}
+                    onChange={(event) => setDealType(event.target.value as DealType)}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-400"
+                  >
+                    {DEAL_TYPE_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {formError ? (
+              <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+                {formError}
+              </div>
+            ) : null}
+
+            <div className="mt-6 flex flex-col-reverse gap-3 border-t border-slate-200 pt-4 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={closeNewDealModal}
+                disabled={isSubmitting}
+                className="inline-flex items-center justify-center rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+              >
+                {isSubmitting ? "Creating..." : "Create Deal"}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
     </section>
   );
 }

@@ -126,8 +126,9 @@ assert.equal(fullResult.ebitda.reportedReference, 950000);
 assert.equal(fullResult.ebitda.adjusted, 1400000);
 assert.equal(fullResult.ebitda.tax, 1250000);
 assert.equal(fullResult.comparisons.reportedReferenceVsTax.delta, -300000);
-assert.equal(fullResult.comparisons.reportedReferenceVsTax.deltaPct, -300000 / 950000);
+assert.equal(fullResult.comparisons.reportedReferenceVsTax.deltaPct, 300000 / 950000);
 assert.equal(fullResult.comparisons.computedVsTax.delta, -350000);
+assert.equal(fullResult.comparisons.computedVsTax.deltaPct, 350000 / 900000);
 assert.equal(fullResult.comparisons.adjustedVsTax.delta, 150000);
 assert.equal(fullResult.addbacks.amount, 500000);
 assert.equal(fullResult.addbacks.pctOfComputed, 500000 / 900000);
@@ -284,6 +285,51 @@ assert.equal(
 assert.equal(
   normalizedSignConventionResult.revenue.deltaPct,
   fullResult.revenue.deltaPct
+);
+
+const taxHigherResult = buildSourceReconciliation({
+  companyId: "company-1",
+  periodId: "reported-period-5",
+  reportedPeriod: {
+    id: "reported-period-5",
+    company_id: "company-1",
+    label: "Tax higher",
+    period_date: "2023-09-30",
+    created_at: "2026-04-09T00:00:00.000Z"
+  },
+  reportedRevenue: 1000,
+  reconstructedEbitda: 1000,
+  reportedEbitdaReference: 1000,
+  adjustedEbitda: 1000,
+  taxResult: {
+    ...baseTaxResult,
+    sourcePeriodId: "tax-period-5",
+    taxDerivedEBITDA: 1200,
+    taxDerivedEBITDAIncludingInterest: 1200,
+    components: {
+      ...baseTaxResult.components,
+      rawSigned: {
+        ...baseTaxResult.components.rawSigned,
+        grossRevenue: 1200,
+        netRevenue: 1200
+      },
+      display: {
+        ...baseTaxResult.components.display,
+        grossRevenue: 1200,
+        netRevenue: 1200
+      }
+    }
+  }
+});
+assert.equal(taxHigherResult.revenue.delta, -200);
+assert.equal(taxHigherResult.revenue.deltaPct, 0.2);
+assert.equal(taxHigherResult.comparisons.computedVsTax.delta, -200);
+assert.equal(taxHigherResult.comparisons.computedVsTax.deltaPct, 0.2);
+assert.ok(
+  taxHigherResult.flags.some((flag) => flag.type === "tax_revenue_lower_than_reported")
+);
+assert.ok(
+  taxHigherResult.flags.some((flag) => flag.type === "tax_ebitda_lower_than_computed")
 );
 
 const negativeBaseResult = buildSourceReconciliation({

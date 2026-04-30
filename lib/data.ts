@@ -38,7 +38,10 @@ import type { Company, DashboardData, SimilarDeal } from "./types.ts";
 
 export type DealScreenerRow = {
   companyId: string;
+  dealName: string;
   companyName: string;
+  dealType: string | null;
+  sourceStatus: string | null;
   industry: string | null;
   stage: DealStage;
   stageLabel: string;
@@ -327,7 +330,10 @@ async function buildDealScreenerRow(params: {
 
   return {
     companyId: context.company.id,
+    dealName: context.company.deal_name ?? context.company.name,
     companyName: context.company.name,
+    dealType: context.company.deal_type ?? null,
+    sourceStatus: context.company.status ?? null,
     industry: context.company.industry,
     stage,
     stageLabel: getDealStageLabel(stage),
