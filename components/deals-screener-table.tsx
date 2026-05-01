@@ -168,13 +168,22 @@ function formatCompactCurrency(value: number | null) {
   return `$${formatter.format(value)}`;
 }
 
+function hasUsableExportData(row: DealScreenerRow) {
+  return (
+    row.revenue !== null ||
+    row.ebitda !== null ||
+    row.adjustedEbitda !== null ||
+    (row.acceptedAddBacks !== null && row.acceptedAddBacks > 0) ||
+    row.dscr !== null ||
+    row.debtToEbitda !== null ||
+    row.ltv !== null
+  );
+}
+
 function getExportState(row: DealScreenerRow) {
   const isFullyReady =
     row.readinessStateKey === "ready_for_output" && row.backingStatus === "backed";
-  const isPartialReady =
-    !isFullyReady &&
-    row.readinessStateKey !== "needs_source_upload" &&
-    row.backingStatus !== "unbacked";
+  const canExportPartial = !isFullyReady && hasUsableExportData(row);
 
   if (isFullyReady) {
     return {
@@ -184,18 +193,18 @@ function getExportState(row: DealScreenerRow) {
     };
   }
 
-  if (isPartialReady) {
+  if (canExportPartial) {
     return {
       disabled: false,
-      label: "Export Model (Partial)",
-      tooltip: "Exports available financials with noted gaps"
+      label: "Export Partial",
+      tooltip: "Includes available financials and noted gaps"
     };
   }
 
   return {
     disabled: true,
-    label: "Export Model",
-    tooltip: "Complete required inputs to export model"
+    label: "Export Not Available",
+    tooltip: "Add financial data before exporting"
   };
 }
 
