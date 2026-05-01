@@ -317,7 +317,7 @@ export function buildDealCoreDerivedContext(params: {
     reconciliation,
     series: snapshots.map((item) => ({
       label: item.label,
-      revenue: item.revenue,
+      revenue: item.revenue ?? 0,
       reportedEbitda: item.reportedEbitda ?? null,
       adjustedEbitda: item.adjustedEbitda
     })),

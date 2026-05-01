@@ -136,18 +136,24 @@ export function generateDriverAnalyses(
 
   return snapshots.slice(1).map((current, index) => {
     const previous = snapshots[index];
+    const currentRevenue = current.revenue ?? 0;
+    const previousRevenue = previous.revenue ?? 0;
+    const currentCogs = current.cogs ?? 0;
+    const previousCogs = previous.cogs ?? 0;
+    const currentOperatingExpenses = current.operatingExpenses ?? 0;
+    const previousOperatingExpenses = previous.operatingExpenses ?? 0;
 
     const revenueVariance = {
-      absolute: current.revenue - previous.revenue,
+      absolute: currentRevenue - previousRevenue,
       percent: current.revenueGrowthPercent
     };
-    const cogsAbsolute = current.cogs - previous.cogs;
+    const cogsAbsolute = currentCogs - previousCogs;
     const cogsVariance = {
       absolute: cogsAbsolute,
       percent: percentChange(current.cogs, previous.cogs)
     };
     const operatingExpensesAbsolute =
-      current.operatingExpenses - previous.operatingExpenses;
+      currentOperatingExpenses - previousOperatingExpenses;
     const operatingExpensesVariance = {
       absolute: operatingExpensesAbsolute,
       percent: percentChange(

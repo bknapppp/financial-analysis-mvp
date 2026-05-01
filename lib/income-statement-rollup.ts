@@ -107,7 +107,10 @@ const CATEGORY_SUBTOTAL_LABELS: Record<IncomeStatementAggregationFamilyKey, Set<
   ]),
   ebitda: new Set([
     "ebitda",
-    "reported ebitda"
+    "reported ebitda",
+    "canonical ebitda",
+    "ebitda gaap",
+    "ebitda non gaap"
   ])
 };
 
@@ -222,6 +225,7 @@ function buildFamilyDebug(params: {
           : 0
         : Math.min(Math.abs(detailTotal) / Math.abs(subtotalTotal), 1);
   const shouldPreferDetail =
+    params.family !== "ebitda" &&
     componentRows.length > 0 &&
     (selectedSubtotalRow === null ||
       (detailCoverageRatio !== null && detailCoverageRatio >= DETAIL_COVERAGE_THRESHOLD));

@@ -310,7 +310,15 @@ const INCOME_STATEMENT_RULES: KeywordRule[] = [
     statementType: "income",
     mode: "exact",
     confidence: "high",
-    patterns: ["ebitda", "adjusted ebitda", "ebitda non gaap", "ebitda non-gaap"]
+    patterns: [
+      "ebitda",
+      "reported ebitda",
+      "canonical ebitda",
+      "adjusted ebitda",
+      "ebitda gaap",
+      "ebitda non gaap",
+      "ebitda non-gaap"
+    ]
   },
   {
     concept: "Operating Income",
@@ -1096,8 +1104,12 @@ export function parseCategory(
   }
   if (
     normalized === "ebitda" ||
+    normalized === "reported ebitda" ||
+    normalized === "canonical ebitda" ||
     normalized === "adjusted ebitda" ||
-    normalized === "ebitda non gaap"
+    normalized === "ebitda gaap" ||
+    normalized === "ebitda non gaap" ||
+    normalized === "ebitda non-gaap"
   ) {
     return "EBITDA";
   }

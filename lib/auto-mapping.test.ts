@@ -99,6 +99,21 @@ expectMapping("EBITDA", {
   category: "EBITDA",
   confidence: "high"
 });
+expectMapping("Reported EBITDA", {
+  concept: "EBITDA",
+  category: "EBITDA",
+  confidence: "high"
+});
+expectMapping("Canonical EBITDA", {
+  concept: "EBITDA",
+  category: "EBITDA",
+  confidence: "high"
+});
+expectMapping("EBITDA GAAP", {
+  concept: "EBITDA",
+  category: "EBITDA",
+  confidence: "high"
+});
 expectMapping("EBITDA Non-GAAP", {
   concept: "EBITDA",
   category: "EBITDA",

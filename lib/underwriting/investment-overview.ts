@@ -103,7 +103,7 @@ export function buildInvestmentOverview(params: {
   if (
     taxSourceStatus.comparisonComputable &&
     (
-      (taxSourceStatus.reportedEbitdaDeltaPercent !== null &&
+      (taxSourceStatus.reportedEbitdaDeltaPercent != null &&
         Math.abs(taxSourceStatus.reportedEbitdaDeltaPercent) >= 0.1) ||
       (taxSourceStatus.computedEbitdaDeltaPercent !== null &&
         Math.abs(taxSourceStatus.computedEbitdaDeltaPercent) >= 0.1)
@@ -111,6 +111,7 @@ export function buildInvestmentOverview(params: {
   ) {
     financialIntegrityItems.push(
       taxSourceStatus.reportedEbitdaDeltaPercent !== null &&
+      taxSourceStatus.reportedEbitdaDeltaPercent !== undefined &&
       Math.abs(taxSourceStatus.reportedEbitdaDeltaPercent) >= 0.1
         ? `Tax vs reported EBITDA divergence is ${formatDeltaPercent(
             taxSourceStatus.reportedEbitdaDeltaPercent

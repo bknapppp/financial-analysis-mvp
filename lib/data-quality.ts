@@ -222,8 +222,9 @@ export function buildDataQualityReport({
 
     if (
       latestSnapshot.ebitda !== null &&
-      latestSnapshot.ebitda > latestSnapshot.revenue &&
-      latestSnapshot.revenue > 0
+      latestSnapshot.revenue !== null &&
+      latestSnapshot.revenue > 0 &&
+      latestSnapshot.ebitda > latestSnapshot.revenue
     ) {
       sanityIssues.push({
         message: "EBITDA exceeds revenue — account classification likely needs attention.",

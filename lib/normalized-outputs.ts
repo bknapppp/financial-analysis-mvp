@@ -119,13 +119,13 @@ function buildIncomeStatement(snapshot: PeriodSnapshot): Extract<
     {
       key: "depreciation_and_amortization",
       label: "Depreciation / Amortization",
-      value: snapshot.depreciationAndAmortization,
+      value: snapshot.depreciationAndAmortization ?? null,
       kind: "line_item"
     },
     {
       key: "ebit",
       label: "EBIT",
-      value: snapshot.ebit,
+      value: snapshot.ebit ?? null,
       kind: "subtotal",
       rollupKey: "ebit"
     }
@@ -145,19 +145,19 @@ function buildIncomeStatement(snapshot: PeriodSnapshot): Extract<
     {
       key: "non_operating",
       label: "Non-operating",
-      value: snapshot.nonOperating,
+      value: snapshot.nonOperating ?? null,
       kind: "line_item"
     },
     {
       key: "tax_expense",
       label: "Tax Expense",
-      value: snapshot.taxExpense,
+      value: snapshot.taxExpense ?? null,
       kind: "line_item"
     },
     {
       key: "net_income",
       label: "Net Income",
-      value: snapshot.netIncome,
+      value: snapshot.netIncome ?? null,
       kind: "subtotal",
       rollupKey: "net_income"
     },

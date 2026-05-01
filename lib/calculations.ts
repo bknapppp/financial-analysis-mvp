@@ -8,7 +8,10 @@ import type {
   StatementRow
 } from "./types";
 import { calculateAdjustedEbitdaForPeriod } from "./add-backs.ts";
-import { buildIncomeStatementAggregationDebug } from "./income-statement-rollup.ts";
+import {
+  buildIncomeStatementAggregationDebug,
+  normalizeIncomeStatementLabel
+} from "./income-statement-rollup.ts";
 import { normalizeReportedValue } from "./reported-sign-normalization.ts";
 
 function sumAmounts(entries: FinancialEntry[]) {
@@ -77,15 +80,31 @@ function computeOperatingExpensesExcludingDa(params: {
       : never
     : never;
   depreciationAndAmortization: number | null;
+  selectedLabels?: string[];
 }) {
   if (params.operatingExpenses === null) {
     return null;
   }
 
+  const selectedLabelSet = new Set(
+    (params.selectedLabels ?? []).map((label) => normalizeIncomeStatementLabel(label))
+  );
+  const selectedBroadExpenseSubtotal = Array.from(selectedLabelSet).some(
+    (label) =>
+      label.startsWith("total ") ||
+      label === "cost and expenses" ||
+      label === "costs and expenses" ||
+      label === "total expenses" ||
+      label === "total operating expenses" ||
+      label === "total operating expense" ||
+      label === "operating costs and expenses"
+  );
+
   if (
     params.depreciationAndAmortization !== null &&
     params.depreciationAndAmortization > 0 &&
-    params.operatingExpensesSource === "subtotal_fallback"
+    params.operatingExpensesSource === "subtotal_fallback" &&
+    selectedBroadExpenseSubtotal
   ) {
     return Math.max(0, params.operatingExpenses - params.depreciationAndAmortization);
   }
@@ -98,6 +117,7 @@ function buildEbitdaExplainability(params: {
   nonOperating: number | null;
   taxExpense: number | null;
   depreciationAndAmortization: number | null;
+  ebit: number | null;
   reportedEbitda: number | null;
   incomeStatementDebug: NonNullable<PeriodSnapshot["incomeStatementDebug"]>;
   incomeStatementMetricDebug: IncomeStatementMetricDebug;
@@ -107,6 +127,7 @@ function buildEbitdaExplainability(params: {
     nonOperating,
     taxExpense,
     depreciationAndAmortization,
+    ebit,
     reportedEbitda,
     incomeStatementDebug,
     incomeStatementMetricDebug
@@ -140,12 +161,35 @@ function buildEbitdaExplainability(params: {
     };
   }
 
+  if (source === "reported_fallback") {
+    return {
+      basis: "reported_fallback",
+      basisLabel: "Using reported EBITDA (fallback)",
+      note: "Canonical EBITDA uses the explicit reported EBITDA line because a normalized EBITDA row is available for this period.",
+      netIncome: incomeStatementDebug.netIncome.source !== "none" ? netIncome : null,
+      interestAddBack: incomeStatementDebug.nonOperating.source !== "none" ? nonOperating : null,
+      taxAddBack: incomeStatementDebug.taxExpense.source !== "none" ? taxExpense : null,
+      depreciationAndAmortizationAddBack:
+        incomeStatementDebug.depreciationAndAmortization.source !== "none"
+          ? depreciationAndAmortization
+          : null,
+      computedEbitda:
+        ebit !== null && depreciationAndAmortization !== null
+          ? ebit + depreciationAndAmortization
+          : null,
+      reportedEbitda,
+      selectedLabels: incomeStatementMetricDebug.ebitda.selectedLabels,
+      excludedLabels: incomeStatementMetricDebug.ebitda.excludedLabels,
+      missingComponents: []
+    };
+  }
+
   return {
     basis: "incomplete",
     basisLabel: "Insufficient bottom-up inputs",
     note:
       reportedEbitda !== null
-        ? "Canonical EBITDA is unavailable because the current period does not contain enough bottom-up inputs. A reported EBITDA reference exists, but it is not used as canonical EBITDA."
+        ? "Canonical EBITDA is unavailable because the current period does not contain enough bottom-up inputs and no supported reported EBITDA row was selected."
         : "Canonical EBITDA is unavailable because the current period does not contain enough bottom-up inputs.",
     netIncome: incomeStatementDebug.netIncome.source !== "none" ? netIncome : null,
     interestAddBack: incomeStatementDebug.nonOperating.source !== "none" ? nonOperating : null,
@@ -189,7 +233,8 @@ function calculateSnapshotForPeriod(
       source: incomeStatementDebug.operatingExpenses.source
     }),
     operatingExpensesSource: incomeStatementDebug.operatingExpenses.source,
-    depreciationAndAmortization
+    depreciationAndAmortization,
+    selectedLabels: incomeStatementDebug.operatingExpenses.selectedLabels
   });
   const nonOperating = metricOrNull({
     total: incomeStatementDebug.nonOperating.total,
@@ -255,7 +300,6 @@ function calculateSnapshotForPeriod(
   const computedEbitda = canComputeEbitdaBottomUp
     ? netIncome + nonOperating + taxExpense + depreciationAndAmortization
     : null;
-  const ebitda = computedEbitda;
   const normalizedReportedEbitda = normalizeReportedValue({
     kind: "ebitda",
     value: metricOrNull({
@@ -264,53 +308,78 @@ function calculateSnapshotForPeriod(
     }),
     referenceValues: [computedEbitda, ebit, netIncome]
   });
+  const computedEbitdaFromEbit =
+    ebit !== null && depreciationAndAmortization !== null
+      ? ebit + depreciationAndAmortization
+      : null;
+  const ebitda =
+    normalizedReportedEbitda !== null
+      ? normalizedReportedEbitda
+      : computedEbitdaFromEbit !== null
+        ? computedEbitdaFromEbit
+        : computedEbitda;
   const ebitdaSource: IncomeStatementMetricDebug["ebitda"]["source"] =
-    canComputeEbitdaBottomUp ? "bottom_up" : "none";
+    normalizedReportedEbitda !== null
+      ? "reported_fallback"
+      : computedEbitdaFromEbit !== null || canComputeEbitdaBottomUp
+        ? "bottom_up"
+        : "none";
+  const ebitSelectedLabels =
+    ebitSource === "computed_operations"
+      ? mergeLabels(
+          incomeStatementDebug.revenue.selectedLabels,
+          incomeStatementDebug.cogs.selectedLabels,
+          incomeStatementDebug.operatingExpenses.selectedLabels
+        )
+      : ebitSource === "reported_fallback"
+        ? incomeStatementDebug.operatingIncome.selectedLabels
+        : [];
+  const ebitExcludedLabels =
+    ebitSource === "computed_operations"
+      ? mergeLabels(
+          incomeStatementDebug.revenue.excludedLabels,
+          incomeStatementDebug.cogs.excludedLabels,
+          incomeStatementDebug.operatingExpenses.excludedLabels,
+          depreciationAndAmortization !== null &&
+            depreciationAndAmortization > 0 &&
+            incomeStatementDebug.operatingExpenses.source === "subtotal_fallback"
+            ? incomeStatementDebug.depreciationAndAmortization.selectedLabels
+            : []
+        )
+      : ebitSource === "reported_fallback"
+        ? incomeStatementDebug.operatingIncome.excludedLabels
+        : [];
   const incomeStatementMetricDebug: IncomeStatementMetricDebug = {
     ebit: {
       source: ebitSource,
-      selectedLabels:
-        ebitSource === "computed_operations"
-          ? mergeLabels(
-              incomeStatementDebug.revenue.selectedLabels,
-              incomeStatementDebug.cogs.selectedLabels,
-              incomeStatementDebug.operatingExpenses.selectedLabels
-            )
-          : ebitSource === "reported_fallback"
-            ? incomeStatementDebug.operatingIncome.selectedLabels
-            : [],
-      excludedLabels:
-        ebitSource === "computed_operations"
-          ? mergeLabels(
-              incomeStatementDebug.revenue.excludedLabels,
-              incomeStatementDebug.cogs.excludedLabels,
-              incomeStatementDebug.operatingExpenses.excludedLabels,
-              depreciationAndAmortization > 0 &&
-                incomeStatementDebug.operatingExpenses.source === "subtotal_fallback"
-                ? incomeStatementDebug.depreciationAndAmortization.selectedLabels
-                : []
-            )
-          : ebitSource === "reported_fallback"
-            ? incomeStatementDebug.operatingIncome.excludedLabels
-            : []
+      selectedLabels: ebitSelectedLabels,
+      excludedLabels: ebitExcludedLabels
     },
     ebitda: {
       source: ebitdaSource,
       selectedLabels:
-        ebitdaSource === "bottom_up"
+        ebitdaSource === "reported_fallback"
+          ? incomeStatementDebug.ebitda.selectedLabels
+          : ebitdaSource === "bottom_up"
           ? mergeLabels(
-              incomeStatementDebug.netIncome.selectedLabels,
-              incomeStatementDebug.nonOperating.selectedLabels,
-              incomeStatementDebug.taxExpense.selectedLabels,
+              computedEbitdaFromEbit !== null
+                ? ebitSelectedLabels
+                : incomeStatementDebug.netIncome.selectedLabels,
+              computedEbitdaFromEbit !== null ? [] : incomeStatementDebug.nonOperating.selectedLabels,
+              computedEbitdaFromEbit !== null ? [] : incomeStatementDebug.taxExpense.selectedLabels,
               incomeStatementDebug.depreciationAndAmortization.selectedLabels
             )
           : [],
       excludedLabels:
-        ebitdaSource === "bottom_up"
+        ebitdaSource === "reported_fallback"
+          ? incomeStatementDebug.ebitda.excludedLabels
+          : ebitdaSource === "bottom_up"
           ? mergeLabels(
-              incomeStatementDebug.netIncome.excludedLabels,
-              incomeStatementDebug.nonOperating.excludedLabels,
-              incomeStatementDebug.taxExpense.excludedLabels,
+              computedEbitdaFromEbit !== null
+                ? ebitExcludedLabels
+                : incomeStatementDebug.netIncome.excludedLabels,
+              computedEbitdaFromEbit !== null ? [] : incomeStatementDebug.nonOperating.excludedLabels,
+              computedEbitdaFromEbit !== null ? [] : incomeStatementDebug.taxExpense.excludedLabels,
               incomeStatementDebug.depreciationAndAmortization.excludedLabels
             )
           : []
@@ -337,6 +406,7 @@ function calculateSnapshotForPeriod(
     nonOperating,
     taxExpense,
     depreciationAndAmortization,
+    ebit,
     reportedEbitda: normalizedReportedEbitda,
     incomeStatementDebug,
     incomeStatementMetricDebug
@@ -431,11 +501,11 @@ export function buildIncomeStatement(snapshot: PeriodSnapshot): StatementRow[] {
     { label: "COGS", value: snapshot.cogs },
     { label: "Gross Profit", value: snapshot.grossProfit },
     { label: "Operating Expenses", value: snapshot.operatingExpenses },
-    { label: "Depreciation / Amortization", value: snapshot.depreciationAndAmortization },
-    { label: "EBIT", value: snapshot.ebit },
-    { label: "Non-operating", value: snapshot.nonOperating },
-    { label: "Tax Expense", value: snapshot.taxExpense },
-    { label: "Net Income", value: snapshot.netIncome },
+    { label: "Depreciation / Amortization", value: snapshot.depreciationAndAmortization ?? null },
+    { label: "EBIT", value: snapshot.ebit ?? null },
+    { label: "Non-operating", value: snapshot.nonOperating ?? null },
+    { label: "Tax Expense", value: snapshot.taxExpense ?? null },
+    { label: "Net Income", value: snapshot.netIncome ?? null },
     { label: "EBITDA", value: snapshot.ebitda },
     {
       label: "Approved Add-Backs",

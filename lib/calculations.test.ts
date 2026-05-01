@@ -213,7 +213,8 @@ function snapshotFromEntries(entries: FinancialEntry[], addBacks: AddBack[] = []
   );
 
   assert.equal(snapshot.acceptedAddBacks, 25);
-  assert.equal(snapshot.adjustedEbitda, 325);
+  assert.equal(snapshot.ebitda, 350);
+  assert.equal(snapshot.adjustedEbitda, 375);
 }
 
 {
@@ -249,8 +250,8 @@ function snapshotFromEntries(entries: FinancialEntry[], addBacks: AddBack[] = []
   );
 
   assert.equal(snapshot.acceptedAddBacks, 0);
-  assert.equal(snapshot.ebitda, 300);
-  assert.equal(snapshot.adjustedEbitda, 300);
+  assert.equal(snapshot.ebitda, 350);
+  assert.equal(snapshot.adjustedEbitda, 350);
 }
 
 {
@@ -270,13 +271,14 @@ function snapshotFromEntries(entries: FinancialEntry[], addBacks: AddBack[] = []
   assert.equal(snapshot.operatingExpenses, 300);
   assert.equal(snapshot.depreciationAndAmortization, 50);
   assert.equal(snapshot.ebit, 300);
-  assert.equal(snapshot.ebitda, 300);
+  assert.equal(snapshot.ebitda, 350);
+  assert.equal(snapshot.adjustedEbitda, 350);
   assert.equal(snapshot.reportedOperatingIncome, 300);
   assert.equal(snapshot.reportedEbitda, 350);
   assert.equal(snapshot.incomeStatementMetricDebug?.ebit.source, "computed_operations");
-  assert.equal(snapshot.incomeStatementMetricDebug?.ebitda.source, "bottom_up");
-  assert.equal(snapshot.ebitdaExplainability?.basis, "computed");
-  assert.equal(snapshot.ebitdaExplainability?.computedEbitda, 300);
+  assert.equal(snapshot.incomeStatementMetricDebug?.ebitda.source, "reported_fallback");
+  assert.equal(snapshot.ebitdaExplainability?.basis, "reported_fallback");
+  assert.equal(snapshot.ebitdaExplainability?.computedEbitda, 350);
   assert.equal(snapshot.ebitdaExplainability?.reportedEbitda, 350);
   assert.deepEqual(snapshot.ebitdaExplainability?.missingComponents, []);
 }
@@ -294,8 +296,9 @@ function snapshotFromEntries(entries: FinancialEntry[], addBacks: AddBack[] = []
     createNamedIncomeEntry("Reported EBITDA", "EBITDA", -350)
   ]);
 
-  assert.equal(snapshot.ebitda, 300);
+  assert.equal(snapshot.ebitda, 350);
   assert.equal(snapshot.reportedEbitda, 350);
+  assert.equal(snapshot.adjustedEbitda, 350);
   assert.equal(snapshot.ebitdaExplainability?.reportedEbitda, 350);
 }
 
@@ -321,18 +324,45 @@ function snapshotFromEntries(entries: FinancialEntry[], addBacks: AddBack[] = []
   ]);
 
   assert.equal(snapshot.ebit, 280);
-  assert.equal(snapshot.ebitda, null);
+  assert.equal(snapshot.ebitda, 330);
+  assert.equal(snapshot.adjustedEbitda, 330);
   assert.equal(snapshot.incomeStatementMetricDebug?.ebit.source, "reported_fallback");
-  assert.equal(snapshot.incomeStatementMetricDebug?.ebitda.source, "none");
-  assert.equal(snapshot.ebitdaExplainability?.basis, "incomplete");
+  assert.equal(snapshot.incomeStatementMetricDebug?.ebitda.source, "reported_fallback");
+  assert.equal(snapshot.ebitdaExplainability?.basis, "reported_fallback");
   assert.equal(snapshot.ebitdaExplainability?.computedEbitda, null);
   assert.equal(snapshot.ebitdaExplainability?.reportedEbitda, 330);
-  assert.deepEqual(snapshot.ebitdaExplainability?.missingComponents, [
-    "Net Income",
-    "Interest / Non-operating",
-    "Tax Expense",
-    "Depreciation & Amortization"
+  assert.deepEqual(snapshot.ebitdaExplainability?.missingComponents, []);
+}
+
+{
+  const snapshot = snapshotFromEntries([
+    createNamedIncomeEntry("Sales", "Revenue", 9872),
+    createNamedIncomeEntry("Cost of Sales", "COGS", 2913),
+    createNamedIncomeEntry("Gross Profit", "Gross Profit", 6959),
+    createNamedIncomeEntry("Operating Expenses", "Operating Expenses", 1264),
+    createNamedIncomeEntry(
+      "Depreciation / Amortization",
+      "Depreciation / Amortization",
+      319
+    ),
+    createNamedIncomeEntry("EBIT", "Operating Income", 5695),
+    createNamedIncomeEntry("EBITDA", "EBITDA", 3783),
+    createNamedIncomeEntry("EBITDA Non-GAAP", "EBITDA", 4100),
+    createNamedIncomeEntry("EBITDA GAAP", "EBITDA", 3900)
   ]);
+
+  assert.equal(snapshot.revenue, 9872);
+  assert.equal(snapshot.cogs, 2913);
+  assert.equal(snapshot.grossProfit, 6959);
+  assert.equal(snapshot.operatingExpenses, 1264);
+  assert.equal(snapshot.depreciationAndAmortization, 319);
+  assert.equal(snapshot.ebit, 5695);
+  assert.equal(snapshot.reportedEbitda, 3783);
+  assert.equal(snapshot.ebitda, 3783);
+  assert.equal(snapshot.acceptedAddBacks, 0);
+  assert.equal(snapshot.adjustedEbitda, 3783);
+  assert.equal(snapshot.incomeStatementMetricDebug?.ebitda.source, "reported_fallback");
+  assert.deepEqual(snapshot.incomeStatementDebug?.ebitda.selectedLabels, ["EBITDA"]);
 }
 
 {
