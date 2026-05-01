@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Plus, X } from "lucide-react";
+import { MoreHorizontal, Plus, X } from "lucide-react";
 import {
   useEffect,
   useMemo,
@@ -110,6 +110,7 @@ function buildNewDealRow(company: {
     adjustedEbitda: null,
     acceptedAddBacks: null,
     ebitdaMarginPercent: null,
+    revenueGrowthPercent: null,
     addBacksPercent: null,
     hasAddBacks: false,
     addBacksAboveThreshold: false,
@@ -206,6 +207,193 @@ function getExportState(row: DealScreenerRow) {
     label: "Export Not Available",
     tooltip: "Add financial data before exporting"
   };
+}
+
+function isFiniteMetric(value: number | null | undefined): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function getMedian(values: number[]) {
+  const sortedValues = [...values].sort((left, right) => left - right);
+  const middleIndex = Math.floor(sortedValues.length / 2);
+
+  return sortedValues.length % 2 === 0
+    ? (sortedValues[middleIndex - 1] + sortedValues[middleIndex]) / 2
+    : sortedValues[middleIndex];
+}
+
+function compareToMedian(
+  value: number,
+  median: number,
+  tolerance: number
+): "above" | "below" | "near" {
+  return Math.abs(value - median) <= tolerance
+    ? "near"
+    : value > median
+      ? "above"
+      : "below";
+}
+
+function formatBenchmarkPercent(value: number) {
+  return `${new Intl.NumberFormat("en-US", {
+    maximumFractionDigits: Number.isInteger(value) ? 0 : 1
+  }).format(value)}%`;
+}
+
+function formatBenchmarkPointDelta(value: number) {
+  const formattedValue = new Intl.NumberFormat("en-US", {
+    maximumFractionDigits: Number.isInteger(value) ? 0 : 1
+  }).format(Math.abs(value));
+
+  return `${value >= 0 ? "+" : "-"}${formattedValue} pts`;
+}
+
+function formatBenchmarkCurrencyDelta(value: number) {
+  return `${value >= 0 ? "+" : "-"}${formatCompactCurrency(Math.abs(value))}`;
+}
+
+function getIndustryMedian(
+  row: DealScreenerRow,
+  rows: DealScreenerRow[],
+  metric: (peer: DealScreenerRow) => number | null
+) {
+  if (!row.industry) {
+    return null;
+  }
+
+  const peerValues = rows
+    .filter((peer) => peer.companyId !== row.companyId && peer.industry === row.industry)
+    .map(metric)
+    .filter(isFiniteMetric);
+
+  return peerValues.length > 0 ? getMedian(peerValues) : null;
+}
+
+function getSimilarDealRevenueMedian(row: DealScreenerRow, rows: DealScreenerRow[]) {
+  const peerValues = rows
+    .filter((peer) => {
+      if (peer.companyId === row.companyId) {
+        return false;
+      }
+
+      return row.industry ? peer.industry === row.industry : true;
+    })
+    .map((peer) => peer.revenue)
+    .filter(isFiniteMetric);
+
+  return peerValues.length > 0 ? getMedian(peerValues) : null;
+}
+
+type BenchmarkDirection = "above" | "below" | "near" | "pending";
+
+type BenchmarkInsight = {
+  text: string;
+  direction: BenchmarkDirection;
+};
+
+function buildPercentBenchmarkInsight(params: {
+  label: string;
+  value: number;
+  median: number;
+  tolerance: number;
+}): BenchmarkInsight {
+  const { label, value, median, tolerance } = params;
+  const direction = compareToMedian(value, median, tolerance);
+  const symbol = direction === "above" ? "↑" : direction === "below" ? "↓" : "≈";
+  const delta = value - median;
+
+  return {
+    direction,
+    text: `${symbol} ${label} ${formatBenchmarkPercent(value)} vs ${formatBenchmarkPercent(
+      median
+    )} (${formatBenchmarkPointDelta(delta)})`
+  };
+}
+
+function buildRevenueScaleBenchmarkInsight(params: {
+  value: number;
+  median: number;
+}): BenchmarkInsight {
+  const { value, median } = params;
+  const tolerance = Math.max(Math.abs(median) * 0.1, 1);
+  const direction = compareToMedian(value, median, tolerance);
+  const symbol = direction === "above" ? "↑" : direction === "below" ? "↓" : "≈";
+  const delta = value - median;
+
+  return {
+    direction,
+    text: `${symbol} Revenue scale ${formatCompactCurrency(value)} vs ${formatCompactCurrency(
+      median
+    )} (${formatBenchmarkCurrencyDelta(delta)})`
+  };
+}
+
+function getBenchmarkInsight(row: DealScreenerRow, rows: DealScreenerRow[]): BenchmarkInsight {
+  if (isFiniteMetric(row.ebitdaMarginPercent)) {
+    const median = getIndustryMedian(
+      row,
+      rows,
+      (peer) => peer.ebitdaMarginPercent
+    );
+
+    if (median !== null) {
+      return buildPercentBenchmarkInsight({
+        label: "EBITDA margin",
+        value: row.ebitdaMarginPercent,
+        median,
+        tolerance: 2
+      });
+    }
+  }
+
+  if (isFiniteMetric(row.revenueGrowthPercent)) {
+    const median = getIndustryMedian(
+      row,
+      rows,
+      (peer) => peer.revenueGrowthPercent
+    );
+
+    if (median !== null) {
+      return buildPercentBenchmarkInsight({
+        label: "Revenue growth",
+        value: row.revenueGrowthPercent,
+        median,
+        tolerance: 2
+      });
+    }
+  }
+
+  if (isFiniteMetric(row.revenue)) {
+    const median = getSimilarDealRevenueMedian(row, rows);
+
+    if (median !== null) {
+      return buildRevenueScaleBenchmarkInsight({
+        value: row.revenue,
+        median
+      });
+    }
+  }
+
+  return {
+    direction: "pending",
+    text: "Benchmark pending"
+  };
+}
+
+function benchmarkInsightTone(direction: BenchmarkDirection) {
+  if (direction === "above") {
+    return "text-emerald-700";
+  }
+
+  if (direction === "below") {
+    return "text-rose-700";
+  }
+
+  if (direction === "near") {
+    return "text-amber-700";
+  }
+
+  return "text-slate-400";
 }
 
 function statusTone(status: PortfolioDealStatus) {
@@ -333,6 +521,10 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
   const [dealType, setDealType] = useState<DealType>("Search Fund");
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
+  const [dealToDelete, setDealToDelete] = useState<DealScreenerRow | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isDeletingDeal, setIsDeletingDeal] = useState(false);
 
   useEffect(() => {
     setLocalRows(rows);
@@ -460,6 +652,12 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
     summaryFilter
   ]);
 
+  const benchmarkInsights = useMemo(() => {
+    return new Map(
+      localRows.map((row) => [row.companyId, getBenchmarkInsight(row, localRows)])
+    );
+  }, [localRows]);
+
   function updateSort(nextKey: SortKey) {
     if (nextKey === sortKey) {
       setSortDirection((current) => (current === "asc" ? "desc" : "asc"));
@@ -481,6 +679,54 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
 
   function stopRowNavigation(event: ReactMouseEvent<HTMLElement>) {
     event.stopPropagation();
+  }
+
+  function openDeleteDialog(row: DealScreenerRow) {
+    setOpenActionMenuId(null);
+    setDeleteError(null);
+    setDealToDelete(row);
+  }
+
+  function closeDeleteDialog() {
+    if (isDeletingDeal) {
+      return;
+    }
+
+    setDealToDelete(null);
+    setDeleteError(null);
+  }
+
+  async function handleConfirmDeleteDeal() {
+    if (!dealToDelete || isDeletingDeal) {
+      return;
+    }
+
+    setDeleteError(null);
+    setIsDeletingDeal(true);
+
+    try {
+      const response = await fetch(`/api/companies/${dealToDelete.companyId}`, {
+        method: "DELETE"
+      });
+      const result = (await response.json()) as { error?: string };
+
+      if (!response.ok) {
+        throw new Error(result.error || "Deal could not be deleted.");
+      }
+
+      const deletedCompanyId = dealToDelete.companyId;
+      setLocalRows((currentRows) =>
+        currentRows.filter((row) => row.companyId !== deletedCompanyId)
+      );
+      setDealToDelete(null);
+      router.refresh();
+    } catch (error) {
+      setDeleteError(
+        error instanceof Error ? error.message : "Deal could not be deleted."
+      );
+    } finally {
+      setIsDeletingDeal(false);
+    }
   }
 
   function closeNewDealModal() {
@@ -858,6 +1104,7 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
                   : row.revenue !== null
                     ? `Revenue ${formatCompactCurrency(row.revenue)}`
                     : null;
+              const benchmarkInsight = benchmarkInsights.get(row.companyId);
 
               return (
                 <div
@@ -922,6 +1169,17 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
                         >
                           {financialAnchor ?? "No financials available"}
                         </div>
+                        {financialAnchor &&
+                        benchmarkInsight &&
+                        benchmarkInsight.direction !== "pending" ? (
+                          <div
+                            className={`text-xs font-medium leading-5 ${benchmarkInsightTone(
+                              benchmarkInsight.direction
+                            )}`}
+                          >
+                            {benchmarkInsight.text}
+                          </div>
+                        ) : null}
                       </div>
 
                     </div>
@@ -975,6 +1233,41 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
                             {exportState.label}
                           </a>
                         )}
+                        <div className="relative" onClick={stopRowNavigation}>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setOpenActionMenuId((currentId) =>
+                                currentId === row.companyId ? null : row.companyId
+                              );
+                            }}
+                            className="inline-flex h-8 w-8 items-center justify-center self-end rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                            aria-label={`More actions for ${row.dealName}`}
+                            aria-expanded={openActionMenuId === row.companyId}
+                            aria-haspopup="menu"
+                          >
+                            <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+                          </button>
+                          {openActionMenuId === row.companyId ? (
+                            <div
+                              role="menu"
+                              className="absolute right-0 z-20 mt-2 w-44 rounded-xl border border-slate-200 bg-white p-1 shadow-lg"
+                            >
+                              <button
+                                type="button"
+                                role="menuitem"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  openDeleteDialog(row);
+                                }}
+                                className="flex w-full items-center rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-rose-700"
+                              >
+                                Delete Deal
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1115,6 +1408,72 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
               </button>
             </div>
           </form>
+        </div>
+      ) : null}
+
+      {dealToDelete ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 px-4 py-6"
+          role="presentation"
+          onClick={closeDeleteDialog}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-deal-title"
+            aria-describedby="delete-deal-description"
+            className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-4">
+              <div>
+                <p className="text-[10px] font-medium uppercase tracking-[0.24em] text-slate-400">
+                  Protected Action
+                </p>
+                <h2 id="delete-deal-title" className="mt-1 text-xl font-semibold text-slate-950">
+                  Delete deal?
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={closeDeleteDialog}
+                disabled={isDeletingDeal}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-60"
+                aria-label="Close delete deal confirmation"
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </div>
+
+            <p id="delete-deal-description" className="mt-5 text-sm leading-6 text-slate-600">
+              This will remove this deal and its related workspace data. This action cannot be undone.
+            </p>
+
+            {deleteError ? (
+              <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+                {deleteError}
+              </div>
+            ) : null}
+
+            <div className="mt-6 flex flex-col-reverse gap-3 border-t border-slate-200 pt-4 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={closeDeleteDialog}
+                disabled={isDeletingDeal}
+                className="inline-flex items-center justify-center rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteDeal}
+                disabled={isDeletingDeal}
+                className="inline-flex items-center justify-center rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-rose-700 disabled:opacity-60"
+              >
+                {isDeletingDeal ? "Deleting..." : "Delete Deal"}
+              </button>
+            </div>
+          </div>
         </div>
       ) : null}
     </section>

@@ -124,19 +124,23 @@ function ScheduleRow(props: {
 function ModelRow(props: {
   label: string;
   value: string;
+  helper?: string;
   muted?: boolean;
   emphasized?: boolean;
 }) {
-  const { label, value, muted = false, emphasized = false } = props;
+  const { label, value, helper, muted = false, emphasized = false } = props;
 
   return (
     <div className="flex items-center justify-between gap-4 border-b border-slate-200/70 py-2.5 last:border-b-0">
-      <span
-        className={`text-sm ${
-          emphasized ? "font-semibold text-slate-900" : muted ? "text-slate-500" : "text-slate-700"
-        }`}
-      >
-        {label}
+      <span>
+        <span
+          className={`block text-sm ${
+            emphasized ? "font-semibold text-slate-900" : muted ? "text-slate-500" : "text-slate-700"
+          }`}
+        >
+          {label}
+        </span>
+        {helper ? <span className="mt-0.5 block text-xs text-slate-500">{helper}</span> : null}
       </span>
       <span
         className={`tabular-nums ${
@@ -149,6 +153,30 @@ function ModelRow(props: {
       >
         {value}
       </span>
+    </div>
+  );
+}
+
+function AssumptionReadOnly(props: {
+  label: string;
+  value: string;
+  suffix?: string;
+  helper?: string;
+}) {
+  const { label, value, suffix, helper } = props;
+
+  return (
+    <div className="grid gap-1.5">
+      <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-500">
+        {label}
+      </span>
+      <div className="flex items-center rounded-xl border border-slate-200 bg-slate-100 px-3 py-2">
+        <span className="w-full text-right text-sm font-medium tabular-nums text-slate-700">
+          {value}
+        </span>
+        {suffix ? <span className="ml-2 text-sm text-slate-500">{suffix}</span> : null}
+      </div>
+      {helper ? <span className="text-xs text-slate-500">{helper}</span> : null}
     </div>
   );
 }
@@ -205,24 +233,43 @@ export function ProFormaPanel({
   onScenarioStateChange,
   ebitdaContextMessage = null
 }: ProFormaPanelProps) {
+  const isDevelopment = process.env.NODE_ENV !== "production";
   const parsedInputs = useMemo(
     () => parseCreditScenarioInputValues(workbenchInputValues),
     [workbenchInputValues]
   );
   const selectedScenario = scenarioState.scenarios[scenarioState.selected];
+  const selectedScenarioCanOverrideStructure = scenarioState.selected !== "base";
+  const selectedScenarioUplift = scenarioState.selected === "base" ? 0 : selectedScenario.uplift;
   const hasCanonicalEbitda = canonicalEbitda !== null;
   const ebitdaChain = buildEbitdaChain({
     canonicalEbitda,
     acceptedAddbacks: acceptedAddBackTotal,
-    uplift: selectedScenario.uplift
+    uplift: selectedScenarioUplift
   });
   const reportedEbitdaDisplayValue = reportedEbitda ?? canonicalEbitda;
   const acceptedAddBacks = ebitdaChain.acceptedAddbacks;
   const adjustedEbitda = ebitdaChain.adjustedEbitda;
   const proFormaEbitda = ebitdaChain.proFormaEbitda;
-  const effectiveDebt = selectedScenario.debt ?? parsedInputs.loanAmount;
-  const effectiveInterestRate =
-    selectedScenario.interestRate ?? parsedInputs.annualInterestRatePercent;
+  const workbenchDebt = parsedInputs.loanAmount;
+  const workbenchInterestRate = parsedInputs.annualInterestRatePercent;
+  const scenarioDebtOverride = selectedScenarioCanOverrideStructure ? selectedScenario.debt : null;
+  const scenarioInterestRateOverride = selectedScenarioCanOverrideStructure
+    ? selectedScenario.interestRate
+    : null;
+  const effectiveDebt = scenarioDebtOverride ?? workbenchDebt;
+  const effectiveInterestRate = scenarioInterestRateOverride ?? workbenchInterestRate;
+  const debtSource = scenarioDebtOverride !== null ? "Scenario override" : "From Workbench";
+  const interestRateSource =
+    scenarioInterestRateOverride !== null ? "Scenario override" : "From Workbench";
+  const debtOverrideHelper =
+    scenarioDebtOverride === null
+      ? `Using Workbench default${workbenchDebt !== null ? ` (${formatCreditScenarioCurrency(workbenchDebt)})` : ""}.`
+      : "Scenario override.";
+  const interestRateOverrideHelper =
+    scenarioInterestRateOverride === null
+      ? `Using Workbench default${workbenchInterestRate !== null ? ` (${workbenchInterestRate.toFixed(2)}%)` : ""}.`
+      : "Scenario override.";
   const effectiveInputs = {
     ...parsedInputs,
     loanAmount: effectiveDebt,
@@ -239,9 +286,9 @@ export function ProFormaPanel({
       buildEbitdaChain({
         canonicalEbitda,
         acceptedAddbacks: acceptedAddBackTotal,
-        uplift: scenarioState.scenarios.base.uplift
+        uplift: 0
       }).proFormaEbitda,
-    [acceptedAddBackTotal, canonicalEbitda, scenarioState.scenarios.base.uplift]
+    [acceptedAddBackTotal, canonicalEbitda]
   );
   const impactVsBase =
     scenarioState.selected !== "base" &&
@@ -276,7 +323,7 @@ export function ProFormaPanel({
       const baseValue = buildEbitdaChain({
         canonicalEbitda,
         acceptedAddbacks: acceptedAddBackTotal,
-        uplift: scenarioState.scenarios.base.uplift
+        uplift: 0
       }).proFormaEbitda;
 
       return (Object.keys(SCENARIO_LABELS) as UnderwritingScenarioKey[]).map((key) => {
@@ -284,8 +331,21 @@ export function ProFormaPanel({
         const scenarioProForma = buildEbitdaChain({
           canonicalEbitda,
           acceptedAddbacks: acceptedAddBackTotal,
-          uplift: scenario.uplift
+          uplift: key === "base" ? 0 : scenario.uplift
         }).proFormaEbitda;
+        const scenarioDebt = key === "base" ? parsedInputs.loanAmount : scenario.debt ?? parsedInputs.loanAmount;
+        const scenarioInterestRate =
+          key === "base"
+            ? parsedInputs.annualInterestRatePercent
+            : scenario.interestRate ?? parsedInputs.annualInterestRatePercent;
+        const scenarioCredit = buildCreditScenario({
+          inputs: {
+            ...parsedInputs,
+            loanAmount: scenarioDebt,
+            annualInterestRatePercent: scenarioInterestRate
+          },
+          ebitda: scenarioProForma
+        });
 
         return {
           key,
@@ -294,6 +354,14 @@ export function ProFormaPanel({
             scenarioProForma === null
               ? "Pending inputs"
               : formatCreditScenarioCurrency(scenarioProForma),
+          dscrValue:
+            scenarioCredit.metrics.dscr.value === null
+              ? "DSCR pending"
+              : formatMultiple(scenarioCredit.metrics.dscr.value),
+          debtToEbitdaValue:
+            scenarioCredit.metrics.debtToEbitda.value === null
+              ? null
+              : formatMultiple(scenarioCredit.metrics.debtToEbitda.value),
           delta:
             key === "base" || scenarioProForma === null || baseValue === null
               ? null
@@ -301,7 +369,7 @@ export function ProFormaPanel({
         };
       });
     },
-    [acceptedAddBackTotal, canonicalEbitda, scenarioState.scenarios]
+    [acceptedAddBackTotal, canonicalEbitda, parsedInputs, scenarioState.scenarios]
   );
 
   function updateSelectedScenario(
@@ -458,8 +526,16 @@ export function ProFormaPanel({
                 {item.label}
               </p>
               <p className="mt-1 text-sm font-semibold tabular-nums text-slate-950">
-                {item.label}: {item.value}
+                EBITDA {item.value}
               </p>
+              <p className="mt-1 text-xs font-medium tabular-nums text-slate-700">
+                {item.dscrValue}
+              </p>
+              {item.debtToEbitdaValue !== null ? (
+                <p className="mt-0.5 text-xs font-medium tabular-nums text-slate-700">
+                  Debt/EBITDA {item.debtToEbitdaValue}
+                </p>
+              ) : null}
               {item.delta !== null ? (
                 <p
                   className={`mt-0.5 text-xs font-medium tabular-nums ${
@@ -487,52 +563,86 @@ export function ProFormaPanel({
             Scenario Assumptions
           </p>
           <p className="text-sm text-slate-600">
-            {SCENARIO_LABELS[scenarioState.selected]} can override uplift, rate, and debt while other structure inputs continue to flow from Default inputs.
+            {scenarioState.selected === "base"
+              ? "Base uses Workbench debt, rate, and amortization directly."
+              : `${SCENARIO_LABELS[scenarioState.selected]} can model EBITDA uplift and optional debt or rate overrides.`}
           </p>
         </div>
-        <div className="mt-3 grid gap-3 md:grid-cols-[1.15fr_0.925fr_0.925fr]">
-          <AssumptionField
-            label="Uplift"
-            value={String(selectedScenario.uplift)}
-            placeholder="0"
-            emphasized
-            onChange={(value) =>
-              updateSelectedScenario((scenario) => ({
-                ...scenario,
-                uplift: parseNullableInputValue(value) ?? 0
-              }))
-            }
-            helper="Primary scenario lever. Applied after adjusted EBITDA."
-          />
-          <AssumptionField
-            label="Interest Rate"
-            value={scenarioFieldValue(selectedScenario.interestRate)}
-            placeholder={parsedInputs.annualInterestRatePercent?.toFixed(2) ?? "Default"}
-            suffix="%"
-            onChange={(value) =>
-              updateSelectedScenario((scenario) => ({
-                ...scenario,
-                interestRate: parseNullableInputValue(value)
-              }))
-            }
-            helper={`Blank uses Default${parsedInputs.annualInterestRatePercent !== null ? ` (${parsedInputs.annualInterestRatePercent.toFixed(2)}%)` : ""}.`}
-          />
-          <AssumptionField
-            label="Debt"
-            value={scenarioFieldValue(selectedScenario.debt)}
-            placeholder={
-              parsedInputs.loanAmount !== null
-                ? formatCreditScenarioCurrency(parsedInputs.loanAmount)
-                : "Default"
-            }
-            onChange={(value) =>
-              updateSelectedScenario((scenario) => ({
-                ...scenario,
-                debt: parseNullableInputValue(value)
-              }))
-            }
-            helper={`Blank uses Default${parsedInputs.loanAmount !== null ? ` (${formatCreditScenarioCurrency(parsedInputs.loanAmount)})` : ""}.`}
-          />
+        <div className="mt-3 grid gap-3 md:grid-cols-3">
+          {selectedScenarioCanOverrideStructure ? (
+            <>
+              <AssumptionField
+                label="EBITDA Uplift"
+                value={String(selectedScenario.uplift)}
+                placeholder="0"
+                emphasized
+                onChange={(value) =>
+                  updateSelectedScenario((scenario) => ({
+                    ...scenario,
+                    uplift: parseNullableInputValue(value) ?? 0
+                  }))
+                }
+                helper="Primary scenario lever. Applied after adjusted EBITDA."
+              />
+              <AssumptionField
+                label="Override Debt"
+                value={scenarioFieldValue(selectedScenario.debt)}
+                placeholder={
+                  parsedInputs.loanAmount !== null
+                    ? formatCreditScenarioCurrency(parsedInputs.loanAmount)
+                    : "Workbench"
+                }
+                onChange={(value) =>
+                  updateSelectedScenario((scenario) => ({
+                    ...scenario,
+                    debt: parseNullableInputValue(value)
+                  }))
+                }
+                helper={debtOverrideHelper}
+              />
+              <AssumptionField
+                label="Override Interest Rate"
+                value={scenarioFieldValue(selectedScenario.interestRate)}
+                placeholder={parsedInputs.annualInterestRatePercent?.toFixed(2) ?? "Workbench"}
+                suffix="%"
+                onChange={(value) =>
+                  updateSelectedScenario((scenario) => ({
+                    ...scenario,
+                    interestRate: parseNullableInputValue(value)
+                  }))
+                }
+                helper={interestRateOverrideHelper}
+              />
+            </>
+          ) : (
+            <>
+              <AssumptionReadOnly
+                label="Debt"
+                value={formatCreditScenarioCurrency(parsedInputs.loanAmount)}
+                helper="(from Workbench)"
+              />
+              <AssumptionReadOnly
+                label="Interest Rate"
+                value={
+                  parsedInputs.annualInterestRatePercent === null
+                    ? "Pending inputs"
+                    : parsedInputs.annualInterestRatePercent.toFixed(2)
+                }
+                suffix={parsedInputs.annualInterestRatePercent === null ? undefined : "%"}
+                helper="(from Workbench)"
+              />
+              <AssumptionReadOnly
+                label="Amortization"
+                value={
+                  parsedInputs.amortizationYears === null
+                    ? "Pending inputs"
+                    : parsedInputs.amortizationYears.toFixed(1)
+                }
+                suffix={parsedInputs.amortizationYears === null ? undefined : "yrs"}
+                helper="(from Workbench)"
+              />
+            </>
+          )}
         </div>
       </section>
 
@@ -597,7 +707,7 @@ export function ProFormaPanel({
           />
           <ScheduleRow
             label="Pro Forma Uplift"
-            value={formatCurrency(selectedScenario.uplift)}
+            value={formatCurrency(selectedScenarioUplift)}
             prefix="+"
           />
           <ScheduleRow
@@ -630,7 +740,11 @@ export function ProFormaPanel({
               </p>
               <div className="mt-3">
                 <ModelRow label="Purchase Price" value={formatCreditScenarioCurrency(purchasePrice)} />
-                <ModelRow label="Debt" value={formatCreditScenarioCurrency(debt)} />
+                <ModelRow
+                  label="Debt"
+                  value={formatCreditScenarioCurrency(debt)}
+                  helper={debtSource}
+                />
                 <ModelRow
                   label="Equity"
                   value={
@@ -643,11 +757,13 @@ export function ProFormaPanel({
                 <ModelRow
                   label="Interest Rate"
                   value={interestRate === null ? "Pending inputs" : `${interestRate.toFixed(2)}%`}
+                  helper={interestRateSource}
                   muted={interestRate === null}
                 />
                 <ModelRow
                   label="Amortization"
                   value={amortization === null ? "Pending inputs" : `${amortization.toFixed(1)} yrs`}
+                  helper="From Workbench"
                   muted={amortization === null}
                 />
               </div>
@@ -690,6 +806,34 @@ export function ProFormaPanel({
           </div>
         </div>
       </details>
+
+      {isDevelopment ? (
+        <section className="mt-3 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-xs text-slate-700">
+          <p className="font-medium uppercase tracking-[0.12em] text-slate-500">
+            Assumption Debug
+          </p>
+          <div className="mt-2 grid gap-1 md:grid-cols-2">
+            <p>workbenchDebt: {formatCreditScenarioCurrency(workbenchDebt)}</p>
+            <p>scenarioDebtOverride: {formatCreditScenarioCurrency(scenarioDebtOverride)}</p>
+            <p>effectiveDebt: {formatCreditScenarioCurrency(effectiveDebt)}</p>
+            <p>
+              workbenchInterestRate:{" "}
+              {workbenchInterestRate === null ? "null" : `${workbenchInterestRate.toFixed(2)}%`}
+            </p>
+            <p>
+              scenarioInterestRateOverride:{" "}
+              {scenarioInterestRateOverride === null
+                ? "null"
+                : `${scenarioInterestRateOverride.toFixed(2)}%`}
+            </p>
+            <p>
+              effectiveInterestRate:{" "}
+              {effectiveInterestRate === null ? "null" : `${effectiveInterestRate.toFixed(2)}%`}
+            </p>
+            <p>selectedScenario: {scenarioState.selected}</p>
+          </div>
+        </section>
+      ) : null}
     </section>
   );
 }

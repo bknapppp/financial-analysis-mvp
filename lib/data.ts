@@ -72,6 +72,7 @@ export type DealScreenerRow = {
   adjustedEbitda: number | null;
   acceptedAddBacks: number | null;
   ebitdaMarginPercent: number | null;
+  revenueGrowthPercent: number | null;
   addBacksPercent: number | null;
   hasAddBacks: boolean;
   addBacksAboveThreshold: boolean;
@@ -371,6 +372,7 @@ async function buildDealScreenerRow(params: {
     adjustedEbitda: snapshot.periodId ? snapshot.adjustedEbitda : null,
     acceptedAddBacks: snapshot.periodId ? snapshot.acceptedAddBacks : null,
     ebitdaMarginPercent: snapshot.periodId ? snapshot.ebitdaMarginPercent : null,
+    revenueGrowthPercent: snapshot.periodId ? snapshot.revenueGrowthPercent : null,
     addBacksPercent:
       snapshot.periodId && snapshot.ebitda !== null && snapshot.ebitda !== 0
         ? (snapshot.acceptedAddBacks / Math.abs(snapshot.ebitda)) * 100
