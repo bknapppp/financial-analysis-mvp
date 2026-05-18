@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { buildBalanceSheet as buildSnapshotBalanceSheet, buildIncomeStatement as buildSnapshotIncomeStatement } from "@/lib/calculations";
-import { AddBackReviewPanel } from "@/components/add-back-review-panel";
 import { BackingChip } from "@/components/backing-chip";
 import {
   CreditScenarioPanel,
@@ -18,20 +18,12 @@ import {
   buildBalanceSheetValidation,
   canonicalizeCategoryPath
 } from "@/components/financials-view-rollup";
-import { DashboardCharts } from "@/components/dashboard-charts";
 import { DealPageNavigation } from "@/components/deal-page-navigation";
 import { DealStageSelect } from "@/components/deal-stage-select";
 import { DealNextActionsPanel } from "@/components/deal-next-actions-panel";
 import { DiligenceFeedbackPanel } from "@/components/diligence-feedback-panel";
-import { DiligenceIssuesPanel } from "@/components/diligence-issues-panel";
 import { BackingSummaryPanel } from "@/components/backing-summary-panel";
-import { DocumentDrawer } from "@/components/document-drawer";
-import { InvestmentOverviewPanel } from "@/components/investment-overview-panel";
-import { MultiPeriodSummaryTable } from "@/components/multi-period-summary-table";
-import { PerformanceDrivers } from "@/components/performance-drivers";
-import { ProFormaPanel } from "@/components/pro-forma-panel";
 import { StatementTable } from "@/components/statement-table";
-import { UnderwritingSnapshotPanel } from "@/components/underwriting-snapshot-panel";
 import { buildDealActionHref, buildDealState } from "@/lib/deal-state";
 import { getDealStageDisplay, getDealStageLabel } from "@/lib/deal-stage";
 import { devLog } from "@/lib/debug";
@@ -58,6 +50,34 @@ type DealWorkspaceViewProps = {
 };
 
 type FinancialsMode = "reported" | "adjusted";
+
+const DashboardCharts = dynamic(() =>
+  import("@/components/dashboard-charts").then((mod) => mod.DashboardCharts)
+);
+const PerformanceDrivers = dynamic(() =>
+  import("@/components/performance-drivers").then((mod) => mod.PerformanceDrivers)
+);
+const MultiPeriodSummaryTable = dynamic(() =>
+  import("@/components/multi-period-summary-table").then((mod) => mod.MultiPeriodSummaryTable)
+);
+const InvestmentOverviewPanel = dynamic(() =>
+  import("@/components/investment-overview-panel").then((mod) => mod.InvestmentOverviewPanel)
+);
+const DiligenceIssuesPanel = dynamic(() =>
+  import("@/components/diligence-issues-panel").then((mod) => mod.DiligenceIssuesPanel)
+);
+const AddBackReviewPanel = dynamic(() =>
+  import("@/components/add-back-review-panel").then((mod) => mod.AddBackReviewPanel)
+);
+const ProFormaPanel = dynamic(() =>
+  import("@/components/pro-forma-panel").then((mod) => mod.ProFormaPanel)
+);
+const UnderwritingSnapshotPanel = dynamic(() =>
+  import("@/components/underwriting-snapshot-panel").then((mod) => mod.UnderwritingSnapshotPanel)
+);
+const DocumentDrawer = dynamic(() =>
+  import("@/components/document-drawer").then((mod) => mod.DocumentDrawer)
+);
 
 function createDefaultUnderwritingScenario(): UnderwritingScenario {
   return {
@@ -614,6 +634,7 @@ export function DealWorkspaceView({ data, section }: DealWorkspaceViewProps) {
         dataQuality: data.dataQuality,
         taxSourceStatus: data.taxSourceStatus,
         reconciliation: data.reconciliation,
+        readiness: data.readiness,
         underwritingInputs: parsedUnderwritingInputs,
         ebitdaBasis: underwritingEbitdaBasis,
         acceptedAddBackTotal: effectiveAddBackTotal
@@ -622,6 +643,7 @@ export function DealWorkspaceView({ data, section }: DealWorkspaceViewProps) {
       data.dataQuality,
       data.entries,
       data.reconciliation,
+      data.readiness,
       data.taxSourceStatus,
       effectiveSnapshot,
       parsedUnderwritingInputs,

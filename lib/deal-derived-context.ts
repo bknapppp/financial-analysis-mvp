@@ -357,6 +357,7 @@ export function buildDealDerivedContextFromCore(params: {
     dataQuality: params.core.dataQuality,
     taxSourceStatus: params.taxSourceStatus,
     reconciliation: params.core.reconciliation,
+    readiness: params.core.readiness,
     underwritingInputs,
     ebitdaBasis: params.core.ebitdaBasis === "reported" ? "computed" : "adjusted"
   });

@@ -25,6 +25,7 @@ const HIGH_ADDBACK_THRESHOLD_PCT = 0.25;
 export type SourceReconciliationFlag = {
   type:
     | "tax_revenue_lower_than_reported"
+    | "tax_ebitda_mismatch_reported_reference"
     | "tax_ebitda_lower_than_computed"
     | "tax_ebitda_much_lower_than_adjusted"
     | "high_addback_percentage";
@@ -115,6 +116,10 @@ function safeDeltaPct(base: number | null, candidate: number | null) {
   const delta = base - candidate;
 
   return Math.abs(delta) / Math.abs(base);
+}
+
+function isZeroBaseMismatch(base: number | null, candidate: number | null) {
+  return base !== null && candidate !== null && base === 0 && candidate !== 0;
 }
 
 function matchesTaxPeriod(params: {
@@ -245,6 +250,19 @@ export function buildSourceReconciliation(params: {
       metric: "EBITDA",
       value: computedVsTaxDelta,
       explanation: "Tax-derived EBITDA is materially lower than canonical EBITDA."
+    });
+  }
+
+  if (
+    isZeroBaseMismatch(normalizedReportedEbitdaReference, normalizedTaxEbitda) &&
+    reportedReferenceVsTaxDelta !== null
+  ) {
+    flags.push({
+      type: "tax_ebitda_mismatch_reported_reference",
+      metric: "EBITDA",
+      value: reportedReferenceVsTaxDelta,
+      explanation:
+        "Tax-derived EBITDA differs from reported EBITDA while the reported EBITDA basis is zero."
     });
   }
 

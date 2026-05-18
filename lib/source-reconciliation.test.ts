@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
-import { buildSourceReconciliation } from "./source-reconciliation.ts";
+import {
+  buildSourceReconciliation,
+  getSourceReconciliationForContext
+} from "./source-reconciliation.ts";
+import type { SourceFinancialContext } from "./types.ts";
 import type { TaxDerivedEbitdaResult } from "./tax-ebitda.ts";
 
 const baseTaxResult: TaxDerivedEbitdaResult = {
@@ -257,6 +261,93 @@ const zeroRevenueResult = buildSourceReconciliation({
 assert.equal(zeroRevenueResult.revenue.deltaPct, null);
 assert.equal(zeroRevenueResult.comparisons.computedVsTax.deltaPct, null);
 
+const reportedZeroTaxNonZeroResult = buildSourceReconciliation({
+  companyId: "company-1",
+  periodId: "reported-period-zero-base",
+  reportedPeriod: {
+    id: "reported-period-zero-base",
+    company_id: "company-1",
+    label: "Zero EBITDA",
+    period_date: "2023-12-31",
+    created_at: "2026-04-09T00:00:00.000Z"
+  },
+  reportedRevenue: 1000,
+  reconstructedEbitda: null,
+  reportedEbitdaReference: 0,
+  adjustedEbitda: null,
+  taxResult: {
+    ...baseTaxResult,
+    taxDerivedEBITDA: 125,
+    taxDerivedEBITDAIncludingInterest: 125
+  }
+});
+assert.equal(reportedZeroTaxNonZeroResult.comparisons.reportedReferenceVsTax.delta, -125);
+assert.equal(reportedZeroTaxNonZeroResult.comparisons.reportedReferenceVsTax.deltaPct, null);
+assert.ok(
+  reportedZeroTaxNonZeroResult.flags.some(
+    (flag) => flag.type === "tax_ebitda_mismatch_reported_reference"
+  )
+);
+
+const reportedZeroTaxZeroResult = buildSourceReconciliation({
+  companyId: "company-1",
+  periodId: "reported-period-zero-match",
+  reportedPeriod: {
+    id: "reported-period-zero-match",
+    company_id: "company-1",
+    label: "Zero EBITDA match",
+    period_date: "2023-12-31",
+    created_at: "2026-04-09T00:00:00.000Z"
+  },
+  reportedRevenue: 1000,
+  reconstructedEbitda: null,
+  reportedEbitdaReference: 0,
+  adjustedEbitda: null,
+  taxResult: {
+    ...baseTaxResult,
+    taxDerivedEBITDA: 0,
+    taxDerivedEBITDAIncludingInterest: 0
+  }
+});
+assert.equal(reportedZeroTaxZeroResult.comparisons.reportedReferenceVsTax.delta, 0);
+assert.equal(reportedZeroTaxZeroResult.comparisons.reportedReferenceVsTax.deltaPct, null);
+assert.equal(
+  reportedZeroTaxZeroResult.flags.some(
+    (flag) => flag.type === "tax_ebitda_mismatch_reported_reference"
+  ),
+  false
+);
+
+const reportedMissingTaxNonZeroResult = buildSourceReconciliation({
+  companyId: "company-1",
+  periodId: "reported-period-missing-base",
+  reportedPeriod: {
+    id: "reported-period-missing-base",
+    company_id: "company-1",
+    label: "Missing EBITDA",
+    period_date: "2023-12-31",
+    created_at: "2026-04-09T00:00:00.000Z"
+  },
+  reportedRevenue: 1000,
+  reconstructedEbitda: null,
+  reportedEbitdaReference: null,
+  adjustedEbitda: null,
+  taxResult: {
+    ...baseTaxResult,
+    taxDerivedEBITDA: 125,
+    taxDerivedEBITDAIncludingInterest: 125
+  }
+});
+assert.equal(reportedMissingTaxNonZeroResult.comparisons.reportedReferenceVsTax.delta, null);
+assert.equal(reportedMissingTaxNonZeroResult.comparisons.reportedReferenceVsTax.deltaPct, null);
+assert.equal(reportedMissingTaxNonZeroResult.coverage.hasReportedEbitdaReference, false);
+assert.equal(
+  reportedMissingTaxNonZeroResult.flags.some(
+    (flag) => flag.type === "tax_ebitda_mismatch_reported_reference"
+  ),
+  false
+);
+
 const normalizedSignConventionResult = buildSourceReconciliation({
   companyId: "company-1",
   periodId: "reported-period-3",
@@ -392,5 +483,64 @@ void buildSourceReconciliation({
   taxResult: baseTaxResult
 });
 assert.equal(JSON.stringify(reportedSnapshot), reportedSnapshotBefore);
+
+const periodMismatchResult = await getSourceReconciliationForContext({
+  companyId: "company-1",
+  periodId: "reported-period-mismatch",
+  periods: [
+    {
+      id: "reported-period-mismatch",
+      company_id: "company-1",
+      label: "FY2023",
+      period_date: "2023-12-31",
+      created_at: "2026-04-09T00:00:00.000Z"
+    }
+  ],
+  entries: [],
+  addBacks: [],
+  snapshots: [
+    {
+      periodId: "reported-period-mismatch",
+      label: "FY2023",
+      periodDate: "2023-12-31",
+      revenue: 1000,
+      ebitda: null,
+      reportedEbitda: 0,
+      adjustedEbitda: null
+    }
+  ],
+  taxContext: {
+    sourceType: "tax_return",
+    periods: [
+      {
+        id: "tax-period-mismatch",
+        source_document_id: null,
+        label: "FY2022",
+        period_date: "2022-12-31",
+        source_period_label: "FY2022",
+        source_year: 2022,
+        created_at: "2026-04-09T00:00:00.000Z",
+        source_type: "tax_return",
+        source_file_name: null,
+        upload_id: null,
+        source_currency: null,
+        source_confidence: null
+      }
+    ],
+    entries: [],
+    documents: []
+  } satisfies SourceFinancialContext
+});
+assert.equal(periodMismatchResult.taxSourcePeriodId, null);
+assert.equal(periodMismatchResult.ebitda.reportedReference, 0);
+assert.equal(periodMismatchResult.ebitda.tax, null);
+assert.equal(periodMismatchResult.comparisons.reportedReferenceVsTax.delta, null);
+assert.equal(periodMismatchResult.comparisons.reportedReferenceVsTax.deltaPct, null);
+assert.equal(
+  periodMismatchResult.flags.some(
+    (flag) => flag.type === "tax_ebitda_mismatch_reported_reference"
+  ),
+  false
+);
 
 console.log("source-reconciliation tests passed");

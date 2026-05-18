@@ -100,12 +100,21 @@ function buildEmptyDashboardData(companies: Company[]): DashboardData {
     issues: []
   };
   const emptyTaxSourceStatus = buildEmptyTaxSourceStatus();
+  const emptyReadiness = buildDataReadiness({
+    snapshot: EMPTY_SNAPSHOT,
+    entries: [],
+    addBacks: [],
+    reviewItems: [],
+    reconciliation: emptyReconciliation,
+    dataQuality: emptyQuality
+  });
   const emptyUnderwritingAnalysis = buildUnderwritingAnalysis({
     snapshot: EMPTY_SNAPSHOT,
     entries: [],
     dataQuality: emptyQuality,
     taxSourceStatus: emptyTaxSourceStatus,
     reconciliation: emptyReconciliation,
+    readiness: emptyReadiness,
     underwritingInputs: DEFAULT_UNDERWRITING_INPUTS,
     ebitdaBasis: "adjusted"
   });
@@ -139,14 +148,7 @@ function buildEmptyDashboardData(companies: Company[]): DashboardData {
     executiveSummary: null,
     similarDeals: [],
     dataQuality: emptyQuality,
-    readiness: buildDataReadiness({
-      snapshot: EMPTY_SNAPSHOT,
-      entries: [],
-      addBacks: [],
-      reviewItems: [],
-      reconciliation: emptyReconciliation,
-      dataQuality: emptyQuality
-    }),
+    readiness: emptyReadiness,
     taxSourceStatus: emptyTaxSourceStatus,
     documents: [],
     documentLinks: [],
@@ -267,6 +269,7 @@ async function buildDealScreenerRow(params: {
     dataQuality: context.dataQuality,
     taxSourceStatus: context.taxSourceStatus,
     reconciliation: context.reconciliation,
+    readiness: context.readiness,
     underwritingInputs: DEFAULT_UNDERWRITING_INPUTS,
     ebitdaBasis: "adjusted"
   });

@@ -2,6 +2,7 @@ import { buildCreditScenario } from "../credit-scenario.ts";
 import type {
   CreditScenarioInputs,
   DataQualityReport,
+  DataReadiness,
   FinancialEntry,
   PeriodSnapshot,
   ReconciliationReport,
@@ -19,6 +20,7 @@ export function buildUnderwritingAnalysis(params: {
   dataQuality: DataQualityReport;
   taxSourceStatus: TaxSourceStatus;
   reconciliation: ReconciliationReport;
+  readiness?: DataReadiness | null;
   underwritingInputs: CreditScenarioInputs;
   ebitdaBasis: UnderwritingEbitdaBasis;
   acceptedAddBackTotal?: number;
@@ -29,17 +31,22 @@ export function buildUnderwritingAnalysis(params: {
     dataQuality,
     taxSourceStatus,
     reconciliation,
+    readiness,
     underwritingInputs,
     ebitdaBasis
   } = params;
   const acceptedAddBackTotal =
     params.acceptedAddBackTotal ?? snapshot.acceptedAddBacks ?? 0;
   const canonicalEbitda = snapshot.ebitda;
-  const adjustedEbitda = getAdjustedEbitda({
+  const rawAdjustedEbitda = getAdjustedEbitda({
     canonicalEbitda,
     acceptedAddbacks: acceptedAddBackTotal
   });
-  const selectedEbitda = ebitdaBasis === "adjusted" ? adjustedEbitda : canonicalEbitda;
+  const adjustedEbitda = readiness?.status === "blocked" ? null : rawAdjustedEbitda;
+  const selectedEbitda =
+    ebitdaBasis === "adjusted"
+      ? adjustedEbitda ?? (isValidCreditEbitda(canonicalEbitda) ? canonicalEbitda : null)
+      : canonicalEbitda;
   const creditScenario = buildCreditScenario({
     inputs: underwritingInputs,
     ebitda: selectedEbitda
@@ -78,4 +85,8 @@ export function buildUnderwritingAnalysis(params: {
     completionSummary,
     investmentOverview
   };
+}
+
+function isValidCreditEbitda(value: number | null): value is number {
+  return value !== null && Number.isFinite(value) && value > 0;
 }
