@@ -1270,6 +1270,9 @@ export function DealWorkspaceView({ data, section }: DealWorkspaceViewProps) {
                 scenarioState={underwritingScenarioState}
                 onScenarioStateChange={setUnderwritingScenarioState}
                 ebitdaContextMessage={ebitdaSupportContext}
+                industry={data.company?.industry ?? null}
+                revenue={effectiveSnapshot.revenue}
+                revenueGrowthPercent={effectiveSnapshot.revenueGrowthPercent}
               />
             </section>
 

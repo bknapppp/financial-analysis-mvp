@@ -18,6 +18,13 @@ import {
   type DealStage,
   type DealStageFilter
 } from "@/lib/deal-stage";
+import { calculateBenchmarks } from "@/lib/benchmarking/calculate-benchmarks";
+import {
+  formatBenchmarkMetricValue,
+  formatBenchmarkVariance,
+  getBenchmarkDirectionLabel,
+  type BenchmarkDirection
+} from "@/lib/benchmarking/benchmark-labels";
 import { isRecentlyUpdated, type PortfolioDealStatus } from "@/lib/portfolio-deal-state";
 import type { DealScreenerRow } from "@/lib/data";
 
@@ -209,174 +216,51 @@ function getExportState(row: DealScreenerRow) {
   };
 }
 
-function isFiniteMetric(value: number | null | undefined): value is number {
-  return typeof value === "number" && Number.isFinite(value);
-}
-
-function getMedian(values: number[]) {
-  const sortedValues = [...values].sort((left, right) => left - right);
-  const middleIndex = Math.floor(sortedValues.length / 2);
-
-  return sortedValues.length % 2 === 0
-    ? (sortedValues[middleIndex - 1] + sortedValues[middleIndex]) / 2
-    : sortedValues[middleIndex];
-}
-
-function compareToMedian(
-  value: number,
-  median: number,
-  tolerance: number
-): "above" | "below" | "near" {
-  return Math.abs(value - median) <= tolerance
-    ? "near"
-    : value > median
-      ? "above"
-      : "below";
-}
-
-function formatBenchmarkPercent(value: number) {
-  return `${new Intl.NumberFormat("en-US", {
-    maximumFractionDigits: Number.isInteger(value) ? 0 : 1
-  }).format(value)}%`;
-}
-
-function formatBenchmarkPointDelta(value: number) {
-  const formattedValue = new Intl.NumberFormat("en-US", {
-    maximumFractionDigits: Number.isInteger(value) ? 0 : 1
-  }).format(Math.abs(value));
-
-  return `${value >= 0 ? "+" : "-"}${formattedValue} pts`;
-}
-
-function formatBenchmarkCurrencyDelta(value: number) {
-  return `${value >= 0 ? "+" : "-"}${formatCompactCurrency(Math.abs(value))}`;
-}
-
-function getIndustryMedian(
-  row: DealScreenerRow,
-  rows: DealScreenerRow[],
-  metric: (peer: DealScreenerRow) => number | null
-) {
-  if (!row.industry) {
-    return null;
-  }
-
-  const peerValues = rows
-    .filter((peer) => peer.companyId !== row.companyId && peer.industry === row.industry)
-    .map(metric)
-    .filter(isFiniteMetric);
-
-  return peerValues.length > 0 ? getMedian(peerValues) : null;
-}
-
-function getSimilarDealRevenueMedian(row: DealScreenerRow, rows: DealScreenerRow[]) {
-  const peerValues = rows
-    .filter((peer) => {
-      if (peer.companyId === row.companyId) {
-        return false;
-      }
-
-      return row.industry ? peer.industry === row.industry : true;
-    })
-    .map((peer) => peer.revenue)
-    .filter(isFiniteMetric);
-
-  return peerValues.length > 0 ? getMedian(peerValues) : null;
-}
-
-type BenchmarkDirection = "above" | "below" | "near" | "pending";
-
 type BenchmarkInsight = {
   text: string;
   direction: BenchmarkDirection;
 };
 
-function buildPercentBenchmarkInsight(params: {
-  label: string;
-  value: number;
-  median: number;
-  tolerance: number;
-}): BenchmarkInsight {
-  const { label, value, median, tolerance } = params;
-  const direction = compareToMedian(value, median, tolerance);
-  const symbol = direction === "above" ? "↑" : direction === "below" ? "↓" : "≈";
-  const delta = value - median;
+function getBenchmarkInsight(row: DealScreenerRow): BenchmarkInsight | null {
+  const financialCompleteness =
+    row.revenue !== null &&
+    row.ebitda !== null &&
+    row.ebitdaMarginPercent !== null &&
+    row.debtToEbitda !== null
+      ? "complete"
+      : row.ebitdaMarginPercent !== null ||
+          row.revenueGrowthPercent !== null ||
+          row.debtToEbitda !== null
+        ? "partial"
+        : "limited";
+  const result = calculateBenchmarks({
+    industry: row.industry,
+    financialCompleteness,
+    metrics: {
+      ebitdaMarginPercent: row.ebitdaMarginPercent,
+      revenueGrowthPercent: row.revenueGrowthPercent,
+      debtToEbitda: row.debtToEbitda
+    },
+    metricKeys: ["ebitdaMarginPercent", "revenueGrowthPercent", "debtToEbitda"]
+  });
+  const comparison = result.supportedComparisons[0] ?? null;
 
-  return {
-    direction,
-    text: `${symbol} ${label} ${formatBenchmarkPercent(value)} vs ${formatBenchmarkPercent(
-      median
-    )} (${formatBenchmarkPointDelta(delta)})`
-  };
-}
-
-function buildRevenueScaleBenchmarkInsight(params: {
-  value: number;
-  median: number;
-}): BenchmarkInsight {
-  const { value, median } = params;
-  const tolerance = Math.max(Math.abs(median) * 0.1, 1);
-  const direction = compareToMedian(value, median, tolerance);
-  const symbol = direction === "above" ? "↑" : direction === "below" ? "↓" : "≈";
-  const delta = value - median;
-
-  return {
-    direction,
-    text: `${symbol} Revenue scale ${formatCompactCurrency(value)} vs ${formatCompactCurrency(
-      median
-    )} (${formatBenchmarkCurrencyDelta(delta)})`
-  };
-}
-
-function getBenchmarkInsight(row: DealScreenerRow, rows: DealScreenerRow[]): BenchmarkInsight {
-  if (isFiniteMetric(row.ebitdaMarginPercent)) {
-    const median = getIndustryMedian(
-      row,
-      rows,
-      (peer) => peer.ebitdaMarginPercent
-    );
-
-    if (median !== null) {
-      return buildPercentBenchmarkInsight({
-        label: "EBITDA margin",
-        value: row.ebitdaMarginPercent,
-        median,
-        tolerance: 2
-      });
-    }
-  }
-
-  if (isFiniteMetric(row.revenueGrowthPercent)) {
-    const median = getIndustryMedian(
-      row,
-      rows,
-      (peer) => peer.revenueGrowthPercent
-    );
-
-    if (median !== null) {
-      return buildPercentBenchmarkInsight({
-        label: "Revenue growth",
-        value: row.revenueGrowthPercent,
-        median,
-        tolerance: 2
-      });
-    }
-  }
-
-  if (isFiniteMetric(row.revenue)) {
-    const median = getSimilarDealRevenueMedian(row, rows);
-
-    if (median !== null) {
-      return buildRevenueScaleBenchmarkInsight({
-        value: row.revenue,
-        median
-      });
-    }
+  if (!comparison) {
+    return null;
   }
 
   return {
-    direction: "pending",
-    text: "Benchmark pending"
+    direction: comparison.direction,
+    text: `${comparison.label} ${formatBenchmarkMetricValue(
+      comparison.metricKey,
+      comparison.dealMetric
+    )} vs ${formatBenchmarkMetricValue(
+      comparison.metricKey,
+      comparison.marketMedian
+    )} (${formatBenchmarkVariance(
+      comparison.metricKey,
+      comparison.variance
+    )}) - ${getBenchmarkDirectionLabel(comparison.direction)}`
   };
 }
 
@@ -389,7 +273,7 @@ function benchmarkInsightTone(direction: BenchmarkDirection) {
     return "text-rose-700";
   }
 
-  if (direction === "near") {
+  if (direction === "in_line") {
     return "text-amber-700";
   }
 
@@ -654,7 +538,7 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
 
   const benchmarkInsights = useMemo(() => {
     return new Map(
-      localRows.map((row) => [row.companyId, getBenchmarkInsight(row, localRows)])
+      localRows.map((row) => [row.companyId, getBenchmarkInsight(row)])
     );
   }, [localRows]);
 
@@ -1169,9 +1053,7 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
                         >
                           {financialAnchor ?? "No financials available"}
                         </div>
-                        {financialAnchor &&
-                        benchmarkInsight &&
-                        benchmarkInsight.direction !== "pending" ? (
+                        {financialAnchor && benchmarkInsight ? (
                           <div
                             className={`text-xs font-medium leading-5 ${benchmarkInsightTone(
                               benchmarkInsight.direction
@@ -1479,3 +1361,4 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
     </section>
   );
 }
+

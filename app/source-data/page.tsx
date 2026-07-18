@@ -37,6 +37,7 @@ export default async function SourceDataPage({
     dataQuality: data.dataQuality,
     taxSourceStatus: data.taxSourceStatus,
     reconciliation: data.reconciliation,
+    readiness: data.readiness,
     underwritingInputs: DEFAULT_UNDERWRITING_INPUTS,
     ebitdaBasis: "adjusted"
   });

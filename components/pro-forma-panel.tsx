@@ -6,6 +6,16 @@ import {
   type CreditScenarioInputValues
 } from "@/components/credit-scenario-panel";
 import { buildCreditScenario, formatCreditScenarioCurrency } from "@/lib/credit-scenario";
+import {
+  calculateBenchmarks,
+  deriveBenchmarkFinancialCompleteness,
+  type BenchmarkComparison
+} from "@/lib/benchmarking/calculate-benchmarks";
+import {
+  formatBenchmarkMetricValue,
+  formatBenchmarkVariance,
+  getBenchmarkDirectionLabel
+} from "@/lib/benchmarking/benchmark-labels";
 import { formatCurrency } from "@/lib/formatters";
 import { buildEbitdaChain } from "@/lib/underwriting/ebitda";
 import type {
@@ -22,6 +32,9 @@ type ProFormaPanelProps = {
   scenarioState: UnderwritingScenarioState;
   onScenarioStateChange: (value: UnderwritingScenarioState) => void;
   ebitdaContextMessage?: string | null;
+  industry?: string | null;
+  revenue?: number | null;
+  revenueGrowthPercent?: number | null;
 };
 
 type ProFormaMetricKey = "dscr" | "debtToEbitda" | "interestCoverage";
@@ -157,6 +170,71 @@ function ModelRow(props: {
   );
 }
 
+function confidenceTone(confidence: BenchmarkComparison["confidence"]) {
+  if (confidence === "High") {
+    return "border-teal-200 bg-teal-50 text-teal-800";
+  }
+
+  if (confidence === "Medium") {
+    return "border-amber-200 bg-amber-50 text-amber-800";
+  }
+
+  return "border-slate-200 bg-slate-50 text-slate-600";
+}
+
+function directionTone(direction: BenchmarkComparison["direction"]) {
+  if (direction === "above") {
+    return "text-emerald-700";
+  }
+
+  if (direction === "below") {
+    return "text-rose-700";
+  }
+
+  if (direction === "in_line") {
+    return "text-amber-700";
+  }
+
+  return "text-slate-500";
+}
+
+function MarketContextCard({ comparison }: { comparison: BenchmarkComparison }) {
+  return (
+    <div className="rounded-xl border border-slate-200/80 bg-white px-3 py-3">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+            {comparison.label}
+          </p>
+          <p className="mt-1 text-lg font-semibold tabular-nums text-slate-950">
+            {formatBenchmarkMetricValue(comparison.metricKey, comparison.dealMetric)}
+          </p>
+        </div>
+        <span
+          className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] ${confidenceTone(
+            comparison.confidence
+          )}`}
+        >
+          {comparison.confidence}
+        </span>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2 border-t border-slate-100 pt-2 text-xs">
+        <span className="text-slate-500">Market median</span>
+        <span className="text-right font-medium tabular-nums text-slate-800">
+          {formatBenchmarkMetricValue(comparison.metricKey, comparison.marketMedian)}
+        </span>
+        <span className="text-slate-500">Variance</span>
+        <span className="text-right font-medium tabular-nums text-slate-800">
+          {formatBenchmarkVariance(comparison.metricKey, comparison.variance)}
+        </span>
+      </div>
+      <p className={`mt-2 text-xs font-semibold ${directionTone(comparison.direction)}`}>
+        {getBenchmarkDirectionLabel(comparison.direction)}
+      </p>
+    </div>
+  );
+}
+
 function AssumptionReadOnly(props: {
   label: string;
   value: string;
@@ -231,7 +309,10 @@ export function ProFormaPanel({
   acceptedAddBackTotal,
   scenarioState,
   onScenarioStateChange,
-  ebitdaContextMessage = null
+  ebitdaContextMessage = null,
+  industry = null,
+  revenue = null,
+  revenueGrowthPercent = null
 }: ProFormaPanelProps) {
   const isDevelopment = process.env.NODE_ENV !== "production";
   const parsedInputs = useMemo(
@@ -461,6 +542,45 @@ export function ProFormaPanel({
     }
   ];
   const unsupportedReason = outputRows.find((row) => row.reason)?.reason ?? null;
+  const evToEbitda =
+    purchasePrice !== null && proFormaEbitda !== null && proFormaEbitda > 0
+      ? purchasePrice / proFormaEbitda
+      : null;
+  const ebitdaMarginPercent =
+    revenue !== null && proFormaEbitda !== null && revenue !== 0
+      ? (proFormaEbitda / revenue) * 100
+      : null;
+  const benchmarkResult = useMemo(
+    () =>
+      calculateBenchmarks({
+        industry,
+        financialCompleteness: deriveBenchmarkFinancialCompleteness({
+          revenue,
+          ebitda: proFormaEbitda,
+          purchasePrice,
+          debt
+        }),
+        metrics: {
+          ebitdaMarginPercent,
+          revenueGrowthPercent,
+          evToEbitda,
+          debtToEbitda: proFormaScenario.metrics.debtToEbitda.value
+        },
+        metricKeys: ["ebitdaMarginPercent", "evToEbitda", "debtToEbitda"]
+      }),
+    [
+      debt,
+      ebitdaMarginPercent,
+      evToEbitda,
+      industry,
+      proFormaEbitda,
+      proFormaScenario.metrics.debtToEbitda.value,
+      purchasePrice,
+      revenue,
+      revenueGrowthPercent
+    ]
+  );
+  const marketContextComparisons = benchmarkResult.supportedComparisons;
 
   return (
     <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel">
@@ -806,6 +926,32 @@ export function ProFormaPanel({
           </div>
         </div>
       </details>
+
+      {marketContextComparisons.length > 0 ? (
+        <section className="mt-3 rounded-2xl border border-slate-200/70 bg-slate-50/70 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
+                Market Context
+              </p>
+              <p className="mt-1 text-sm text-slate-600">
+                Static institutional-style medians for {benchmarkResult.industryLabel ?? "mapped industry"}.
+              </p>
+            </div>
+            <span className="rounded-full border border-slate-200/80 bg-white px-3 py-1 text-xs font-medium text-slate-600">
+              Benchmark V1
+            </span>
+          </div>
+          <div className="mt-3 grid gap-3 md:grid-cols-3">
+            {marketContextComparisons.map((comparison) => (
+              <MarketContextCard
+                key={comparison.metricKey}
+                comparison={comparison}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {isDevelopment ? (
         <section className="mt-3 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-xs text-slate-700">
