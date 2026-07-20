@@ -1,0 +1,178 @@
+import type { Company } from "@/lib/types";
+
+export type ShellIconKey =
+  | "overview"
+  | "phases"
+  | "planning"
+  | "requests"
+  | "analysis"
+  | "findings"
+  | "reporting"
+  | "close"
+  | "documents"
+  | "tasks"
+  | "issues"
+  | "workpapers"
+  | "reports"
+  | "analytics"
+  | "team"
+  | "qa"
+  | "settings";
+
+export type ShellNavigationItem = {
+  key: string;
+  label: string;
+  icon: ShellIconKey;
+  href?: string;
+  implemented: boolean;
+  children?: ShellNavigationItem[];
+};
+
+export type DealShellViewModel = {
+  topHeaderTitle?: string;
+  companyId: string;
+  dealName: string;
+  companyName: string;
+  dealType: string;
+  targetCloseLabel: string;
+  progressPercent: number;
+  progressLabel: string;
+  progressIsPreview: boolean;
+  activeKey: string;
+  activeLabel: string;
+  navigation: ShellNavigationItem[];
+  projectOverviewHref: string;
+  legacyDealHref: string;
+  breadcrumbs: Array<{ label: string; href?: string }>;
+  user: {
+    name: string;
+    role: string;
+    initials: string;
+    isPreview: boolean;
+  };
+};
+
+function previewHref(companyId: string, section: string) {
+  return `/deal/${companyId}/redesign-preview?section=${section}`;
+}
+
+function buildNavigation(companyId: string): ShellNavigationItem[] {
+  const previewItem = (
+    key: string,
+    label: string,
+    icon: ShellIconKey
+  ): ShellNavigationItem => ({
+    key,
+    label,
+    icon,
+    href: previewHref(companyId, key),
+    implemented: false
+  });
+
+  return [
+    {
+      key: "overview",
+      label: "Overview",
+      icon: "overview",
+      href: `/deal/${companyId}/overview`,
+      implemented: true
+    },
+    {
+      key: "phases",
+      label: "Phases",
+      icon: "phases",
+      implemented: false,
+      children: [
+        previewItem("planning", "1. Planning & Scoping", "planning"),
+        previewItem("information-request", "2. Information Request", "requests"),
+        previewItem("data-review", "3. Data Review & Analysis", "analysis"),
+        previewItem("findings", "4. Findings & Issues", "findings"),
+        previewItem("reporting", "5. Reporting", "reporting"),
+        previewItem("close", "6. Close & Handover", "close")
+      ]
+    },
+    previewItem("documents", "Documents", "documents"),
+    previewItem("requests", "Requests", "requests"),
+    previewItem("tasks", "Tasks", "tasks"),
+    previewItem("issues", "Issues", "issues"),
+    previewItem("workpapers", "Workpapers", "workpapers"),
+    previewItem("reports", "Reports", "reports"),
+    previewItem("analytics", "Analytics", "analytics"),
+    previewItem("team", "Team", "team"),
+    previewItem("qa", "Q&A", "qa"),
+    previewItem("settings", "Settings", "settings")
+  ];
+}
+
+function findNavigationLabel(items: ShellNavigationItem[], key: string): string | null {
+  for (const item of items) {
+    if (item.key === key) {
+      return item.label;
+    }
+
+    const childLabel = item.children
+      ? findNavigationLabel(item.children, key)
+      : null;
+
+    if (childLabel) {
+      return childLabel.replace(/^\d+\.\s*/, "");
+    }
+  }
+
+  return null;
+}
+
+export function buildDealShellViewModel(params: {
+  company: Company;
+  requestedSection?: string;
+  context?: "preview" | "overview";
+  progressPercent?: number;
+  progressLabel?: string;
+  progressIsPreview?: boolean;
+}): DealShellViewModel {
+  const { company } = params;
+  const navigation = buildNavigation(company.id);
+  const requestedSection = params.requestedSection ?? "overview";
+  const activeLabel = findNavigationLabel(navigation, requestedSection);
+  const activeKey = activeLabel ? requestedSection : "overview";
+  const resolvedActiveLabel = activeLabel ?? "Overview";
+
+  const context = params.context ?? "preview";
+  const dealName = company.deal_name?.trim() || company.name;
+  const breadcrumbs = context === "overview"
+    ? [
+        { label: "All Deals", href: "/deals" },
+        { label: dealName },
+        { label: "Project Overview" }
+      ]
+    : [
+        { label: "All Deals", href: "/deals" },
+        { label: dealName },
+        { label: "Redesign Preview" },
+        { label: resolvedActiveLabel }
+      ];
+
+  return {
+    topHeaderTitle: context === "overview" ? "Project Overview" : undefined,
+    companyId: company.id,
+    dealName,
+    companyName: company.name,
+    dealType: company.deal_type?.trim() || "Not configured",
+    targetCloseLabel: "Not configured",
+    progressPercent: params.progressPercent ?? 52,
+    progressLabel: params.progressLabel ?? "Overall progress",
+    progressIsPreview: params.progressIsPreview ?? true,
+    activeKey,
+    activeLabel: resolvedActiveLabel,
+    navigation,
+    projectOverviewHref: `/deal/${company.id}/overview`,
+    legacyDealHref: `/deal/${company.id}`,
+    breadcrumbs,
+    user: {
+      name: "Preview User",
+      role: "Analyst (preview)",
+      initials: "PU",
+      isPreview: true
+    }
+  };
+}

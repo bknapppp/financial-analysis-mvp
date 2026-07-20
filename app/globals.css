@@ -4,6 +4,40 @@
 
 :root {
   color-scheme: light;
+
+  /* Broadstone semantic foundation. Legacy tokens and styles remain available. */
+  --bs-page: 246 248 251;
+  --bs-surface: 255 255 255;
+  --bs-surface-elevated: 255 255 255;
+  --bs-sidebar: 5 25 47;
+  --bs-sidebar-active: 21 93 252;
+  --bs-text-primary: 15 23 42;
+  --bs-text-secondary: 51 65 85;
+  --bs-text-muted: 100 116 139;
+  --bs-border-subtle: 226 232 240;
+  --bs-border-strong: 203 213 225;
+  --bs-action-primary: 18 91 224;
+  --bs-action-primary-hover: 15 76 190;
+  --bs-focus-ring: 37 99 235;
+  --bs-success: 21 128 61;
+  --bs-warning: 180 83 9;
+  --bs-danger: 220 38 38;
+  --bs-info: 37 99 235;
+  --bs-neutral: 100 116 139;
+
+  --bs-radius-sm: 0.375rem;
+  --bs-radius-md: 0.5rem;
+  --bs-radius-lg: 0.75rem;
+  --bs-shadow-subtle: 0 1px 2px rgb(15 23 42 / 0.06);
+  --bs-shadow-overlay: 0 18px 45px -18px rgb(15 23 42 / 0.28);
+
+  --bs-space-compact: 0.5rem;
+  --bs-table-row-height: 2.5rem;
+  --bs-content-width: 100rem;
+  --bs-inspector-width: 24rem;
+  --bs-sidebar-width: clamp(15rem, 16vw, 16.5rem);
+  --bs-sidebar-collapsed-width: 4rem;
+  --bs-top-header-height: 3.5rem;
 }
 
 body {
@@ -31,4 +65,80 @@ button {
 [data-fix-highlight="true"] {
   box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.28);
   transition: box-shadow 180ms ease;
+}
+
+@layer base {
+  .bs-foundation {
+    color: rgb(var(--bs-text-primary));
+    font-variant-numeric: tabular-nums;
+  }
+
+  .bs-foundation :where(a, button, input, select, textarea):focus-visible {
+    outline: 2px solid rgb(var(--bs-focus-ring));
+    outline-offset: 2px;
+  }
+
+  .bs-sidebar-scrollbar {
+    scrollbar-color: rgb(148 163 184 / 0.24) transparent;
+    scrollbar-width: thin;
+  }
+
+  .bs-sidebar-scrollbar::-webkit-scrollbar {
+    width: 5px;
+  }
+
+  .bs-sidebar-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .bs-sidebar-scrollbar::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgb(148 163 184 / 0.2);
+  }
+
+  .bs-sidebar-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgb(148 163 184 / 0.34);
+  }
+}
+
+@layer components {
+  .bs-page-title {
+    @apply text-xl font-semibold leading-7 tracking-tight text-bs-text-primary md:text-2xl;
+  }
+
+  .bs-section-title {
+    @apply text-sm font-semibold leading-5 text-bs-text-primary;
+  }
+
+  .bs-card-title {
+    @apply text-xs font-semibold leading-5 text-bs-text-primary;
+  }
+
+  .bs-body-text {
+    @apply text-sm leading-5 text-bs-text-secondary;
+  }
+
+  .bs-metadata {
+    @apply text-xs leading-4 text-bs-text-muted;
+  }
+
+  .bs-table-header {
+    @apply text-[11px] font-semibold leading-4 text-bs-text-muted;
+  }
+
+  .bs-table-body {
+    @apply text-xs leading-5 text-bs-text-secondary;
+  }
+
+  .bs-numeric {
+    @apply text-right font-medium tabular-nums text-bs-text-primary;
+  }
+
+  .bs-label {
+    @apply text-[11px] font-medium leading-4 text-bs-text-muted;
+  }
+
+  .bs-status-text {
+    @apply text-[11px] font-medium leading-4;
+  }
 }
