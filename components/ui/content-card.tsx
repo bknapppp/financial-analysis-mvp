@@ -1,6 +1,7 @@
 import { clsx } from "clsx";
 
 type ContentCardProps = {
+  id?: string;
   children: React.ReactNode;
   className?: string;
   padding?: "none" | "compact" | "standard";
@@ -8,6 +9,7 @@ type ContentCardProps = {
 };
 
 export function ContentCard({
+  id,
   children,
   className,
   padding = "standard",
@@ -15,6 +17,7 @@ export function ContentCard({
 }: ContentCardProps) {
   return (
     <section
+      id={id}
       aria-label={ariaLabel}
       className={clsx(
         "rounded-bs-md border border-bs-border-subtle bg-bs-surface shadow-bs-subtle",

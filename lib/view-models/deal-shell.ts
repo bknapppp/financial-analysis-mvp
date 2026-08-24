@@ -83,9 +83,27 @@ function buildNavigation(companyId: string): ShellNavigationItem[] {
       icon: "phases",
       implemented: false,
       children: [
-        previewItem("planning", "1. Planning & Scoping", "planning"),
-        previewItem("information-request", "2. Information Request", "requests"),
-        previewItem("data-review", "3. Data Review & Analysis", "analysis"),
+        {
+          key: "planning",
+          label: "1. Planning & Scoping",
+          icon: "planning",
+          href: `/deal/${companyId}/phases/planning`,
+          implemented: true
+        },
+        {
+          key: "information-request",
+          label: "2. Information Request",
+          icon: "requests",
+          href: `/deal/${companyId}/phases/information-request`,
+          implemented: true
+        },
+        {
+          key: "data-review",
+          label: "3. Data Review & Analysis",
+          icon: "analysis",
+          href: `/deal/${companyId}/phases/data-review`,
+          implemented: true
+        },
         previewItem("findings", "4. Findings & Issues", "findings"),
         previewItem("reporting", "5. Reporting", "reporting"),
         previewItem("close", "6. Close & Handover", "close")
@@ -125,7 +143,7 @@ function findNavigationLabel(items: ShellNavigationItem[], key: string): string 
 export function buildDealShellViewModel(params: {
   company: Company;
   requestedSection?: string;
-  context?: "preview" | "overview";
+  context?: "preview" | "overview" | "planning" | "information-request" | "data-review";
   progressPercent?: number;
   progressLabel?: string;
   progressIsPreview?: boolean;
@@ -145,6 +163,27 @@ export function buildDealShellViewModel(params: {
         { label: dealName },
         { label: "Project Overview" }
       ]
+    : context === "planning"
+      ? [
+          { label: "All Deals", href: "/deals" },
+          { label: dealName },
+          { label: "Phases" },
+          { label: "Planning & Scoping" }
+        ]
+    : context === "information-request"
+      ? [
+          { label: "All Deals", href: "/deals" },
+          { label: dealName },
+          { label: "Phases" },
+          { label: "Information Request & Data Collection" }
+        ]
+    : context === "data-review"
+      ? [
+          { label: "All Deals", href: "/deals" },
+          { label: dealName },
+          { label: "Phases" },
+          { label: "Data Review & Analysis" }
+        ]
     : [
         { label: "All Deals", href: "/deals" },
         { label: dealName },

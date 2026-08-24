@@ -114,10 +114,10 @@ export function DealSidebar({
   onToggleCollapsed,
   onCloseMobile
 }: DealSidebarProps) {
-  const [phasesOpen, setPhasesOpen] = useState(true);
   const phasesContainActive = model.navigation
     .find((item) => item.key === "phases")
     ?.children?.some((item) => item.key === model.activeKey);
+  const [phasesOpen, setPhasesOpen] = useState(() => Boolean(phasesContainActive));
 
   return (
     <>
@@ -178,7 +178,7 @@ export function DealSidebar({
                 }
 
                 const Icon = iconByKey[item.icon];
-                const expanded = phasesOpen || Boolean(phasesContainActive);
+                const expanded = phasesOpen;
 
                 return (
                   <li key={item.key}>
@@ -238,17 +238,18 @@ export function DealSidebar({
               collapsed={collapsed}
             />
             <div className="my-2.5 border-t border-white/10" />
-            <Link
-              href="/deals"
+            <button
+              type="button"
+              aria-label="Help is not connected in this preview"
               className={clsx(
-                "flex min-h-8 items-center rounded-bs-sm text-[11px] text-slate-300 hover:bg-white/[0.07] hover:text-white",
+                "flex min-h-8 w-full items-center rounded-bs-sm text-[11px] text-slate-300 hover:bg-white/[0.07] hover:text-white",
                 collapsed ? "justify-center" : "gap-2 px-2"
               )}
               title={collapsed ? "Help" : undefined}
             >
               <CircleHelp aria-hidden="true" className="size-3.5" />
               {!collapsed ? <span>Help</span> : <span className="sr-only">Help</span>}
-            </Link>
+            </button>
             <div className={clsx("mt-1.5 flex items-center rounded-bs-sm bg-white/[0.04]", collapsed ? "justify-center py-1.5" : "gap-2.5 px-2 py-2")}>
               <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-bs-primary text-[9px] font-semibold">
                 {model.user.initials}

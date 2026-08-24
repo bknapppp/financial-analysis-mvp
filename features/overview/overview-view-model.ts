@@ -179,8 +179,8 @@ function buildPhases(data: DashboardData): OverviewPhase[] {
       dueDateLabel: "Not configured",
       detail: "Planning workflow is not yet modeled in the current repository.",
       metrics: [{ label: "Milestones", value: "Unavailable" }],
-      href: `/deal/${companyId}/redesign-preview?section=planning`,
-      implemented: false
+      href: `/deal/${companyId}/phases/planning`,
+      implemented: true
     },
     {
       key: "requests",
@@ -192,8 +192,8 @@ function buildPhases(data: DashboardData): OverviewPhase[] {
       dueDateLabel: "Not configured",
       detail: "Request records and response tracking are not yet persisted.",
       metrics: [{ label: "Requests", value: "Unavailable" }],
-      href: `/deal/${companyId}/redesign-preview?section=information-request`,
-      implemented: false
+      href: `/deal/${companyId}/phases/information-request`,
+      implemented: true
     },
     {
       key: "analysis",

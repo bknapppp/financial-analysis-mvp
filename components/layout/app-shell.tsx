@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { createContext, useContext, useMemo, useState } from "react";
 import { DealSidebar } from "@/components/layout/deal-sidebar";
 import { TopUtilityHeader } from "@/components/layout/top-utility-header";
 import type { DealShellViewModel } from "@/lib/view-models/deal-shell";
@@ -10,11 +10,23 @@ type AppShellProps = {
   children: React.ReactNode;
 };
 
+const ShellProgressContext = createContext<((value: number) => void) | null>(null);
+
+export function useShellProgress() {
+  return useContext(ShellProgressContext);
+}
+
 export function AppShell({ model, children }: AppShellProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
+  const [progressPercent, setProgressPercent] = useState(model.progressPercent);
+  const shellModel = useMemo(
+    () => ({ ...model, progressPercent }),
+    [model, progressPercent]
+  );
 
   return (
+    <ShellProgressContext.Provider value={setProgressPercent}>
     <div className="bs-foundation min-h-screen bg-bs-page">
       <a
         href="#broadstone-main-content"
@@ -24,7 +36,7 @@ export function AppShell({ model, children }: AppShellProps) {
       </a>
       <div className="flex min-h-screen min-w-0">
         <DealSidebar
-          model={model}
+          model={shellModel}
           collapsed={sidebarCollapsed}
           mobileOpen={mobileNavigationOpen}
           onToggleCollapsed={() => setSidebarCollapsed((current) => !current)}
@@ -43,5 +55,6 @@ export function AppShell({ model, children }: AppShellProps) {
         </div>
       </div>
     </div>
+    </ShellProgressContext.Provider>
   );
 }
