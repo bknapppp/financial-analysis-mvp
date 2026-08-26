@@ -104,7 +104,7 @@ function buildNavigation(companyId: string): ShellNavigationItem[] {
           href: `/deal/${companyId}/phases/data-review`,
           implemented: true
         },
-        previewItem("findings", "4. Findings & Issues", "findings"),
+        { key:"findings", label:"4. Findings & Issues", icon:"findings", href:`/deal/${companyId}/phases/findings`, implemented:true },
         previewItem("reporting", "5. Reporting", "reporting"),
         previewItem("close", "6. Close & Handover", "close")
       ]
@@ -143,7 +143,7 @@ function findNavigationLabel(items: ShellNavigationItem[], key: string): string 
 export function buildDealShellViewModel(params: {
   company: Company;
   requestedSection?: string;
-  context?: "preview" | "overview" | "planning" | "information-request" | "data-review";
+  context?: "preview" | "overview" | "planning" | "information-request" | "data-review" | "findings";
   progressPercent?: number;
   progressLabel?: string;
   progressIsPreview?: boolean;
