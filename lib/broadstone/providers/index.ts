@@ -24,3 +24,21 @@ export {
   SecPublicMarketProvider
 } from "./sec-public-market-provider.ts";
 export type { SecPublicDataTransport } from "./sec-public-market-provider.ts";
+export type {
+  MarketPriceData,
+  MarketPriceIssue,
+  MarketPriceIssueCode,
+  MarketPriceProvider,
+  MarketPriceRequest,
+  MarketPriceResponse
+} from "./price-contracts.ts";
+export {
+  DirectTwelveDataPriceTransport,
+  TwelveDataPriceProvider
+} from "./twelve-data-price-provider.ts";
+export { CachedMarketPriceProvider } from "./cached-price-provider.ts";
+export type {
+  TwelveDataPriceTransport,
+  TwelveDataTransportRequest,
+  TwelveDataTransportResponse
+} from "./twelve-data-price-provider.ts";

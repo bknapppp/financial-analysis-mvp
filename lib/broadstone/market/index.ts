@@ -10,6 +10,7 @@ export type {
   MarketObservationBundle,
   MarketObservationBundleInput,
   MarketOverrideReference,
+  MarketPriceConvention,
   MarketSecurityIdentity,
   MarketSnapshotPolicyPlaceholder,
   ProviderRightsPolicyReference,
@@ -51,6 +52,10 @@ export {
   SEC_COMPANY_IDENTITY_FRESHNESS,
   SEC_FILING_FACT_FRESHNESS
 } from "./freshness.ts";
+export {
+  PROTOTYPE_DAILY_CLOSE_FRESHNESS,
+  TWELVE_DATA_PROTOTYPE_RIGHTS_POLICY
+} from "./price-policy.ts";
 export type {
   FreshnessEvaluation,
   FreshnessPolicy,
