@@ -63,6 +63,7 @@ const FINANCIAL_METRICS = [
 const BALANCE_SHEET_TAGS = {
   totalDebt: [
     "ShortAndLongTermDebtTotal",
+    "DebtLongtermAndShorttermCombinedAmount",
     "LongTermDebtAndFinanceLeaseObligations"
   ],
   currentDebt: [
@@ -238,13 +239,14 @@ function parseCompanyFacts(value: unknown): SecCompanyFacts | null {
   return candidate as SecCompanyFacts;
 }
 
-function annualFacts(concept: SecConcept | undefined, unit: string) {
+function annualFacts(concept: SecConcept | undefined, unit: string, valuationDate: string) {
   const facts = concept?.units?.[unit] ?? [];
   const annual = facts.filter(
     (fact) =>
       Number.isFinite(fact.val) &&
       Boolean(fact.start) &&
       fact.fp === "FY" &&
+      eligibleAsOf(fact, valuationDate) &&
       (fact.form === "10-K" || fact.form === "10-K/A")
   );
   annual.sort((left, right) =>
@@ -302,10 +304,11 @@ function firstPointInTimeConcept(
 function firstConcept(
   concepts: Record<string, SecConcept> | undefined,
   tags: readonly string[],
-  unit: string
+  unit: string,
+  valuationDate: string
 ) {
   for (const tag of tags) {
-    const facts = annualFacts(concepts?.[tag], unit);
+    const facts = annualFacts(concepts?.[tag], unit, valuationDate);
     if (facts.length > 0) return { tag, facts };
   }
   return null;
@@ -437,7 +440,7 @@ export class SecPublicMarketProvider implements PublicMarketProvider {
       const concepts = parsed.facts["us-gaap"];
 
       for (const metric of FINANCIAL_METRICS) {
-        const selected = firstConcept(concepts, metric.tags, "USD");
+        const selected = firstConcept(concepts, metric.tags, "USD", valuationDate);
         if (!selected) {
           issues.push(
             issue(
@@ -608,6 +611,7 @@ export class SecPublicMarketProvider implements PublicMarketProvider {
         .filter(
           (fact) =>
             Number.isFinite(fact.val) &&
+            eligibleAsOf(fact, valuationDate) &&
             (fact.form === "10-K" || fact.form === "10-K/A")
         )
         .sort((left, right) =>
