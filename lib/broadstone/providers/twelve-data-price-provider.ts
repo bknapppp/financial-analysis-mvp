@@ -23,10 +23,15 @@ export interface TwelveDataPriceTransport {
 }
 
 export class DirectTwelveDataPriceTransport implements TwelveDataPriceTransport {
+  private readonly apiKey: string;
+  private readonly fetchImplementation: typeof fetch;
   constructor(
-    private readonly apiKey: string,
-    private readonly fetchImplementation: typeof fetch = fetch
-  ) {}
+    apiKey: string,
+    fetchImplementation: typeof fetch = fetch
+  ) {
+    this.apiKey = apiKey;
+    this.fetchImplementation = fetchImplementation;
+  }
 
   async getDailyTimeSeries(
     request: TwelveDataTransportRequest
@@ -90,15 +95,30 @@ function datePart(value: string): string | null {
   return match?.[1] ?? null;
 }
 
+function nextCalendarDate(value: string): string {
+  const date = new Date(`${value}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString().slice(0, 10);
+}
+
 export class TwelveDataPriceProvider implements MarketPriceProvider {
   readonly providerCode = "twelve_data_direct";
+  private readonly transport: TwelveDataPriceTransport;
+  private readonly rightsPolicy: ProviderRightsPolicy;
+  private readonly freshnessPolicy: FreshnessPolicy;
+  private readonly now: () => Date;
 
   constructor(
-    private readonly transport: TwelveDataPriceTransport,
-    private readonly rightsPolicy: ProviderRightsPolicy,
-    private readonly freshnessPolicy: FreshnessPolicy,
-    private readonly now: () => Date = () => new Date()
-  ) {}
+    transport: TwelveDataPriceTransport,
+    rightsPolicy: ProviderRightsPolicy,
+    freshnessPolicy: FreshnessPolicy,
+    now: () => Date = () => new Date()
+  ) {
+    this.transport = transport;
+    this.rightsPolicy = rightsPolicy;
+    this.freshnessPolicy = freshnessPolicy;
+    this.now = now;
+  }
 
   async getClosingPrice(request: MarketPriceRequest): Promise<MarketPriceResponse> {
     const liveDecision = evaluateProviderUse(this.rightsPolicy, "live_analysis");
@@ -122,7 +142,8 @@ export class TwelveDataPriceProvider implements MarketPriceProvider {
     try {
       response = await this.transport.getDailyTimeSeries({
         symbol: ticker,
-        endDate: request.valuationDate
+        // Twelve Data treats a date-only end_date as an exclusive boundary for daily bars.
+        endDate: request.valuationDate ? nextCalendarDate(request.valuationDate) : undefined
       });
     } catch {
       return {

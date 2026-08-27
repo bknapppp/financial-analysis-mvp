@@ -14,15 +14,25 @@ import type {
 
 export class CachedMarketPriceProvider implements MarketPriceProvider {
   readonly providerCode: string;
+  private readonly provider: MarketPriceProvider;
+  private readonly cache: MarketCache<MarketPriceData>;
+  private readonly rightsPolicy: ProviderRightsPolicy;
+  private readonly freshnessPolicy: FreshnessPolicy;
+  private readonly now: () => Date;
 
   constructor(
-    private readonly provider: MarketPriceProvider,
-    private readonly cache: MarketCache<MarketPriceData>,
-    private readonly rightsPolicy: ProviderRightsPolicy,
-    private readonly freshnessPolicy: FreshnessPolicy,
-    private readonly now: () => Date = () => new Date()
+    provider: MarketPriceProvider,
+    cache: MarketCache<MarketPriceData>,
+    rightsPolicy: ProviderRightsPolicy,
+    freshnessPolicy: FreshnessPolicy,
+    now: () => Date = () => new Date()
   ) {
     this.providerCode = provider.providerCode;
+    this.provider = provider;
+    this.cache = cache;
+    this.rightsPolicy = rightsPolicy;
+    this.freshnessPolicy = freshnessPolicy;
+    this.now = now;
   }
 
   async getClosingPrice(request: MarketPriceRequest): Promise<MarketPriceResponse> {
@@ -76,4 +86,3 @@ export class CachedMarketPriceProvider implements MarketPriceProvider {
     return response;
   }
 }
-
