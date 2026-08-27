@@ -61,12 +61,17 @@ const FINANCIAL_METRICS = [
 ] as const;
 
 class SecTransportError extends Error {
+  readonly issueCode: PublicProviderIssueCode;
+  readonly retryable: boolean;
+
   constructor(
-    readonly issueCode: PublicProviderIssueCode,
+    issueCode: PublicProviderIssueCode,
     message: string,
-    readonly retryable: boolean
+    retryable: boolean
   ) {
     super(message);
+    this.issueCode = issueCode;
+    this.retryable = retryable;
   }
 }
 
@@ -76,10 +81,16 @@ export interface SecPublicDataTransport {
 }
 
 export class DirectSecPublicDataTransport implements SecPublicDataTransport {
+  private readonly userAgent: string;
+  private readonly fetchImpl: FetchLike;
+
   constructor(
-    private readonly userAgent: string,
-    private readonly fetchImpl: FetchLike = fetch
-  ) {}
+    userAgent: string,
+    fetchImpl: FetchLike = fetch
+  ) {
+    this.userAgent = userAgent;
+    this.fetchImpl = fetchImpl;
+  }
 
   private async getJson(url: string) {
     let response: Response;
@@ -261,11 +272,16 @@ function provenance(params: {
 
 export class SecPublicMarketProvider implements PublicMarketProvider {
   readonly providerCode = "broadstone_sec_direct";
+  private readonly transport: SecPublicDataTransport;
+  private readonly now: () => Date;
 
   constructor(
-    private readonly transport: SecPublicDataTransport,
-    private readonly now: () => Date = () => new Date()
-  ) {}
+    transport: SecPublicDataTransport,
+    now: () => Date = () => new Date()
+  ) {
+    this.transport = transport;
+    this.now = now;
+  }
 
   async lookupCompany(ticker: string): Promise<PublicProviderResponse<PublicCompanyMatch>> {
     try {
