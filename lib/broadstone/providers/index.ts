@@ -38,6 +38,16 @@ export {
   OpenBBFundamentalsProvider
 } from "./openbb-fundamentals-provider.ts";
 export { OPENBB_FMP_PROTOTYPE_RIGHTS_POLICY } from "./openbb-fmp-rights.ts";
+export {
+  calculateFundamentalsCoverage,
+  compareCanonicalFundamentals
+} from "./fundamentals-evaluation.ts";
+export type {
+  FundamentalComparison,
+  FundamentalComparisonClassification,
+  FundamentalsCoverage,
+  FundamentalsCoverageMetric
+} from "./fundamentals-evaluation.ts";
 export type {
   MarketPriceData,
   MarketPriceIssue,
