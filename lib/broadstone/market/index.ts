@@ -24,3 +24,19 @@ export {
   buildCalculationSnapshotManifest,
   buildMarketObservationBundle
 } from "./snapshot-builder.ts";
+export {
+  evaluateObservationBundleUse,
+  evaluateProviderUse,
+  policyReference,
+  SEC_PUBLIC_DATA_RIGHTS_POLICY
+} from "./rights.ts";
+export type {
+  BundleUseDecision,
+  ProviderAttributionRequirement,
+  ProviderPolicyResolver,
+  ProviderRequestedUse,
+  ProviderRightState,
+  ProviderRightsPolicy,
+  ProviderUseDecision,
+  ProviderUseRule
+} from "./rights.ts";

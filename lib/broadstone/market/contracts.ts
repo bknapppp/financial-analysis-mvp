@@ -48,6 +48,9 @@ export type ProviderRightsPolicyReference = {
   policyId: string;
   policyVersion?: string;
   providerCode?: string;
+  transportProviderCode?: string;
+  underlyingProviderCode?: string;
+  effectiveDate?: string;
 };
 
 export type MarketAvailabilityStatus =
