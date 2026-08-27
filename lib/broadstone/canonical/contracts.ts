@@ -10,7 +10,12 @@ export type CanonicalCompany = {
   companyType?: CanonicalCompanyType;
 };
 
-export type CanonicalPeriodType = "monthly" | "quarterly" | "annual" | "ltm";
+export type CanonicalPeriodType =
+  | "monthly"
+  | "quarterly"
+  | "annual"
+  | "ltm"
+  | "unknown";
 
 export type CanonicalFinancialPeriod = {
   id: string;
