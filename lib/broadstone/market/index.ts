@@ -65,6 +65,7 @@ export type {
   PublicEbitdaBasis
 } from "./calculation-contracts.ts";
 export { MARKET_METHODOLOGIES } from "./methodologies.ts";
+export { MarketCalculationService } from "./calculation-service.ts";
 export type {
   FreshnessEvaluation,
   FreshnessPolicy,
