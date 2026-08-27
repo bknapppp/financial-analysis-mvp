@@ -60,6 +60,35 @@ const FINANCIAL_METRICS = [
   { metricCode: "net_income", tags: ["NetIncomeLoss"] as const }
 ] as const;
 
+const BALANCE_SHEET_TAGS = {
+  totalDebt: [
+    "ShortAndLongTermDebtTotal",
+    "LongTermDebtAndFinanceLeaseObligations"
+  ],
+  currentDebt: [
+    "LongTermDebtAndFinanceLeaseObligationsCurrent",
+    "LongTermDebtCurrent",
+    "ShortTermBorrowings"
+  ],
+  noncurrentDebt: [
+    "LongTermDebtAndFinanceLeaseObligationsNoncurrent",
+    "LongTermDebtNoncurrent"
+  ],
+  cash: ["CashAndCashEquivalentsAtCarryingValue"],
+  ambiguousCash: [
+    "CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents",
+    "CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalentsCurrent"
+  ],
+  preferredEquity: [
+    "PreferredStocksIncludingAdditionalPaidInCapital",
+    "PreferredStockValue"
+  ],
+  nonControllingInterest: [
+    "NoncontrollingInterestInConsolidatedEntity",
+    "MinorityInterest"
+  ]
+} as const;
+
 class SecTransportError extends Error {
   readonly issueCode: PublicProviderIssueCode;
   readonly retryable: boolean;
@@ -229,6 +258,47 @@ function annualFacts(concept: SecConcept | undefined, unit: string) {
   return [...byEndDate.values()];
 }
 
+function eligibleAsOf(fact: SecFact, valuationDate: string) {
+  return fact.filed <= valuationDate;
+}
+
+function pointInTimeFacts(
+  concept: SecConcept | undefined,
+  unit: string,
+  valuationDate: string
+) {
+  const facts = concept?.units?.[unit] ?? [];
+  const selected = facts.filter(
+    (fact) =>
+      Number.isFinite(fact.val) &&
+      !fact.start &&
+      (fact.form === "10-K" || fact.form === "10-K/A") &&
+      eligibleAsOf(fact, valuationDate)
+  );
+  selected.sort((left, right) =>
+    right.end.localeCompare(left.end) || right.filed.localeCompare(left.filed)
+  );
+
+  const byEndDate = new Map<string, SecFact>();
+  for (const fact of selected) {
+    if (!byEndDate.has(fact.end)) byEndDate.set(fact.end, fact);
+  }
+  return [...byEndDate.values()];
+}
+
+function firstPointInTimeConcept(
+  concepts: Record<string, SecConcept> | undefined,
+  tags: readonly string[],
+  unit: string,
+  valuationDate: string
+) {
+  for (const tag of tags) {
+    const facts = pointInTimeFacts(concepts?.[tag], unit, valuationDate);
+    if (facts.length > 0) return { tag, facts };
+  }
+  return null;
+}
+
 function firstConcept(
   concepts: Record<string, SecConcept> | undefined,
   tags: readonly string[],
@@ -265,9 +335,31 @@ function provenance(params: {
       filingDate: params.fact.filed,
       fiscalPeriod: params.fact.fp ?? null,
       sourceUnit: params.unit,
-      frame: params.fact.frame ?? null
+      frame: params.fact.frame ?? null,
+      balanceSheetDate: params.fact.end
     }
   };
+}
+
+function balancePeriod(
+  periodsByEndDate: Map<string, CanonicalFinancialPeriod>,
+  companyId: string,
+  fact: SecFact
+) {
+  const periodId = `${companyId}:annual:${fact.end}`;
+  if (!periodsByEndDate.has(fact.end)) {
+    periodsByEndDate.set(fact.end, {
+      id: periodId,
+      companyId,
+      label: fact.fy ? `FY ${fact.fy}` : `Balance sheet ${fact.end}`,
+      periodType: "annual",
+      startDate: null,
+      endDate: fact.end,
+      fiscalYear: fact.fy ?? null,
+      fiscalQuarter: null
+    });
+  }
+  return periodId;
 }
 
 export class SecPublicMarketProvider implements PublicMarketProvider {
@@ -338,6 +430,7 @@ export class SecPublicMarketProvider implements PublicMarketProvider {
 
       const maxPeriods = Math.max(1, request.maxAnnualPeriods ?? 3);
       const retrievedAt = this.now().toISOString();
+      const valuationDate = request.valuationDate ?? retrievedAt.slice(0, 10);
       const periodsByEndDate = new Map<string, CanonicalFinancialPeriod>();
       const financialObservations: CanonicalFinancialObservation[] = [];
       const issues: PublicProviderIssue[] = [];
@@ -389,6 +482,114 @@ export class SecPublicMarketProvider implements PublicMarketProvider {
               })
             ]
           });
+        }
+      }
+
+      const addBalanceObservation = (params: {
+        metricCode: "total_debt" | "cash_and_cash_equivalents" | "preferred_equity" | "non_controlling_interest";
+        fact: SecFact;
+        tags: readonly string[];
+        value: number;
+        componentFacts?: readonly SecFact[];
+      }) => {
+        const facts = params.componentFacts ?? [params.fact];
+        const periodId = balancePeriod(periodsByEndDate, request.broadstoneCompanyId, params.fact);
+        financialObservations.push({
+          id: `${request.broadstoneCompanyId}:${params.metricCode}:${params.fact.end}:${facts.map((fact) => fact.accn).join("+")}`,
+          companyId: request.broadstoneCompanyId,
+          periodId,
+          metricCode: params.metricCode,
+          value: params.value,
+          unit: { kind: "currency", currencyCode: "USD", scale: "ones" },
+          provenance: facts.map((fact, index) => provenance({
+            fact,
+            tag: params.tags[index] ?? params.tags[0]!,
+            cik: request.cik,
+            ticker: request.ticker,
+            retrievedAt,
+            unit: "USD"
+          })) as [DataProvenance, ...DataProvenance[]],
+          confidence: params.componentFacts ? "medium" : "high"
+        });
+      };
+
+      const directDebt = firstPointInTimeConcept(
+        concepts,
+        BALANCE_SHEET_TAGS.totalDebt,
+        "USD",
+        valuationDate
+      );
+      const currentDebt = firstPointInTimeConcept(
+        concepts,
+        BALANCE_SHEET_TAGS.currentDebt,
+        "USD",
+        valuationDate
+      );
+      const noncurrentDebt = firstPointInTimeConcept(
+        concepts,
+        BALANCE_SHEET_TAGS.noncurrentDebt,
+        "USD",
+        valuationDate
+      );
+      if (directDebt) {
+        for (const fact of directDebt.facts.slice(0, maxPeriods)) {
+          addBalanceObservation({ metricCode: "total_debt", fact, tags: [directDebt.tag], value: fact.val });
+        }
+      } else if (currentDebt && noncurrentDebt) {
+        const noncurrentByEnd = new Map(noncurrentDebt.facts.map((fact) => [fact.end, fact]));
+        const aligned = currentDebt.facts
+          .map((current) => ({ current, noncurrent: noncurrentByEnd.get(current.end) }))
+          .filter((pair): pair is { current: SecFact; noncurrent: SecFact } => Boolean(pair.noncurrent))
+          .filter((pair) => pair.current.accn === pair.noncurrent.accn && pair.current.filed === pair.noncurrent.filed);
+        for (const pair of aligned.slice(0, maxPeriods)) {
+          addBalanceObservation({
+            metricCode: "total_debt",
+            fact: pair.current,
+            tags: [currentDebt.tag, noncurrentDebt.tag],
+            value: pair.current.val + pair.noncurrent.val,
+            componentFacts: [pair.current, pair.noncurrent]
+          });
+        }
+        if (aligned.length === 0) {
+          issues.push(issue("metric_unavailable", "Debt components were present but could not be aligned without ambiguity.", false, "total_debt"));
+        }
+      } else {
+        issues.push(issue("metric_unavailable", "Total debt was not available from a supported aggregate or an aligned current/non-current SEC debt pair.", false, "total_debt"));
+      }
+
+      const cash = firstPointInTimeConcept(concepts, BALANCE_SHEET_TAGS.cash, "USD", valuationDate);
+      if (cash) {
+        for (const fact of cash.facts.slice(0, maxPeriods)) {
+          addBalanceObservation({ metricCode: "cash_and_cash_equivalents", fact, tags: [cash.tag], value: fact.val });
+        }
+      } else {
+        const ambiguousCash = firstPointInTimeConcept(concepts, BALANCE_SHEET_TAGS.ambiguousCash, "USD", valuationDate);
+        issues.push(issue(
+          "metric_unavailable",
+          ambiguousCash
+            ? "Only a cash/restricted-cash aggregate was available; restricted cash is not an approved EV cash deduction."
+            : "Cash and cash equivalents was not available from the supported narrow SEC concept.",
+          false,
+          "cash_and_cash_equivalents"
+        ));
+      }
+
+      for (const optionalMetric of [
+        { metricCode: "preferred_equity" as const, tags: BALANCE_SHEET_TAGS.preferredEquity },
+        { metricCode: "non_controlling_interest" as const, tags: BALANCE_SHEET_TAGS.nonControllingInterest }
+      ]) {
+        const selected = firstPointInTimeConcept(concepts, optionalMetric.tags, "USD", valuationDate);
+        if (selected) {
+          for (const fact of selected.facts.slice(0, maxPeriods)) {
+            addBalanceObservation({ metricCode: optionalMetric.metricCode, fact, tags: [selected.tag], value: fact.val });
+          }
+        } else {
+          issues.push(issue(
+            "metric_unavailable",
+            `${optionalMetric.metricCode} was not explicitly reported in a supported SEC concept; absence is not treated as zero.`,
+            false,
+            optionalMetric.metricCode
+          ));
         }
       }
 

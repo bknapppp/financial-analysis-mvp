@@ -40,6 +40,7 @@ export type PublicCompanyDataRequest = {
   cik: string;
   ticker?: string;
   maxAnnualPeriods?: number;
+  valuationDate?: string;
 };
 
 export type PublicCompanyData = {
