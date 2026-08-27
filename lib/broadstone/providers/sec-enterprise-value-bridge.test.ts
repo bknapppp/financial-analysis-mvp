@@ -158,6 +158,8 @@ const historical = await new SecPublicMarketProvider(new FactsTransport(historic
 assert.equal(metric(historical, "total_debt")?.value, 250);
 assert.equal(metric(historical, "total_debt")?.provenance[0].sourceIdentifier, "available-filing");
 assert.equal(metric(historical, "cash_and_cash_equivalents")?.value, 40);
+assert.equal(metric(historical, "revenue"), undefined);
+assert.deepEqual(historical.data?.marketObservations, []);
 
 assert.ok(simple.data);
 const financialSnapshots: SnapshotObservation[] = simple.data.financialObservations.map((observation) => ({
