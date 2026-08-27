@@ -25,6 +25,20 @@ export {
 } from "./sec-public-market-provider.ts";
 export type { SecPublicDataTransport } from "./sec-public-market-provider.ts";
 export type {
+  FundamentalsProvider,
+  OpenBBFundamentalsData,
+  OpenBBFundamentalsPeriod,
+  OpenBBFundamentalsRequest,
+  OpenBBFundamentalsResponse,
+  OpenBBFundamentalsTransport,
+  OpenBBFundamentalsTransportRequest
+} from "./openbb-fundamentals-contracts.ts";
+export {
+  DirectOpenBBFundamentalsTransport,
+  OpenBBFundamentalsProvider
+} from "./openbb-fundamentals-provider.ts";
+export { OPENBB_FMP_PROTOTYPE_RIGHTS_POLICY } from "./openbb-fmp-rights.ts";
+export type {
   MarketPriceData,
   MarketPriceIssue,
   MarketPriceIssueCode,

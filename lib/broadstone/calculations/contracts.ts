@@ -10,7 +10,9 @@ export type CanonicalMetricCode =
   | "total_debt"
   | "cash_and_cash_equivalents"
   | "preferred_equity"
-  | "non_controlling_interest";
+  | "non_controlling_interest"
+  | "public_reported_ebitda"
+  | "public_ltm_ebitda";
 
 export type EbitdaBasis = "reported" | "calculated" | "unavailable";
 
