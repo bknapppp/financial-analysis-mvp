@@ -36,6 +36,10 @@ export type PublicEbitdaBasis =
   | "public_consensus"
   | "unavailable";
 
+export type MarketCalculationOptions = {
+  ebitdaBasis?: Extract<PublicEbitdaBasis, "public_reported" | "public_ltm">;
+};
+
 export type MarketCalculationResult<
   TCode extends MarketCalculationMetricCode = MarketCalculationMetricCode
 > = Omit<CalculationResult<TCode>, "reference"> & {
@@ -65,4 +69,3 @@ export type PublicCompanyMarketCalculations = {
   ebitdaMargin: MarketCalculationResult<"ebitda_margin"> & { ebitdaBasis: PublicEbitdaBasis };
   evToEbitda: MarketCalculationResult<"ev_to_ebitda"> & { ebitdaBasis: PublicEbitdaBasis };
 };
-

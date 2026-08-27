@@ -58,6 +58,7 @@ export {
 } from "./price-policy.ts";
 export type {
   MarketCalculationMetricCode,
+  MarketCalculationOptions,
   MarketCalculationResult,
   MarketCalculationStatus,
   MarketCalculationUnit,

@@ -43,7 +43,7 @@ export const MARKET_METHODOLOGIES = {
     metricCode: "ev_to_revenue"
   },
   ebitda: {
-    id: "public_ebitda_availability.v1",
+    id: "public_ebitda_selected_basis.v1",
     version: "1.0.0",
     metricCode: "ebitda"
   },
@@ -58,4 +58,3 @@ export const MARKET_METHODOLOGIES = {
     metricCode: "ev_to_ebitda"
   }
 } as const satisfies Record<string, MarketMethodology>;
-

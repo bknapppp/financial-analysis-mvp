@@ -2,6 +2,7 @@ import type { CanonicalFinancialObservation } from "../canonical/contracts.ts";
 import type { MarketCalculationReference } from "../calculations/contracts.ts";
 import type {
   MarketCalculationMetricCode,
+  MarketCalculationOptions,
   MarketCalculationResult,
   MarketCalculationStatus,
   MarketCalculationUnit,
@@ -164,7 +165,10 @@ export class MarketCalculationService {
     this.resolvePolicy = resolvePolicy;
   }
 
-  calculate(bundle: MarketObservationBundle): PublicCompanyMarketCalculations {
+  calculate(
+    bundle: MarketObservationBundle,
+    options: MarketCalculationOptions = {}
+  ): PublicCompanyMarketCalculations {
     const marketCapitalization = this.marketCapitalization(bundle);
     const revenueGrowth = this.revenueGrowth(bundle);
     const operatingMargin = this.margin(bundle, "operating_income", "operating_margin");
@@ -172,33 +176,9 @@ export class MarketCalculationService {
     const priceToEarnings = this.priceToEarnings(bundle, marketCapitalization);
     const enterpriseValue = this.enterpriseValue(bundle, marketCapitalization);
     const evToRevenue = this.evToRevenue(bundle, enterpriseValue);
-    const ebitda = {
-      ...unavailableMetric(
-        "ebitda",
-        MARKET_METHODOLOGIES.ebitda,
-        bundle,
-        ["No approved public-company EBITDA observation basis is available from current providers."]
-      ),
-      ebitdaBasis: "unavailable" as const
-    };
-    const ebitdaMargin = {
-      ...unavailableMetric(
-        "ebitda_margin",
-        MARKET_METHODOLOGIES.ebitdaMargin,
-        bundle,
-        ["EBITDA margin requires an approved public-company EBITDA observation basis."]
-      ),
-      ebitdaBasis: "unavailable" as const
-    };
-    const evToEbitda = {
-      ...unavailableMetric(
-        "ev_to_ebitda",
-        MARKET_METHODOLOGIES.evToEbitda,
-        bundle,
-        ["EV/EBITDA requires both complete enterprise value and an approved public EBITDA basis."]
-      ),
-      ebitdaBasis: "unavailable" as const
-    };
+    const ebitda = this.ebitda(bundle, options);
+    const ebitdaMargin = this.ebitdaMargin(bundle, ebitda);
+    const evToEbitda = this.evToEbitda(bundle, enterpriseValue, ebitda);
 
     return deepFreeze({
       companyId: bundle.company.id,
@@ -216,6 +196,174 @@ export class MarketCalculationService {
       ebitdaMargin,
       evToEbitda
     });
+  }
+
+  private ebitda(
+    bundle: MarketObservationBundle,
+    options: MarketCalculationOptions
+  ): PublicCompanyMarketCalculations["ebitda"] {
+    const basis = options.ebitdaBasis;
+    if (!basis) return {
+      ...unavailableMetric("ebitda", MARKET_METHODOLOGIES.ebitda, bundle, [
+        "An explicit public-company EBITDA basis must be requested."
+      ]),
+      ebitdaBasis: "unavailable"
+    };
+    const metricCode = basis === "public_ltm" ? "public_ltm_ebitda" : "public_reported_ebitda";
+    const expectedPeriodType = basis === "public_ltm" ? "ltm" : "annual";
+    const candidates = financialItems(bundle)
+      .filter((item) => item.observation.metricCode === metricCode)
+      .filter((item) => bundle.selectedPeriods.some((period) =>
+        period.id === item.observation.periodId && period.periodType === expectedPeriodType
+      ))
+      .sort((left, right) => {
+        const leftPeriod = bundle.selectedPeriods.find((period) => period.id === left.observation.periodId);
+        const rightPeriod = bundle.selectedPeriods.find((period) => period.id === right.observation.periodId);
+        return (rightPeriod?.endDate ?? "").localeCompare(leftPeriod?.endDate ?? "");
+      });
+    const selected = candidates[0];
+    if (!selected) return {
+      ...unavailableMetric("ebitda", MARKET_METHODOLOGIES.ebitda, bundle, [
+        `No ${basis} EBITDA observation exists in a matching selected period.`
+      ]),
+      ebitdaBasis: basis
+    };
+    const rights = rightsBlockers([selected], this.resolvePolicy);
+    if (rights.length > 0) return {
+      ...result({
+        metricCode: "ebitda",
+        methodology: MARKET_METHODOLOGIES.ebitda,
+        bundle,
+        items: [selected],
+        status: "blocked_by_rights",
+        blockers: rights,
+        financialPeriodIds: [selected.observation.periodId]
+      }),
+      ebitdaBasis: basis
+    };
+    return {
+      ...result({
+        metricCode: "ebitda",
+        methodology: MARKET_METHODOLOGIES.ebitda,
+        bundle,
+        items: [selected],
+        value: observationValue(selected.observation),
+        status: "available_with_warning",
+        unit: { kind: "currency", currencyCode: selected.observation.unit.currencyCode, scale: "ones" },
+        financialPeriodIds: [selected.observation.periodId],
+        warnings: [basis === "public_ltm"
+          ? "EBITDA is an underlying-provider LTM value routed through OpenBB."
+          : "EBITDA is an underlying-provider annual value routed through OpenBB; provider methodology may be calculated rather than issuer-reported."]
+      }),
+      ebitdaBasis: basis
+    };
+  }
+
+  private ebitdaMargin(
+    bundle: MarketObservationBundle,
+    ebitda: PublicCompanyMarketCalculations["ebitda"]
+  ): PublicCompanyMarketCalculations["ebitdaMargin"] {
+    if (ebitda.value === null || ebitda.unit?.kind !== "currency" || ebitda.ebitdaBasis === "unavailable") {
+      return {
+        ...unavailableMetric("ebitda_margin", MARKET_METHODOLOGIES.ebitdaMargin, bundle, [
+          "EBITDA margin requires an available explicitly selected EBITDA basis."
+        ]),
+        ebitdaBasis: ebitda.ebitdaBasis
+      };
+    }
+    const periodId = ebitda.financialPeriodIds[0]!;
+    const revenue = financialItem(financialItems(bundle), "revenue", periodId);
+    if (!revenue) return {
+      ...unavailableMetric("ebitda_margin", MARKET_METHODOLOGIES.ebitdaMargin, bundle, [
+        "EBITDA margin requires revenue aligned to the selected EBITDA period."
+      ]),
+      ebitdaBasis: ebitda.ebitdaBasis
+    };
+    const ebitdaInputs = bundle.observations.filter((item) =>
+      ebitda.reference.inputObservationIds.includes(item.observation.id)
+    );
+    const selected = [...ebitdaInputs, revenue];
+    const rights = rightsBlockers(selected, this.resolvePolicy);
+    if (rights.length > 0) return {
+      ...result({
+        metricCode: "ebitda_margin", methodology: MARKET_METHODOLOGIES.ebitdaMargin, bundle,
+        items: selected, status: "blocked_by_rights", blockers: rights, financialPeriodIds: [periodId]
+      }),
+      ebitdaBasis: ebitda.ebitdaBasis
+    };
+    if (revenue.observation.unit.currencyCode !== ebitda.unit.currencyCode) return {
+      ...unavailableMetric("ebitda_margin", MARKET_METHODOLOGIES.ebitdaMargin, bundle, [
+        "EBITDA and revenue currencies do not match."
+      ], "incomplete"),
+      ebitdaBasis: ebitda.ebitdaBasis
+    };
+    const revenueValue = observationValue(revenue.observation);
+    if (revenueValue === 0) return {
+      ...unavailableMetric("ebitda_margin", MARKET_METHODOLOGIES.ebitdaMargin, bundle, [
+        "Revenue is zero, so EBITDA margin is undefined."
+      ], "invalid"),
+      ebitdaBasis: ebitda.ebitdaBasis
+    };
+    return {
+      ...result({
+        metricCode: "ebitda_margin", methodology: MARKET_METHODOLOGIES.ebitdaMargin, bundle,
+        items: selected, value: ebitda.value / revenueValue, status: ebitda.status,
+        unit: { kind: "ratio", format: "decimal" }, financialPeriodIds: [periodId], warnings: ebitda.warnings
+      }),
+      ebitdaBasis: ebitda.ebitdaBasis
+    };
+  }
+
+  private evToEbitda(
+    bundle: MarketObservationBundle,
+    enterpriseValue: MarketCalculationResult<"enterprise_value">,
+    ebitda: PublicCompanyMarketCalculations["ebitda"]
+  ): PublicCompanyMarketCalculations["evToEbitda"] {
+    if (enterpriseValue.value === null || enterpriseValue.unit?.kind !== "currency"
+      || ebitda.value === null || ebitda.unit?.kind !== "currency" || ebitda.ebitdaBasis === "unavailable") {
+      return {
+        ...unavailableMetric("ev_to_ebitda", MARKET_METHODOLOGIES.evToEbitda, bundle, [
+          "EV/EBITDA requires complete enterprise value and an available explicitly selected EBITDA basis."
+        ]),
+        ebitdaBasis: ebitda.ebitdaBasis
+      };
+    }
+    const selected = bundle.observations.filter((item) =>
+      enterpriseValue.reference.inputObservationIds.includes(item.observation.id)
+      || ebitda.reference.inputObservationIds.includes(item.observation.id)
+    );
+    const rights = rightsBlockers(selected, this.resolvePolicy);
+    if (rights.length > 0) return {
+      ...result({
+        metricCode: "ev_to_ebitda", methodology: MARKET_METHODOLOGIES.evToEbitda, bundle,
+        items: selected, status: "blocked_by_rights", blockers: rights,
+        financialPeriodIds: [...enterpriseValue.financialPeriodIds, ...ebitda.financialPeriodIds]
+      }),
+      ebitdaBasis: ebitda.ebitdaBasis
+    };
+    if (enterpriseValue.unit.currencyCode !== ebitda.unit.currencyCode) return {
+      ...unavailableMetric("ev_to_ebitda", MARKET_METHODOLOGIES.evToEbitda, bundle, [
+        "Enterprise value and EBITDA currencies do not match."
+      ], "incomplete"),
+      ebitdaBasis: ebitda.ebitdaBasis
+    };
+    if (ebitda.value <= 0) return {
+      ...unavailableMetric("ev_to_ebitda", MARKET_METHODOLOGIES.evToEbitda, bundle, [
+        "EBITDA must be positive for a meaningful EV/EBITDA multiple."
+      ]),
+      ebitdaBasis: ebitda.ebitdaBasis
+    };
+    return {
+      ...result({
+        metricCode: "ev_to_ebitda", methodology: MARKET_METHODOLOGIES.evToEbitda, bundle,
+        items: selected, value: enterpriseValue.value / ebitda.value,
+        status: enterpriseValue.status === "available" ? ebitda.status : enterpriseValue.status,
+        unit: { kind: "ratio", format: "multiple" },
+        financialPeriodIds: [...enterpriseValue.financialPeriodIds, ...ebitda.financialPeriodIds],
+        warnings: [...enterpriseValue.warnings, ...ebitda.warnings]
+      }),
+      ebitdaBasis: ebitda.ebitdaBasis
+    };
   }
 
   private marketCapitalization(
