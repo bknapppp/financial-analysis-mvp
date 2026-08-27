@@ -30,6 +30,33 @@ export {
   policyReference,
   SEC_PUBLIC_DATA_RIGHTS_POLICY
 } from "./rights.ts";
+export {
+  buildMarketCacheKey,
+  deriveMarketCachePolicy,
+  InMemoryMarketCache
+} from "./cache.ts";
+export type {
+  CacheTier,
+  DeriveCachePolicyInput,
+  MarketCache,
+  MarketCacheEntry,
+  MarketCacheKeyInput,
+  MarketCachePolicy,
+  MarketCacheRead,
+  MarketCacheSetOptions,
+  MarketCacheWriteResult
+} from "./cache.ts";
+export {
+  evaluateFreshness,
+  SEC_COMPANY_IDENTITY_FRESHNESS,
+  SEC_FILING_FACT_FRESHNESS
+} from "./freshness.ts";
+export type {
+  FreshnessEvaluation,
+  FreshnessPolicy,
+  FreshnessState,
+  MarketDataClass
+} from "./freshness.ts";
 export type {
   BundleUseDecision,
   ProviderAttributionRequirement,
