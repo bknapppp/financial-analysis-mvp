@@ -3,6 +3,7 @@ export type {
   CalculationSnapshotManifestInput,
   CanonicalMarketObservation,
   CanonicalMarketUnit,
+  DeepReadonly,
   MarketAvailabilityIssue,
   MarketAvailabilityStatus,
   MarketMetricCode,

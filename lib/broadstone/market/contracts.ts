@@ -5,6 +5,16 @@ import type {
   DataProvenance
 } from "../canonical/index.ts";
 
+export type DeepReadonly<T> = T extends (...args: never[]) => unknown
+  ? T
+  : T extends readonly [infer Head, ...infer Tail]
+    ? readonly [DeepReadonly<Head>, ...DeepReadonly<Tail>]
+    : T extends readonly (infer Item)[]
+      ? readonly DeepReadonly<Item>[]
+    : T extends object
+      ? { readonly [Key in keyof T]: DeepReadonly<T[Key]> }
+      : T;
+
 export type MarketMetricCode =
   | "share_price"
   | "shares_outstanding"
@@ -81,6 +91,17 @@ export type SnapshotMarketObservation = {
 export type SnapshotObservation = SnapshotFinancialObservation | SnapshotMarketObservation;
 
 export type MarketObservationBundle = {
+  readonly bundleId: string;
+  readonly company: DeepReadonly<CanonicalCompany>;
+  readonly security?: DeepReadonly<MarketSecurityIdentity>;
+  readonly valuationDate: string;
+  readonly selectedPeriods: readonly DeepReadonly<CanonicalFinancialPeriod>[];
+  readonly observations: readonly DeepReadonly<SnapshotObservation>[];
+  readonly issues: readonly DeepReadonly<MarketAvailabilityIssue>[];
+  readonly contentHash: string;
+};
+
+export type MarketObservationBundleInput = {
   bundleId: string;
   company: CanonicalCompany;
   security?: MarketSecurityIdentity;
@@ -88,10 +109,7 @@ export type MarketObservationBundle = {
   selectedPeriods: readonly CanonicalFinancialPeriod[];
   observations: readonly SnapshotObservation[];
   issues: readonly MarketAvailabilityIssue[];
-  contentHash: string;
 };
-
-export type MarketObservationBundleInput = Omit<MarketObservationBundle, "contentHash">;
 
 export type MarketSnapshotPolicyPlaceholder = {
   policyCode: string;
@@ -104,23 +122,23 @@ export type MarketOverrideReference = {
 };
 
 export type CalculationSnapshotManifest = {
-  snapshotId: string;
-  analysisId: string;
-  analysisVersion: string;
-  valuationDate: string;
-  createdAt: string;
-  calculationEngineVersion: string;
-  methodologyVersion: string;
-  observationBundleId: string;
-  observationBundleHash: string;
-  selectedPeriodIds: readonly string[];
-  ebitdaBasisPolicy?: MarketSnapshotPolicyPlaceholder;
-  currencyPolicy?: MarketSnapshotPolicyPlaceholder;
-  issues: readonly MarketAvailabilityIssue[];
-  warnings: readonly string[];
-  overrideReferences: readonly MarketOverrideReference[];
-  predecessorSnapshotId?: string;
-  contentHash: string;
+  readonly snapshotId: string;
+  readonly analysisId: string;
+  readonly analysisVersion: string;
+  readonly valuationDate: string;
+  readonly createdAt: string;
+  readonly calculationEngineVersion: string;
+  readonly methodologyVersion: string;
+  readonly observationBundleId: string;
+  readonly observationBundleHash: string;
+  readonly selectedPeriodIds: readonly string[];
+  readonly ebitdaBasisPolicy?: DeepReadonly<MarketSnapshotPolicyPlaceholder>;
+  readonly currencyPolicy?: DeepReadonly<MarketSnapshotPolicyPlaceholder>;
+  readonly issues: readonly DeepReadonly<MarketAvailabilityIssue>[];
+  readonly warnings: readonly string[];
+  readonly overrideReferences: readonly DeepReadonly<MarketOverrideReference>[];
+  readonly predecessorSnapshotId?: string;
+  readonly contentHash: string;
 };
 
 export type CalculationSnapshotManifestInput = Omit<
