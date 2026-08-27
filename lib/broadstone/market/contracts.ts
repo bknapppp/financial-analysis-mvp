@@ -27,12 +27,16 @@ export type CanonicalMarketUnit =
 export type CanonicalMarketObservation = {
   id: string;
   companyId: string;
+  securityId?: string;
   metricCode: MarketMetricCode;
   value: number;
   unit: CanonicalMarketUnit;
   effectiveDate: string;
+  priceConvention?: MarketPriceConvention;
   provenance: readonly [DataProvenance, ...DataProvenance[]];
 };
+
+export type MarketPriceConvention = "unadjusted_close";
 
 export type MarketSecurityIdentity = {
   id: string;
@@ -89,6 +93,7 @@ export type SnapshotMarketObservation = {
   observation: CanonicalMarketObservation;
   basis: SnapshotObservationBasis;
   rightsPolicy?: ProviderRightsPolicyReference;
+  freshnessState?: "fresh" | "aging" | "stale" | "expired" | "unknown";
 };
 
 export type SnapshotObservation = SnapshotFinancialObservation | SnapshotMarketObservation;
