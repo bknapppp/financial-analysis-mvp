@@ -19,3 +19,8 @@ export type {
   PublicProviderIssueCode,
   PublicProviderResponse
 } from "./public-market-contracts.ts";
+export {
+  DirectSecPublicDataTransport,
+  SecPublicMarketProvider
+} from "./sec-public-market-provider.ts";
+export type { SecPublicDataTransport } from "./sec-public-market-provider.ts";

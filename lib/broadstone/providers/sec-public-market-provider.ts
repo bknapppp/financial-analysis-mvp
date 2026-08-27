@@ -1,0 +1,459 @@
+import type {
+  CanonicalFinancialObservation,
+  CanonicalFinancialPeriod,
+  DataProvenance
+} from "../canonical/index.ts";
+import type { CanonicalMarketObservation } from "../market/index.ts";
+import type {
+  PublicCompanyData,
+  PublicCompanyDataRequest,
+  PublicCompanyMatch,
+  PublicMarketProvider,
+  PublicProviderIssue,
+  PublicProviderIssueCode,
+  PublicProviderResponse
+} from "./public-market-contracts.ts";
+
+type FetchLike = typeof fetch;
+
+type SecTickerRecord = {
+  cik_str: number;
+  ticker: string;
+  title: string;
+};
+
+type SecFact = {
+  val: number;
+  accn: string;
+  fy?: number;
+  fp?: string;
+  form: string;
+  filed: string;
+  start?: string;
+  end: string;
+  frame?: string;
+};
+
+type SecConcept = {
+  label?: string;
+  units?: Record<string, SecFact[]>;
+};
+
+type SecCompanyFacts = {
+  cik: number;
+  entityName: string;
+  facts: {
+    "us-gaap"?: Record<string, SecConcept>;
+    dei?: Record<string, SecConcept>;
+  };
+};
+
+const REVENUE_TAGS = [
+  "RevenueFromContractWithCustomerExcludingAssessedTax",
+  "Revenues",
+  "SalesRevenueNet"
+] as const;
+
+const FINANCIAL_METRICS = [
+  { metricCode: "revenue", tags: REVENUE_TAGS },
+  { metricCode: "operating_income", tags: ["OperatingIncomeLoss"] as const },
+  { metricCode: "net_income", tags: ["NetIncomeLoss"] as const }
+] as const;
+
+class SecTransportError extends Error {
+  constructor(
+    readonly issueCode: PublicProviderIssueCode,
+    message: string,
+    readonly retryable: boolean
+  ) {
+    super(message);
+  }
+}
+
+export interface SecPublicDataTransport {
+  getCompanyTickers(): Promise<unknown>;
+  getCompanyFacts(cik: string): Promise<unknown>;
+}
+
+export class DirectSecPublicDataTransport implements SecPublicDataTransport {
+  constructor(
+    private readonly userAgent: string,
+    private readonly fetchImpl: FetchLike = fetch
+  ) {}
+
+  private async getJson(url: string) {
+    let response: Response;
+    try {
+      response = await this.fetchImpl(url, {
+        headers: {
+          Accept: "application/json",
+          "User-Agent": this.userAgent
+        }
+      });
+    } catch {
+      throw new SecTransportError(
+        "provider_unavailable",
+        "SEC EDGAR could not be reached.",
+        true
+      );
+    }
+
+    if (response.status === 404) {
+      throw new SecTransportError("company_not_found", "SEC company data was not found.", false);
+    }
+    if (response.status === 429) {
+      throw new SecTransportError("rate_limited", "SEC EDGAR rate limit reached.", true);
+    }
+    if (response.status === 401 || response.status === 403) {
+      throw new SecTransportError(
+        "authentication_failed",
+        "SEC EDGAR rejected the request credentials or User-Agent policy.",
+        false
+      );
+    }
+    if (!response.ok) {
+      throw new SecTransportError(
+        "provider_unavailable",
+        `SEC EDGAR returned HTTP ${response.status}.`,
+        response.status >= 500
+      );
+    }
+
+    try {
+      return await response.json();
+    } catch {
+      throw new SecTransportError(
+        "malformed_response",
+        "SEC EDGAR returned malformed JSON.",
+        false
+      );
+    }
+  }
+
+  getCompanyTickers() {
+    return this.getJson("https://www.sec.gov/files/company_tickers.json");
+  }
+
+  getCompanyFacts(cik: string) {
+    return this.getJson(
+      `https://data.sec.gov/api/xbrl/companyfacts/CIK${normalizeCik(cik)}.json`
+    );
+  }
+}
+
+function normalizeCik(cik: string | number) {
+  return String(cik).replace(/^0+/, "").padStart(10, "0");
+}
+
+function issue(
+  code: PublicProviderIssueCode,
+  message: string,
+  retryable: boolean,
+  metricCode?: string
+): PublicProviderIssue {
+  return {
+    code,
+    message,
+    providerCode: "broadstone_sec_direct",
+    retryable,
+    ...(metricCode ? { metricCode } : {})
+  };
+}
+
+function failure<T>(error: unknown): PublicProviderResponse<T> {
+  if (error instanceof SecTransportError) {
+    return { data: null, issues: [issue(error.issueCode, error.message, error.retryable)] };
+  }
+
+  return {
+    data: null,
+    issues: [issue("malformed_response", "SEC provider response was not recognized.", false)]
+  };
+}
+
+function parseTickerRecords(value: unknown): SecTickerRecord[] | null {
+  if (!value || typeof value !== "object") return null;
+  const records = Object.values(value).filter(
+    (item): item is SecTickerRecord =>
+      Boolean(item) &&
+      typeof item === "object" &&
+      typeof (item as SecTickerRecord).cik_str === "number" &&
+      typeof (item as SecTickerRecord).ticker === "string" &&
+      typeof (item as SecTickerRecord).title === "string"
+  );
+  return records.length > 0 ? records : null;
+}
+
+function parseCompanyFacts(value: unknown): SecCompanyFacts | null {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as Partial<SecCompanyFacts>;
+  if (
+    typeof candidate.cik !== "number" ||
+    typeof candidate.entityName !== "string" ||
+    !candidate.facts ||
+    typeof candidate.facts !== "object"
+  ) {
+    return null;
+  }
+  return candidate as SecCompanyFacts;
+}
+
+function annualFacts(concept: SecConcept | undefined, unit: string) {
+  const facts = concept?.units?.[unit] ?? [];
+  const annual = facts.filter(
+    (fact) =>
+      Number.isFinite(fact.val) &&
+      Boolean(fact.start) &&
+      fact.fp === "FY" &&
+      (fact.form === "10-K" || fact.form === "10-K/A")
+  );
+  annual.sort((left, right) =>
+    right.end.localeCompare(left.end) || right.filed.localeCompare(left.filed)
+  );
+
+  const byEndDate = new Map<string, SecFact>();
+  for (const fact of annual) {
+    if (!byEndDate.has(fact.end)) byEndDate.set(fact.end, fact);
+  }
+  return [...byEndDate.values()];
+}
+
+function firstConcept(
+  concepts: Record<string, SecConcept> | undefined,
+  tags: readonly string[],
+  unit: string
+) {
+  for (const tag of tags) {
+    const facts = annualFacts(concepts?.[tag], unit);
+    if (facts.length > 0) return { tag, facts };
+  }
+  return null;
+}
+
+function provenance(params: {
+  fact: SecFact;
+  tag: string;
+  cik: string;
+  ticker?: string;
+  retrievedAt: string;
+  unit: string;
+}): DataProvenance {
+  return {
+    sourceType: "external_provider",
+    sourceSystem: "Broadstone SEC Direct",
+    underlyingSource: "SEC EDGAR",
+    sourceIdentifier: params.fact.accn,
+    location: { field: params.tag },
+    observedAt: params.retrievedAt,
+    originalFieldName: params.tag,
+    sourceMetadata: {
+      transport: "direct_sec_api",
+      cik: normalizeCik(params.cik),
+      ...(params.ticker ? { ticker: params.ticker.toUpperCase() } : {}),
+      form: params.fact.form,
+      filingDate: params.fact.filed,
+      fiscalPeriod: params.fact.fp ?? null,
+      sourceUnit: params.unit,
+      frame: params.fact.frame ?? null
+    }
+  };
+}
+
+export class SecPublicMarketProvider implements PublicMarketProvider {
+  readonly providerCode = "broadstone_sec_direct";
+
+  constructor(
+    private readonly transport: SecPublicDataTransport,
+    private readonly now: () => Date = () => new Date()
+  ) {}
+
+  async lookupCompany(ticker: string): Promise<PublicProviderResponse<PublicCompanyMatch>> {
+    try {
+      const records = parseTickerRecords(await this.transport.getCompanyTickers());
+      if (!records) {
+        return failure(
+          new SecTransportError("malformed_response", "SEC ticker response was malformed.", false)
+        );
+      }
+      const normalizedTicker = ticker.trim().toUpperCase();
+      const match = records.find((record) => record.ticker.toUpperCase() === normalizedTicker);
+      if (!match) {
+        return {
+          data: null,
+          issues: [issue("company_not_found", `Ticker ${normalizedTicker} was not found.`, false)]
+        };
+      }
+      const retrievedAt = this.now().toISOString();
+      return {
+        data: {
+          name: match.title,
+          externalIdentifiers: [
+            { scheme: "ticker", value: match.ticker.toUpperCase() },
+            { scheme: "cik", value: normalizeCik(match.cik_str), provider: "SEC" }
+          ],
+          provenance: {
+            sourceType: "external_provider",
+            sourceSystem: "Broadstone SEC Direct",
+            underlyingSource: "SEC EDGAR",
+            sourceIdentifier: normalizeCik(match.cik_str),
+            location: { field: "company_tickers.json" },
+            observedAt: retrievedAt,
+            originalFieldName: "ticker/title",
+            sourceMetadata: { requestedTicker: normalizedTicker }
+          }
+        },
+        issues: []
+      };
+    } catch (error) {
+      return failure(error);
+    }
+  }
+
+  async getCompanyData(
+    request: PublicCompanyDataRequest
+  ): Promise<PublicProviderResponse<PublicCompanyData>> {
+    try {
+      const parsed = parseCompanyFacts(await this.transport.getCompanyFacts(request.cik));
+      if (!parsed) {
+        return failure(
+          new SecTransportError("malformed_response", "SEC company facts response was malformed.", false)
+        );
+      }
+
+      const maxPeriods = Math.max(1, request.maxAnnualPeriods ?? 3);
+      const retrievedAt = this.now().toISOString();
+      const periodsByEndDate = new Map<string, CanonicalFinancialPeriod>();
+      const financialObservations: CanonicalFinancialObservation[] = [];
+      const issues: PublicProviderIssue[] = [];
+      const concepts = parsed.facts["us-gaap"];
+
+      for (const metric of FINANCIAL_METRICS) {
+        const selected = firstConcept(concepts, metric.tags, "USD");
+        if (!selected) {
+          issues.push(
+            issue(
+              "metric_unavailable",
+              `${metric.metricCode} was not available from supported SEC XBRL tags.`,
+              false,
+              metric.metricCode
+            )
+          );
+          continue;
+        }
+
+        for (const fact of selected.facts.slice(0, maxPeriods)) {
+          const periodId = `${request.broadstoneCompanyId}:annual:${fact.end}`;
+          if (!periodsByEndDate.has(fact.end)) {
+            periodsByEndDate.set(fact.end, {
+              id: periodId,
+              companyId: request.broadstoneCompanyId,
+              label: fact.fy ? `FY ${fact.fy}` : `Year ended ${fact.end}`,
+              periodType: "annual",
+              startDate: fact.start ?? null,
+              endDate: fact.end,
+              fiscalYear: fact.fy ?? null,
+              fiscalQuarter: null
+            });
+          }
+          financialObservations.push({
+            id: `${request.broadstoneCompanyId}:${metric.metricCode}:${fact.end}:${fact.accn}`,
+            companyId: request.broadstoneCompanyId,
+            periodId,
+            metricCode: metric.metricCode,
+            value: fact.val,
+            unit: { kind: "currency", currencyCode: "USD", scale: "ones" },
+            provenance: [
+              provenance({
+                fact,
+                tag: selected.tag,
+                cik: request.cik,
+                ticker: request.ticker,
+                retrievedAt,
+                unit: "USD"
+              })
+            ]
+          });
+        }
+      }
+
+      issues.push(
+        issue(
+          "metric_unavailable",
+          "reported_ebitda is not a consistently standardized SEC XBRL company fact.",
+          false,
+          "reported_ebitda"
+        )
+      );
+
+      const marketObservations: CanonicalMarketObservation[] = [];
+      const sharesConcept = parsed.facts.dei?.EntityCommonStockSharesOutstanding;
+      const sharesFacts = (sharesConcept?.units?.shares ?? [])
+        .filter(
+          (fact) =>
+            Number.isFinite(fact.val) &&
+            (fact.form === "10-K" || fact.form === "10-K/A")
+        )
+        .sort((left, right) =>
+          right.end.localeCompare(left.end) || right.filed.localeCompare(left.filed)
+        );
+      const latestShares = sharesFacts[0];
+      if (latestShares) {
+        marketObservations.push({
+          id: `${request.broadstoneCompanyId}:shares_outstanding:${latestShares.end}:${latestShares.accn}`,
+          companyId: request.broadstoneCompanyId,
+          metricCode: "shares_outstanding",
+          value: latestShares.val,
+          unit: { kind: "shares", scale: "ones" },
+          effectiveDate: latestShares.end,
+          provenance: [
+            provenance({
+              fact: latestShares,
+              tag: "EntityCommonStockSharesOutstanding",
+              cik: request.cik,
+              ticker: request.ticker,
+              retrievedAt,
+              unit: "shares"
+            })
+          ]
+        });
+      } else {
+        issues.push(
+          issue(
+            "metric_unavailable",
+            "shares_outstanding was not available from the supported SEC DEI tag.",
+            false,
+            "shares_outstanding"
+          )
+        );
+      }
+
+      if (periodsByEndDate.size === 0) {
+        issues.push(issue("period_unavailable", "No supported annual SEC periods were found.", false));
+      }
+
+      return {
+        data: {
+          company: {
+            id: request.broadstoneCompanyId,
+            displayName: parsed.entityName,
+            companyType: "public",
+            externalIdentifiers: [
+              ...(request.ticker
+                ? [{ scheme: "ticker" as const, value: request.ticker.toUpperCase() }]
+                : []),
+              { scheme: "cik", value: normalizeCik(parsed.cik), provider: "SEC" }
+            ]
+          },
+          periods: [...periodsByEndDate.values()].sort((a, b) =>
+            b.endDate.localeCompare(a.endDate)
+          ),
+          financialObservations,
+          marketObservations
+        },
+        issues
+      };
+    } catch (error) {
+      return failure(error);
+    }
+  }
+}
