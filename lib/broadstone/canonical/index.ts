@@ -1,5 +1,6 @@
 export type {
   CanonicalCompany,
+  CanonicalCompanyExternalIdentifier,
   CanonicalCompanyType,
   CanonicalFinancialObservation,
   CanonicalFinancialPeriod,

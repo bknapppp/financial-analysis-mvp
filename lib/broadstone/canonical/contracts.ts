@@ -3,11 +3,18 @@ import type { DataProvenance } from "./provenance.ts";
 
 export type CanonicalCompanyType = "private" | "public" | "other";
 
+export type CanonicalCompanyExternalIdentifier = {
+  scheme: "ticker" | "cik" | "provider";
+  value: string;
+  provider?: string;
+};
+
 export type CanonicalCompany = {
   id: string;
   displayName: string;
   legalName?: string;
   companyType?: CanonicalCompanyType;
+  externalIdentifiers?: readonly CanonicalCompanyExternalIdentifier[];
 };
 
 export type CanonicalPeriodType =

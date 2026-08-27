@@ -10,3 +10,12 @@ export type {
   ExcelCsvPeriodHint,
   ExcelCsvSourceLocation
 } from "./excel-csv-adapter.ts";
+export type {
+  PublicCompanyData,
+  PublicCompanyDataRequest,
+  PublicCompanyMatch,
+  PublicMarketProvider,
+  PublicProviderIssue,
+  PublicProviderIssueCode,
+  PublicProviderResponse
+} from "./public-market-contracts.ts";

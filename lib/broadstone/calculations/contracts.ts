@@ -4,7 +4,9 @@ export type CanonicalMetricCode =
   | "calculated_ebitda"
   | "selected_ebitda"
   | "normalized_ebitda"
-  | "accepted_adjustments";
+  | "accepted_adjustments"
+  | "operating_income"
+  | "net_income";
 
 export type EbitdaBasis = "reported" | "calculated" | "unavailable";
 
