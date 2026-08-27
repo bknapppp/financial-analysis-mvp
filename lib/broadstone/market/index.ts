@@ -17,3 +17,9 @@ export type {
   SnapshotObservation,
   SnapshotObservationBasis
 } from "./contracts.ts";
+
+export { deterministicContentHash, stableSerialize } from "./hashing.ts";
+export {
+  buildCalculationSnapshotManifest,
+  buildMarketObservationBundle
+} from "./snapshot-builder.ts";
