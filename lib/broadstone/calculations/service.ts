@@ -8,14 +8,16 @@ import type {
   PrivateCompanyPeriodCalculations
 } from "./contracts.ts";
 
+type LegacyCalculationReference = Extract<CalculationReference, { calculator: "buildSnapshots" }>;
+
 const reference = (
-  field: CalculationReference["field"]
-): CalculationReference => ({ calculator: "buildSnapshots", field });
+  field: LegacyCalculationReference["field"]
+): LegacyCalculationReference => ({ calculator: "buildSnapshots", field });
 
 function result<TCode extends CanonicalMetricCode>(
   metricCode: TCode,
   value: number | null,
-  field: CalculationReference["field"]
+  field: LegacyCalculationReference["field"]
 ): CalculationResult<TCode> {
   return { metricCode, value, reference: reference(field) };
 }

@@ -6,11 +6,15 @@ export type CanonicalMetricCode =
   | "normalized_ebitda"
   | "accepted_adjustments"
   | "operating_income"
-  | "net_income";
+  | "net_income"
+  | "total_debt"
+  | "cash_and_cash_equivalents"
+  | "preferred_equity"
+  | "non_controlling_interest";
 
 export type EbitdaBasis = "reported" | "calculated" | "unavailable";
 
-export type CalculationReference = {
+export type PrivateCalculationReference = {
   calculator: "buildSnapshots";
   field:
     | "revenue"
@@ -21,8 +25,18 @@ export type CalculationReference = {
     | "acceptedAddBacks";
 };
 
+export type MarketCalculationReference = {
+  calculator: "market_engine";
+  methodologyId: string;
+  methodologyVersion: string;
+  observationBundleHash: string;
+  inputObservationIds: readonly string[];
+};
+
+export type CalculationReference = PrivateCalculationReference | MarketCalculationReference;
+
 export type CalculationResult<
-  TCode extends CanonicalMetricCode = CanonicalMetricCode
+  TCode extends string = CanonicalMetricCode
 > = {
   metricCode: TCode;
   value: number | null;

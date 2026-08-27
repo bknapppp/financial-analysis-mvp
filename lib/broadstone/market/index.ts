@@ -57,6 +57,15 @@ export {
   TWELVE_DATA_PROTOTYPE_RIGHTS_POLICY
 } from "./price-policy.ts";
 export type {
+  MarketCalculationMetricCode,
+  MarketCalculationResult,
+  MarketCalculationStatus,
+  MarketCalculationUnit,
+  PublicCompanyMarketCalculations,
+  PublicEbitdaBasis
+} from "./calculation-contracts.ts";
+export { MARKET_METHODOLOGIES } from "./methodologies.ts";
+export type {
   FreshnessEvaluation,
   FreshnessPolicy,
   FreshnessState,
