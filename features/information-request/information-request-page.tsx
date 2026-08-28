@@ -8,7 +8,7 @@ import { ContentCard } from "@/components/ui/content-card";
 import { ProgressBar } from "@/components/ui/progress-bar";
 import { SectionHeader } from "@/components/ui/section-header";
 import { StatusBadge } from "@/components/ui/status-badge";
-import type { InformationRequest, InformationRequestPageViewModel, RequestPriority, RequestStatus, RequestTone } from "@/features/information-request/information-request-view-model";
+import { INFORMATION_REQUEST_PROTOTYPE_NOTICE, type InformationRequest, type InformationRequestPageViewModel, type RequestPriority, type RequestStatus, type RequestTone } from "@/features/information-request/information-request-view-model";
 
 const inputClass = "min-h-9 rounded-bs-sm border border-bs-border-strong bg-bs-surface px-2.5 text-xs text-bs-text-primary shadow-none outline-none focus:border-bs-primary focus:ring-2 focus:ring-bs-primary/10";
 const buttonClass = "inline-flex min-h-8 items-center justify-center gap-1.5 rounded-bs-sm border border-bs-border-strong bg-bs-surface px-3 text-xs font-medium text-bs-text-secondary hover:bg-bs-page";
@@ -61,7 +61,7 @@ export function InformationRequestPage({ model }: { model: InformationRequestPag
 
   return <>
     <PageHeader eyebrow="Phase 2 of 6" title="Information Request & Data Collection" description="Create the diligence request list, track client responses, and route received support into the authoritative deal library." status={<StatusBadge tone="informational">{model.phaseStatus}</StatusBadge>} progress={<div><div className="mb-1 flex justify-between"><span className="bs-label">Request readiness</span><span className="bs-metadata">{metrics.completion}%</span></div><ProgressBar value={metrics.completion} label="Request readiness" /></div>} actions={<><button type="button" className={buttonClass} onClick={() => setEditor("review")}><Send className="size-3.5" />Submit phase review</button><button type="button" className={primaryClass} onClick={() => openRequest()}><Plus className="size-3.5" />Add request</button></>} />
-    <div className="border-b border-bs-info/20 bg-bs-info/5 px-4 py-2 text-center text-[11px] text-bs-info">Request workflow changes are session-only. Existing deal documents and Source Data remain authoritative.</div>
+    <div className="border-b border-bs-info/20 bg-bs-info/5 px-4 py-2 text-center text-[11px] text-bs-info">{INFORMATION_REQUEST_PROTOTYPE_NOTICE}</div>
     {notice ? <div role="status" className="border-b border-bs-success/20 bg-bs-success/5 px-4 py-2 text-center text-[11px] text-bs-success">{notice}</div> : null}
     <div className="mx-auto max-w-bs-content space-y-4 px-4 py-4 md:px-6">
       <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6">{[

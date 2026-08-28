@@ -3,6 +3,9 @@ import type { Company, DashboardData } from "@/lib/types";
 
 export type PlanningTone = "success" | "warning" | "danger" | "informational" | "neutral";
 
+export const PLANNING_PROTOTYPE_NOTICE =
+  "Prototype workflow — the 42% completion, team assignments, milestones, thresholds, approvals, dates, and activity shown here are illustrative and are not persisted. Existing Source Data documents remain authoritative.";
+
 export type PlanningChecklistItem = {
   id: string;
   task: string;
@@ -146,7 +149,7 @@ export function buildPlanningPreviewViewModel() {
 
 export function buildPlanningPageViewModel(data: DashboardData): PlanningPageViewModel | null {
   if (!data.company) return null;
-  const model = baseModel(data.company, false);
+  const model = baseModel(data.company, true);
   const documents = data.documents.slice(0, 5).map((document) => ({
     name: document.name ?? document.source_file_name ?? "Untitled document",
     type: document.document_type?.replaceAll("_", " ") ?? "Source document",

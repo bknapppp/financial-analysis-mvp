@@ -2,6 +2,8 @@ import type { Company, DashboardData, SourceDocument } from "@/lib/types";
 import { buildDealShellViewModel, type DealShellViewModel } from "@/lib/view-models/deal-shell";
 
 export type RequestTone = "success" | "warning" | "danger" | "informational" | "neutral";
+export const INFORMATION_REQUEST_PROTOTYPE_NOTICE =
+  "Prototype workflow — request rows, owners, dates, statuses, completion, and activity are illustrative and session-only. Only documents identified as persisted Source Data are authoritative.";
 export type RequestStatus = "Draft" | "Requested" | "Partially Received" | "Received" | "Under Review" | "Follow-up Required" | "Complete";
 export type RequestPriority = "Critical" | "High" | "Medium" | "Low";
 export type RequestDocument = { id: string; name: string; type: string; uploadedAt: string; persisted: boolean };
@@ -53,5 +55,4 @@ function mapDocuments(documents: SourceDocument[]): RequestDocument[] {
 }
 
 export function buildInformationRequestPreviewViewModel() { return baseModel(previewCompany, true, previewDocuments); }
-export function buildInformationRequestPageViewModel(data: DashboardData) { return data.company ? baseModel(data.company, false, mapDocuments(data.documents)) : null; }
-
+export function buildInformationRequestPageViewModel(data: DashboardData) { return data.company ? baseModel(data.company, true, mapDocuments(data.documents)) : null; }

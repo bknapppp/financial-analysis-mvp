@@ -9,7 +9,7 @@ import { ContentCard } from "@/components/ui/content-card";
 import { ProgressBar } from "@/components/ui/progress-bar";
 import { SectionHeader } from "@/components/ui/section-header";
 import { StatusBadge } from "@/components/ui/status-badge";
-import type { PlanningChecklistItem, PlanningPageViewModel, PlanningTone } from "@/features/planning/planning-view-model";
+import { PLANNING_PROTOTYPE_NOTICE, type PlanningChecklistItem, type PlanningPageViewModel, type PlanningTone } from "@/features/planning/planning-view-model";
 
 const buttonClass = "inline-flex min-h-8 items-center justify-center gap-1.5 rounded-bs-sm border border-bs-border-strong bg-bs-surface px-3 text-xs font-medium text-bs-text-secondary hover:bg-bs-page";
 const inputClass = "min-h-9 rounded-bs-sm border border-bs-border-strong bg-bs-surface px-2.5 text-xs text-bs-text-primary shadow-none outline-none focus:border-bs-primary focus:ring-2 focus:ring-bs-primary/10";
@@ -137,7 +137,7 @@ export function PlanningPage({ model: initialModel }: { model: PlanningPageViewM
       progress={<div><div className="mb-1 flex justify-between"><span className="bs-label">Phase completion</span><span className="bs-metadata">{workspace.completionPercent}%</span></div><ProgressBar value={workspace.completionPercent} label="Planning phase completion" /></div>}
       actions={<><button type="button" className={buttonClass} onClick={exportPlan}><Download className="size-3.5" />Export plan</button><button type="button" className="inline-flex min-h-8 items-center gap-1.5 rounded-bs-sm bg-bs-primary px-3 text-xs font-medium text-white hover:bg-bs-primary-hover" onClick={() => setSubmissionOpen(true)}><ShieldCheck className="size-3.5" />Submit for approval</button></>}
     />
-    {workspace.isPreview ? <div className="border-b border-bs-info/20 bg-bs-info/5 px-4 py-2 text-center text-[11px] text-bs-info md:px-6">Review dataset — edits are prototype-only and remain in this browser session. Existing Source Data uploads are persisted for real deals.</div> : null}
+    {workspace.isPreview ? <div className="border-b border-bs-info/20 bg-bs-info/5 px-4 py-2 text-center text-[11px] text-bs-info md:px-6">{PLANNING_PROTOTYPE_NOTICE}</div> : null}
     {notice ? <div role="status" className="border-b border-bs-success/20 bg-bs-success/5 px-4 py-2 text-center text-[11px] text-bs-success md:px-6">{notice}</div> : null}
     <PageTabs ariaLabel="Planning and scoping sections" activeKey="overview" items={[
       { key: "overview", label: "Overview", href: `${phaseHref}#overview` },
