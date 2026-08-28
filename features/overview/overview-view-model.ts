@@ -37,6 +37,10 @@ export type OverviewPhase = {
   implemented: boolean;
 };
 
+export type OverviewReportingState =
+  | { mode: "uninitialized" | "schema_unavailable" }
+  | { mode: "persisted"; phaseStatus: string; completeSections: number; totalSections: number };
+
 export type OverviewActivity = {
   id: string;
   label: string;
@@ -164,7 +168,7 @@ function buildActivities(data: DashboardData): OverviewActivity[] {
     .map(({ timestamp: _timestamp, ...activity }) => activity);
 }
 
-function buildPhases(data: DashboardData): OverviewPhase[] {
+function buildPhases(data: DashboardData, reporting: OverviewReportingState): OverviewPhase[] {
   const companyId = data.company?.id ?? "";
   const activeIssues = data.diligenceIssueSummary.open + data.diligenceIssueSummary.inReview;
 
@@ -237,14 +241,27 @@ function buildPhases(data: DashboardData): OverviewPhase[] {
       key: "reporting",
       number: 5,
       label: "Reporting",
-      statusLabel: "Workflow unavailable",
-      tone: "neutral",
-      progressPercent: null,
+      statusLabel: reporting.mode === "persisted"
+        ? reporting.phaseStatus.replaceAll("_", " ")
+        : reporting.mode === "schema_unavailable" ? "Schema unavailable" : "Not initialized",
+      tone: reporting.mode === "persisted" ? "informational" : "neutral",
+      progressPercent: reporting.mode === "persisted" && reporting.totalSections > 0
+        ? Math.round((reporting.completeSections / reporting.totalSections) * 100)
+        : 0,
       dueDateLabel: "Not configured",
-      detail: "Existing exports remain available; report workflow is not yet persisted.",
-      metrics: [{ label: "Report records", value: "Unavailable" }],
-      href: `/deal/${companyId}`,
-      implemented: false
+      detail: reporting.mode === "persisted"
+        ? "Durable governed report composition state."
+        : reporting.mode === "schema_unavailable"
+          ? "The Phase 5 Reporting migration has not been applied in this environment."
+          : "Reporting requires explicit initialization.",
+      metrics: [{
+        label: "Sections",
+        value: reporting.mode === "persisted"
+          ? `${reporting.completeSections} / ${reporting.totalSections}`
+          : "0 / 7"
+      }],
+      href: `/deal/${companyId}/phases/reporting`,
+      implemented: true
     },
     {
       key: "close",
@@ -262,7 +279,10 @@ function buildPhases(data: DashboardData): OverviewPhase[] {
   ];
 }
 
-export function buildOverviewPageViewModel(data: DashboardData): OverviewPageViewModel | null {
+export function buildOverviewPageViewModel(
+  data: DashboardData,
+  reporting: OverviewReportingState = { mode: "uninitialized" }
+): OverviewPageViewModel | null {
   if (!data.company) {
     return null;
   }
@@ -342,7 +362,7 @@ export function buildOverviewPageViewModel(data: DashboardData): OverviewPageVie
       weeksRemainingLabel: "Unavailable",
       currentPhaseLabel: "Data Review & Analysis"
     },
-    phases: buildPhases(data),
+    phases: buildPhases(data, reporting),
     keyMetrics: [
       {
         label: "Documents",
