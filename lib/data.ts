@@ -23,6 +23,7 @@ import {
   summarizeDiligenceIssues,
   syncDiligenceIssuesForContext
 } from "./diligence-issues.ts";
+import { loadDashboardDiligenceIssueState } from "./dashboard-diligence-issues.ts";
 import { groupDiligenceIssues } from "./diligence-issue-groups.ts";
 import { deriveDiligenceReadiness } from "./diligence-readiness.ts";
 import {
@@ -294,8 +295,8 @@ async function buildDealScreenerRow(params: {
   const latestAddBack = context.addBacks
     .slice()
     .sort((left, right) => right.updated_at.localeCompare(left.updated_at))[0] ?? null;
-  const diligenceIssueSync = await syncDiligenceIssuesForContext(context);
-  const diligenceIssues = diligenceIssueSync.issues;
+  const diligenceIssueState = await loadDashboardDiligenceIssueState(context.company.id);
+  const diligenceIssues = diligenceIssueState.issues;
   const diligenceIssueSummary = summarizeDiligenceIssues(diligenceIssues);
   const diligenceReadiness = deriveDiligenceReadiness({ issues: diligenceIssues });
   const stage = getDealStage(context.company.stage);
@@ -498,12 +499,12 @@ export async function getDashboardData(
       return buildEmptyDashboardData(companies);
     }
 
-    const diligenceIssueSync = await syncDiligenceIssuesForContext(context);
+    const diligenceIssueState = await loadDashboardDiligenceIssueState(context.company.id);
     const dashboardData = buildDashboardDataForCompany({
       companies,
       context,
-      diligenceIssues: diligenceIssueSync.issues,
-      diligenceIssueFeedback: diligenceIssueSync.feedback
+      diligenceIssues: diligenceIssueState.issues,
+      diligenceIssueFeedback: diligenceIssueState.feedback
     });
 
     return {
@@ -516,6 +517,11 @@ export async function getDashboardData(
   } catch {
     return buildEmptyDashboardData([]);
   }
+}
+
+export async function synchronizeDashboardDiligenceIssues(companyId: string) {
+  const context = await getDealDerivedContext(companyId);
+  return context ? syncDiligenceIssuesForContext(context) : null;
 }
 
 export async function getDealScreenerRows(): Promise<DealScreenerRow[]> {

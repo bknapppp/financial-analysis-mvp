@@ -4,6 +4,7 @@ import {
   createManualDiligenceIssue,
   getDiligenceIssues
 } from "@/lib/diligence-issues";
+import { synchronizeDashboardDiligenceIssues } from "@/lib/data";
 import type {
   DiligenceIssueCategory,
   DiligenceIssueLinkedPage,
@@ -93,6 +94,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as {
+      action?: string;
       companyId?: string;
       periodId?: string | null;
       title?: string;
@@ -105,6 +107,21 @@ export async function POST(request: NextRequest) {
     };
 
     const companyId = body.companyId?.trim();
+
+    if (body.action === "synchronize") {
+      if (!companyId) {
+        return NextResponse.json({ error: "companyId is required." }, { status: 400 });
+      }
+
+      const result = await synchronizeDashboardDiligenceIssues(companyId);
+      if (!result) {
+        return NextResponse.json({ error: "Deal not found." }, { status: 404 });
+      }
+
+      revalidateDealPaths(companyId);
+      return NextResponse.json({ data: result });
+    }
+
     const title = body.title?.trim();
     const description = body.description?.trim();
 
