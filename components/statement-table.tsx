@@ -2,6 +2,7 @@
 
 import { formatCurrency } from "@/lib/formatters";
 import type { NormalizedStatement } from "@/lib/types";
+import { clsx } from "clsx";
 
 type StatementTableProps = {
   statement: NormalizedStatement;
@@ -10,6 +11,7 @@ type StatementTableProps = {
   onRowClick?: (label: string) => void;
   showOuterCard?: boolean;
   density?: "default" | "compact";
+  variant?: "legacy" | "canonical";
 };
 
 export function StatementTable({
@@ -18,15 +20,16 @@ export function StatementTable({
   clickableLabels = [],
   onRowClick,
   showOuterCard = true,
-  density = "default"
+  density = "default",
+  variant = "legacy"
 }: StatementTableProps) {
   const content = (
     <>
       <div className="mb-3">
-        <h2 className="text-lg font-semibold text-slate-900">{statement.title}</h2>
+        <h2 className={clsx(variant === "canonical" ? "bs-section-title" : "text-lg font-semibold text-slate-900")}>{statement.title}</h2>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-slate-200">
+      <div className={clsx("overflow-x-auto border", variant === "canonical" ? "rounded-bs-sm border-bs-border-subtle" : "overflow-hidden rounded-2xl border-slate-200")}>
         <table className="min-w-full divide-y divide-slate-200 text-sm">
           <thead className="bg-slate-50">
             <tr>

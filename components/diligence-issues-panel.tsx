@@ -36,6 +36,7 @@ type DiligenceIssuesPanelProps = {
       ctaLabel?: string;
     }
   >;
+  variant?: "legacy" | "canonical";
 };
 
 const CATEGORY_OPTIONS: DiligenceIssueCategory[] = [
@@ -132,7 +133,8 @@ export function DiligenceIssuesPanel({
   emptyMessage,
   allowManualCreate = false,
   preferredGroups,
-  supportByIssueId = {}
+  supportByIssueId = {},
+  variant = "legacy"
 }: DiligenceIssuesPanelProps) {
   const router = useRouter();
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -219,7 +221,7 @@ export function DiligenceIssuesPanel({
   }
 
   return (
-    <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel">
+    <section className={variant === "canonical" ? "rounded-bs-md border border-bs-border-subtle bg-bs-surface p-4 shadow-bs-subtle" : "rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel"}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="max-w-3xl">
           <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">

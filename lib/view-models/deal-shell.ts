@@ -1,4 +1,4 @@
-import type { Company } from "@/lib/types";
+import type { Company } from "../types.ts";
 
 export type ShellIconKey =
   | "overview"
@@ -78,6 +78,27 @@ function buildNavigation(companyId: string): ShellNavigationItem[] {
       implemented: true
     },
     {
+      key: "financials",
+      label: "Financials",
+      icon: "analytics",
+      href: `/financials?companyId=${companyId}`,
+      implemented: true
+    },
+    {
+      key: "underwriting",
+      label: "Underwriting",
+      icon: "analysis",
+      href: `/deal/${companyId}/underwriting`,
+      implemented: true
+    },
+    {
+      key: "source-data",
+      label: "Source Data",
+      icon: "documents",
+      href: `/source-data?companyId=${companyId}`,
+      implemented: true
+    },
+    {
       key: "phases",
       label: "Phases",
       icon: "phases",
@@ -149,7 +170,7 @@ function findNavigationLabel(items: ShellNavigationItem[], key: string): string 
 export function buildDealShellViewModel(params: {
   company: Company;
   requestedSection?: string;
-  context?: "preview" | "overview" | "planning" | "information-request" | "data-review" | "findings" | "reporting";
+  context?: "preview" | "overview" | "financials" | "planning" | "information-request" | "data-review" | "findings" | "reporting";
   progressPercent?: number;
   progressLabel?: string;
   progressIsPreview?: boolean;
@@ -169,6 +190,12 @@ export function buildDealShellViewModel(params: {
         { label: dealName },
         { label: "Project Overview" }
       ]
+    : context === "financials"
+      ? [
+          { label: "All Deals", href: "/deals" },
+          { label: dealName },
+          { label: "Financials" }
+        ]
     : context === "planning"
       ? [
           { label: "All Deals", href: "/deals" },
@@ -205,7 +232,7 @@ export function buildDealShellViewModel(params: {
       ];
 
   return {
-    topHeaderTitle: context === "overview" ? "Project Overview" : undefined,
+    topHeaderTitle: context === "overview" ? "Project Overview" : context === "financials" ? "Financials" : undefined,
     companyId: company.id,
     dealName,
     companyName: company.name,
