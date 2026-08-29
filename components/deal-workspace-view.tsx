@@ -47,6 +47,7 @@ export type DealWorkspaceSection = "overview" | "financials" | "underwriting";
 type DealWorkspaceViewProps = {
   data: DashboardData;
   section: DealWorkspaceSection;
+  layout?: "legacy" | "canonical";
 };
 
 type FinancialsMode = "reported" | "adjusted";
@@ -275,7 +276,7 @@ function sectionLabel(section: DealWorkspaceSection) {
   return "Underwriting";
 }
 
-export function DealWorkspaceView({ data, section }: DealWorkspaceViewProps) {
+export function DealWorkspaceView({ data, section, layout = "legacy" }: DealWorkspaceViewProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const requestedFixSection = searchParams.get("fixSection");
@@ -899,8 +900,9 @@ export function DealWorkspaceView({ data, section }: DealWorkspaceViewProps) {
   }
 
   return (
-    <main className="min-h-screen px-4 py-8 md:px-8">
-      <div className="mx-auto flex max-w-7xl flex-col gap-8">
+    <div className={layout === "canonical" ? "" : "min-h-screen px-4 py-8 md:px-8"}>
+      <div className={layout === "canonical" ? "flex flex-col gap-4" : "mx-auto flex max-w-7xl flex-col gap-8"}>
+        {layout === "legacy" ? (
         <section className="rounded-[2rem] border border-slate-200 bg-white px-6 py-6 shadow-panel md:px-8">
           <div className="flex flex-col gap-6">
             <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
@@ -955,8 +957,9 @@ export function DealWorkspaceView({ data, section }: DealWorkspaceViewProps) {
             </div>
           </div>
         </section>
+        ) : null}
 
-        <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel">
+        <section className={layout === "canonical" ? "rounded-bs-md border border-bs-border-subtle bg-bs-surface p-4 shadow-bs-subtle" : "rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-panel"}>
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
               <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
@@ -1900,7 +1903,7 @@ export function DealWorkspaceView({ data, section }: DealWorkspaceViewProps) {
             }))}
         />
       ) : null}
-    </main>
+    </div>
   );
 }
 

@@ -5,12 +5,12 @@ import { loadUnderwritingPageViewModel } from "@/features/underwriting/underwrit
 
 export const revalidate = 60;
 
-export default async function DealUnderwritingPage({
-  params
+export default async function UnderwritingRoute({
+  searchParams
 }: {
-  params: Promise<{ companyId: string }>;
+  searchParams?: Promise<{ companyId?: string }>;
 }) {
-  const { companyId } = await params;
+  const { companyId } = (await searchParams) ?? {};
   const model = await loadUnderwritingPageViewModel(companyId);
   if (!model) notFound();
 
