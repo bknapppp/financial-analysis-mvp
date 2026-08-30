@@ -39,22 +39,23 @@ export function TopUtilityHeader({
 
       <div className="hidden w-64 items-center gap-2 rounded-bs-sm border border-bs-border-subtle bg-bs-surface px-2.5 py-1.5 text-bs-text-muted shadow-bs-subtle md:flex">
         <Search aria-hidden="true" className="size-3.5 shrink-0" />
-        <span className="truncate text-xs">Search preview...</span>
+        <span className="truncate text-xs">Search workspace...</span>
         <span className="ml-auto rounded border border-bs-border-subtle bg-bs-page px-1 text-[10px]">⌘ K</span>
       </div>
 
       <button
         type="button"
-        aria-label="Notifications are not connected in this preview"
-        className="relative inline-flex size-8 shrink-0 items-center justify-center rounded-bs-sm text-bs-text-secondary hover:bg-bs-page"
+        disabled
+        aria-label="Notifications are unavailable"
+        className="inline-flex size-8 shrink-0 cursor-not-allowed items-center justify-center rounded-bs-sm text-bs-text-muted"
       >
         <Bell aria-hidden="true" className="size-4" />
-        <span className="absolute right-1 top-1 size-1.5 rounded-full bg-bs-danger" />
       </button>
       <button
         type="button"
-        aria-label="Open help"
-        className="inline-flex size-8 shrink-0 items-center justify-center rounded-bs-sm text-bs-text-secondary hover:bg-bs-page"
+        disabled
+        aria-label="Help is unavailable"
+        className="inline-flex size-8 shrink-0 cursor-not-allowed items-center justify-center rounded-bs-sm text-bs-text-muted"
       >
         <HelpCircle aria-hidden="true" className="size-4" />
       </button>

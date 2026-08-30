@@ -314,7 +314,9 @@ export function ProFormaPanel({
   revenue = null,
   revenueGrowthPercent = null
 }: ProFormaPanelProps) {
-  const isDevelopment = process.env.NODE_ENV !== "production";
+  const isDevelopment =
+    process.env.NODE_ENV !== "production" &&
+    process.env.NEXT_PUBLIC_SHOW_UNDERWRITING_DEBUG === "true";
   const parsedInputs = useMemo(
     () => parseCreditScenarioInputValues(workbenchInputValues),
     [workbenchInputValues]

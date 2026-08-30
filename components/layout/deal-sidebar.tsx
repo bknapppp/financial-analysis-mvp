@@ -87,7 +87,13 @@ function NavigationLink({
       href={item.href}
       onClick={onNavigate}
       aria-current={isActive ? "page" : undefined}
-      title={collapsed ? item.label : `${item.label} — preview destination`}
+      title={
+        collapsed
+          ? item.label
+          : item.implemented
+            ? item.label
+            : `${item.label} — preview destination`
+      }
       className={clsx(
         "group flex min-h-8 items-center rounded-bs-sm text-[11px] font-medium outline-none",
         collapsed ? "justify-center px-2" : nested ? "gap-2 px-2.5 pl-7" : "gap-2.5 px-2.5",
@@ -240,9 +246,10 @@ export function DealSidebar({
             <div className="my-2.5 border-t border-white/10" />
             <button
               type="button"
-              aria-label="Help is not connected in this preview"
+              disabled
+              aria-label="Help is unavailable"
               className={clsx(
-                "flex min-h-8 w-full items-center rounded-bs-sm text-[11px] text-slate-300 hover:bg-white/[0.07] hover:text-white",
+                "flex min-h-8 w-full cursor-not-allowed items-center rounded-bs-sm text-[11px] text-slate-500",
                 collapsed ? "justify-center" : "gap-2 px-2"
               )}
               title={collapsed ? "Help" : undefined}

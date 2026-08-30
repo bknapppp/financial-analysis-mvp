@@ -229,6 +229,13 @@ export function buildDealShellViewModel(params: {
           { label: "Phases" },
           { label: "Data Review & Analysis" }
         ]
+    : context === "findings"
+      ? [
+          { label: "All Deals", href: "/deals" },
+          { label: dealName },
+          { label: "Phases" },
+          { label: "Findings & Issues" }
+        ]
     : context === "reporting"
       ? [
           { label: "All Deals", href: "/deals" },
@@ -259,11 +266,18 @@ export function buildDealShellViewModel(params: {
     projectOverviewHref: `/deal/${company.id}/overview`,
     legacyDealHref: `/deal/${company.id}`,
     breadcrumbs,
-    user: {
-      name: "Preview User",
-      role: "Analyst (preview)",
-      initials: "PU",
-      isPreview: true
-    }
+    user: context === "preview"
+      ? {
+          name: "Preview User",
+          role: "Analyst (preview)",
+          initials: "PU",
+          isPreview: true
+        }
+      : {
+          name: "Broadstone Analyst",
+          role: "Demo workspace",
+          initials: "BA",
+          isPreview: false
+        }
   };
 }

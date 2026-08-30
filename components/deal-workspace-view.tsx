@@ -280,7 +280,9 @@ export function DealWorkspaceView({ data, section, layout = "legacy" }: DealWork
   const router = useRouter();
   const searchParams = useSearchParams();
   const requestedFixSection = searchParams.get("fixSection");
-  const isDevelopment = process.env.NODE_ENV !== "production";
+  const isDevelopment =
+    process.env.NODE_ENV !== "production" &&
+    process.env.NEXT_PUBLIC_SHOW_UNDERWRITING_DEBUG === "true";
   const [mode, setMode] = useState<FinancialsMode>("reported");
   const [showValidationDetails, setShowValidationDetails] = useState(false);
   const [underwritingInputValues, setUnderwritingInputValues] =
