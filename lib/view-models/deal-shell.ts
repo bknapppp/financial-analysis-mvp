@@ -170,7 +170,7 @@ function findNavigationLabel(items: ShellNavigationItem[], key: string): string 
 export function buildDealShellViewModel(params: {
   company: Company;
   requestedSection?: string;
-  context?: "preview" | "overview" | "financials" | "underwriting" | "planning" | "information-request" | "data-review" | "findings" | "reporting";
+  context?: "preview" | "overview" | "financials" | "underwriting" | "source-data" | "planning" | "information-request" | "data-review" | "findings" | "reporting";
   progressPercent?: number;
   progressLabel?: string;
   progressIsPreview?: boolean;
@@ -201,6 +201,12 @@ export function buildDealShellViewModel(params: {
           { label: "All Deals", href: "/deals" },
           { label: dealName },
           { label: "Underwriting" }
+        ]
+    : context === "source-data"
+      ? [
+          { label: "All Deals", href: "/deals" },
+          { label: dealName },
+          { label: "Source Data" }
         ]
     : context === "planning"
       ? [
@@ -238,7 +244,7 @@ export function buildDealShellViewModel(params: {
       ];
 
   return {
-    topHeaderTitle: context === "overview" ? "Project Overview" : context === "financials" ? "Financials" : context === "underwriting" ? "Underwriting" : undefined,
+    topHeaderTitle: context === "overview" ? "Project Overview" : context === "financials" ? "Financials" : context === "underwriting" ? "Underwriting" : context === "source-data" ? "Source Data" : undefined,
     companyId: company.id,
     dealName,
     companyName: company.name,
