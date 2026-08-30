@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { MoreHorizontal, Plus, X } from "lucide-react";
+import { BriefcaseBusiness, MoreHorizontal, Plus, X } from "lucide-react";
 import {
   useEffect,
   useMemo,
@@ -27,6 +27,10 @@ import {
 } from "@/lib/benchmarking/benchmark-labels";
 import { isRecentlyUpdated, type PortfolioDealStatus } from "@/lib/portfolio-deal-state";
 import type { DealScreenerRow } from "@/lib/data";
+import { ContentCard } from "@/components/ui/content-card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ProgressBar } from "@/components/ui/progress-bar";
+import { StatusBadge } from "@/components/ui/status-badge";
 
 type DealsScreenerTableProps = {
   rows: DealScreenerRow[];
@@ -280,22 +284,6 @@ function benchmarkInsightTone(direction: BenchmarkDirection) {
   return "text-slate-400";
 }
 
-function statusTone(status: PortfolioDealStatus) {
-  if (status === "Ready for output") {
-    return "border-teal-200 bg-teal-50 text-teal-900";
-  }
-
-  if (status === "Ready for structure" || status === "Underwriting in progress") {
-    return "border-sky-200 bg-sky-50 text-sky-900";
-  }
-
-  if (status === "Needs mapping" || status === "Needs source completion") {
-    return "border-amber-200 bg-amber-50 text-amber-900";
-  }
-
-  return "border-rose-200 bg-rose-50 text-rose-900";
-}
-
 function rowTone(status: PortfolioDealStatus) {
   if (status === "Ready for output") {
     return "border-l-teal-300";
@@ -365,20 +353,20 @@ function SummaryCard(props: {
     <button
       type="button"
       onClick={props.onClick}
-      className={`rounded-2xl border px-4 py-4 text-left transition-colors ${
+      className={`rounded-bs-md border px-3 py-3 text-left shadow-bs-subtle transition-colors ${
         props.active
-          ? "border-slate-900 bg-slate-900 text-white"
-          : "border-slate-200 bg-slate-50 hover:bg-white"
+          ? "border-bs-primary bg-bs-primary text-white"
+          : "border-bs-border-subtle bg-bs-surface hover:border-bs-border-strong hover:bg-bs-page"
       }`}
     >
-      <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-slate-400">
+      <p className={`bs-label ${props.active ? "text-blue-100" : ""}`}>
         {props.label}
       </p>
-      <p className={`mt-2 text-2xl font-semibold tracking-tight ${props.active ? "text-white" : "text-slate-950"}`}>
+      <p className={`mt-1.5 text-xl font-semibold tracking-tight ${props.active ? "text-white" : "text-bs-text-primary"}`}>
         {props.value}
       </p>
       {props.detail ? (
-        <p className={`mt-1 text-sm ${props.active ? "text-slate-200" : "text-slate-500"}`}>{props.detail}</p>
+        <p className={`mt-1 text-[10px] leading-4 ${props.active ? "text-blue-100" : "text-bs-text-muted"}`}>{props.detail}</p>
       ) : null}
     </button>
   );
@@ -711,16 +699,12 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
 
   return (
     <section className="space-y-4">
-      <section className="rounded-[1.5rem] border border-slate-200 bg-white px-4 py-4 shadow-panel md:px-5">
-        <div className="flex flex-col gap-4 border-b border-slate-200 pb-4 md:flex-row md:items-start md:justify-between">
+      <ContentCard>
+        <div className="flex flex-col gap-4 border-b border-bs-border-subtle pb-4 md:flex-row md:items-start md:justify-between">
           <div className="min-w-0">
-            <p className="text-[10px] font-medium uppercase tracking-[0.26em] text-slate-400">
-              Portfolio Command Center
-            </p>
-            <h1 className="mt-1 text-2xl font-semibold text-slate-950">All Deals</h1>
-            <p className="mt-1 text-sm text-slate-500">
-              Monitor lifecycle stage, readiness, blockers, and risk across the portfolio.
-            </p>
+            <p className="bs-label">Portfolio position</p>
+            <h2 className="bs-section-title mt-1">Pipeline summary</h2>
+            <p className="bs-body-text mt-1">Select a metric to focus the working deal list.</p>
           </div>
           <button
             type="button"
@@ -728,7 +712,7 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
               resetNewDealForm();
               setIsNewDealOpen(true);
             }}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800 md:w-auto"
+            className="inline-flex min-h-9 w-full items-center justify-center gap-2 rounded-bs-sm bg-bs-primary px-3.5 py-2 text-xs font-semibold text-white hover:bg-bs-primary-hover md:w-auto"
           >
             <Plus className="h-4 w-4" aria-hidden="true" />
             New Deal
@@ -791,15 +775,14 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
             onClick={() => toggleSummaryFilter("recently_updated")}
           />
         </div>
-      </section>
+      </ContentCard>
 
-      <section className="rounded-[1.5rem] border border-slate-200 bg-white px-4 py-4 shadow-panel md:px-5">
-        <div className="flex flex-col gap-4 border-b border-slate-200 pb-4">
+      <ContentCard>
+        <div className="flex flex-col gap-4 border-b border-bs-border-subtle pb-4">
           <div className="min-w-0">
-            <p className="text-[10px] font-medium uppercase tracking-[0.26em] text-slate-400">
-              Working Grid
-            </p>
-            <h2 className="mt-1 text-xl font-semibold text-slate-950">Portfolio Grid</h2>
+            <p className="bs-label">Working list</p>
+            <h2 className="bs-section-title mt-1">Deal portfolio</h2>
+            <p className="bs-body-text mt-1">Open a transaction or continue its next required action.</p>
           </div>
 
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
@@ -993,14 +976,14 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
               return (
                 <div
                   key={row.companyId}
-                  className={`cursor-pointer rounded-2xl border border-slate-200 border-l-4 bg-white p-4 transition-colors hover:bg-slate-50 focus-within:bg-slate-50 ${rowTone(
+                  className={`cursor-pointer rounded-bs-md border border-bs-border-subtle border-l-4 bg-bs-surface p-4 shadow-bs-subtle transition-colors hover:border-bs-border-strong hover:bg-bs-page focus-within:bg-bs-page ${rowTone(
                     row.status
                   )}`}
-                  onClick={() => router.push(`/deal/${row.companyId}`)}
+                  onClick={() => router.push(`/deal/${row.companyId}/overview`)}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {
                       event.preventDefault();
-                      router.push(`/deal/${row.companyId}`);
+                      router.push(`/deal/${row.companyId}/overview`);
                     }
                   }}
                   tabIndex={0}
@@ -1011,7 +994,7 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-start gap-2">
                         <Link
-                          href={`/deal/${row.companyId}`}
+                          href={`/deal/${row.companyId}/overview`}
                           className="min-w-0 text-lg font-semibold tracking-tight text-slate-950 hover:text-slate-950"
                           onClick={stopRowNavigation}
                         >
@@ -1022,13 +1005,19 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
                             {row.dealType}
                           </span>
                         ) : null}
-                        <span
-                          className={`inline-flex w-fit rounded-md border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${statusTone(
-                            row.status
-                          )}`}
+                        <StatusBadge
+                          tone={
+                            row.diligenceReadinessLabel === "Ready"
+                              ? "success"
+                              : row.riskSeverity === "high"
+                                ? "danger"
+                                : row.riskSeverity === "medium"
+                                  ? "warning"
+                                  : "informational"
+                          }
                         >
                           {row.diligenceReadinessLabel}
-                        </span>
+                        </StatusBadge>
                       </div>
                       {row.dealName !== row.companyName ? (
                         <p className="mt-1 text-sm text-slate-500">{row.companyName}</p>
@@ -1075,12 +1064,8 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
                           {formatCompletion(row.completionPercent)}
                         </span>
                       </div>
-                      <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
-                        <div
-                          className="h-full rounded-full bg-slate-900 transition-[width]"
-                          style={{ width: `${row.completionPercent}%` }}
-                          aria-hidden="true"
-                        />
+                      <div className="mt-2">
+                        <ProgressBar value={row.completionPercent} label={`${row.dealName} completion`} />
                       </div>
                       <div className="mt-3 text-xs text-slate-500">
                         <span className="font-medium text-slate-600">Last updated</span>{" "}
@@ -1090,7 +1075,7 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
                         <Link
                           href={row.nextActionHref}
                           onClick={stopRowNavigation}
-                          className="inline-flex w-full items-center justify-center rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
+                          className="inline-flex w-full items-center justify-center rounded-bs-sm bg-bs-primary px-3 py-2 text-xs font-semibold text-white hover:bg-bs-primary-hover"
                         >
                           {row.nextAction}
                         </Link>
@@ -1157,9 +1142,15 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
               );
             })
           ) : (
-            <div className="px-4 py-8 text-center text-sm text-slate-500">
-              No deals match the current filters.
-            </div>
+            <EmptyState
+              title={localRows.length === 0 ? "No deals yet" : "No matching deals"}
+              description={
+                localRows.length === 0
+                  ? "Create the first deal to begin a transaction workspace."
+                  : "Clear or adjust the current filters to return to the portfolio."
+              }
+              icon={BriefcaseBusiness}
+            />
           )}
         </div>
 
@@ -1167,7 +1158,7 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
           <span>{filteredRows.length} deals visible</span>
           <span>Click any row to open the deal workspace overview</span>
         </div>
-      </section>
+      </ContentCard>
 
       {isNewDealOpen ? (
         <div
@@ -1361,4 +1352,3 @@ export function DealsScreenerTable({ rows }: DealsScreenerTableProps) {
     </section>
   );
 }
-
