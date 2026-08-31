@@ -151,8 +151,8 @@ export function PlanningPage({ model: initialModel }: { model: PlanningPageViewM
       <div id="overview" className="grid scroll-mt-4 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(32rem,0.95fr)]">
         <ContentCard>
           <SectionHeader title="Engagement objectives & deal overview" description="Shared mandate for the diligence team and reviewers" actions={<button type="button" className={buttonClass}>Edit overview</button>} />
-          <div className="mt-4 grid gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(15rem,0.6fr)]">
-            <div><p className="bs-label">Primary objective</p><p className="mt-1 text-xs leading-5 text-bs-text-secondary">{model.engagement.objective}</p><p className="bs-label mt-4">Deal overview</p><p className="mt-1 text-xs leading-5 text-bs-text-secondary">{model.engagement.dealOverview}</p></div>
+          <div className="mt-4 space-y-5">
+            <div className="min-w-0"><p className="bs-label">Primary objective</p><p className="mt-1 text-xs leading-5 text-bs-text-secondary">{model.engagement.objective}</p><p className="bs-label mt-4">Deal overview</p><p className="mt-1 text-xs leading-5 text-bs-text-secondary">{model.engagement.dealOverview}</p></div>
             <DefinitionList items={[{ label: "Engagement lead", value: model.team[0].name }, { label: "Executive reviewer", value: model.team[3].name }, { label: "Base currency", value: "USD" }, { label: "Target draft", value: formatPlanningDate(model.engagement.targetDraft) }]} />
           </div>
         </ContentCard>

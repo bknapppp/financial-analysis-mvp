@@ -139,17 +139,17 @@ export function PerformanceDrivers({
             </p>
           </div>
 
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-4">
             {buildSummaryMetrics(latestAnalysis).map((metric) => (
               <article
                 key={metric.label}
-                className="rounded-2xl border border-slate-200 bg-white px-4 py-4"
+                className="min-w-0 rounded-2xl border border-slate-200 bg-white px-4 py-4"
               >
                 <p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">
                   {metric.label}
                 </p>
                 <p
-                  className={`mt-3 text-2xl font-semibold ${metricToneClass(metric.tone)}`}
+                  className={`mt-3 whitespace-nowrap text-2xl font-semibold ${metricToneClass(metric.tone)}`}
                 >
                   {metric.absolute !== undefined
                     ? formatDeltaCurrency(metric.absolute)
@@ -194,7 +194,7 @@ export function PerformanceDrivers({
                       </p>
                     </div>
 
-                    <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    <div className="mt-4 grid gap-3 md:grid-cols-2 2xl:grid-cols-4">
                       {buildSummaryMetrics(analysis).map((metric) => (
                         <div
                           key={`${analysis.previousLabel}-${analysis.currentLabel}-${metric.label}`}
