@@ -112,7 +112,7 @@ export function OverviewPage({ model }: OverviewPageProps) {
             </dl>
           </div>
           <div className="flex shrink-0 flex-wrap gap-2">
-            <Link href={model.links.legacyDeal} className="inline-flex min-h-8 items-center rounded-bs-sm border border-bs-border-strong px-3 text-[10px] font-medium text-bs-text-secondary hover:bg-bs-page">Legacy workspace</Link>
+            <Link href={model.links.financials} className="inline-flex min-h-8 items-center rounded-bs-sm border border-bs-border-strong px-3 text-[10px] font-medium text-bs-text-secondary hover:bg-bs-page">Review financials</Link>
             <Link href={model.links.sourceData} className="inline-flex min-h-8 items-center rounded-bs-sm bg-bs-primary px-3 text-[10px] font-medium text-white hover:bg-bs-primary-hover">Review source data</Link>
           </div>
         </div>

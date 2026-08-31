@@ -68,7 +68,7 @@ function links(companyId: string) {
     sourceData: `/source-data?companyId=${companyId}`,
     financials: `/financials?companyId=${companyId}`,
     underwriting: `/deal/${companyId}/underwriting`,
-    issues: `/deal/${companyId}?view=issues`,
+    issues: `/deal/${companyId}/phases/findings`,
     export: `/api/deals/${companyId}/export`
   };
 }

@@ -137,7 +137,16 @@ function buildIssueRoute(params: {
     return `/financials?companyId=${params.companyId}`;
   }
 
-  return `/deal/${params.companyId}`;
+  return `/deal/${params.companyId}/overview`;
+}
+
+function canonicalizeLegacyDealRoute(route: string | null) {
+  if (!route) {
+    return null;
+  }
+
+  const legacyDealRoute = route.match(/^(\/deal\/[^/?#]+)(?:[?#].*)?$/);
+  return legacyDealRoute ? `${legacyDealRoute[1]}/overview` : route;
 }
 
 function defaultActionLabelForPage(page: DiligenceIssueLinkedPage) {
@@ -159,6 +168,7 @@ function defaultActionLabelForPage(page: DiligenceIssueLinkedPage) {
 export function resolveDiligenceIssueActionTarget(
   issue: Pick<DiligenceIssue, "linked_page" | "linked_route" | "linked_field" | "issue_code">
 ): DiligenceIssueActionTarget {
+  const linkedRoute = canonicalizeLegacyDealRoute(issue.linked_route);
   let actionLabel = defaultActionLabelForPage(issue.linked_page);
 
   if (
@@ -182,10 +192,10 @@ export function resolveDiligenceIssueActionTarget(
 
   return {
     linkedPage: issue.linked_page,
-    linkedRoute: issue.linked_route,
+    linkedRoute,
     linkedField: issue.linked_field,
-    actionLabel: issue.linked_route ? actionLabel : null,
-    isActionable: Boolean(issue.linked_route)
+    actionLabel: linkedRoute ? actionLabel : null,
+    isActionable: Boolean(linkedRoute)
   };
 }
 

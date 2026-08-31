@@ -265,8 +265,8 @@ function buildSourceDataHref(companyId: string) {
   return `/source-data?companyId=${companyId}`;
 }
 
-function buildDealHref(companyId: string) {
-  return `/deal/${companyId}`;
+function buildUnderwritingHref(companyId: string) {
+  return `/deal/${companyId}/underwriting`;
 }
 
 function deriveWorkbookBlockers(params: {
@@ -441,7 +441,7 @@ function deriveUnderwritingBlockers(params: {
         label: buildUnderwritingBlocker(structureInputs, underwritingReadiness),
         reason: "Required debt sizing or underwriting inputs are still missing.",
         actionLabel: "Enter loan terms",
-        href: buildFixItHref("Enter loan terms", buildDealHref(params.companyId))
+        href: buildFixItHref("Enter loan terms", buildUnderwritingHref(params.companyId))
       })
     );
   } else if (
@@ -458,7 +458,7 @@ function deriveUnderwritingBlockers(params: {
         actionLabel: params.completionSummary.nextActions[0] ?? "Continue underwriting",
         href: buildFixItHref(
           params.completionSummary.nextActions[0] ?? "Continue underwriting",
-          buildDealHref(params.companyId)
+          buildUnderwritingHref(params.companyId)
         )
       })
     );
@@ -476,7 +476,7 @@ function deriveUnderwritingBlockers(params: {
         label: `Accepted add-backs equal ${params.addBacksPercentOfEbitda.toFixed(1)}% of EBITDA`,
         reason: "Add-backs are large enough that they should be reviewed before relying on the structure outcome.",
         actionLabel: "Review add-backs",
-        href: buildFixItHref("Review add-backs", buildDealHref(params.companyId))
+        href: buildFixItHref("Review add-backs", buildUnderwritingHref(params.companyId))
       })
     );
   }
@@ -599,7 +599,7 @@ function buildStateNextAction(params: {
     const label = params.addBacksAboveThreshold ? "Review add-backs" : "Prepare output";
     return {
       label,
-      href: buildFixItHref(label, buildDealHref(params.companyId)),
+      href: buildFixItHref(label, buildUnderwritingHref(params.companyId)),
       source: "state" as const
     };
   }
@@ -608,7 +608,7 @@ function buildStateNextAction(params: {
     const label = params.addBacksAboveThreshold ? "Review add-backs" : "Run structure";
     return {
       label,
-      href: buildFixItHref(label, buildDealHref(params.companyId)),
+      href: buildFixItHref(label, buildUnderwritingHref(params.companyId)),
       source: "state" as const
     };
   }
@@ -621,7 +621,7 @@ function buildStateNextAction(params: {
 
     return {
       label,
-      href: buildFixItHref(label, buildDealHref(params.companyId)),
+      href: buildFixItHref(label, buildUnderwritingHref(params.companyId)),
       source: "state" as const
     };
   }

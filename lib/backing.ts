@@ -580,7 +580,7 @@ export function buildDealBackingContext(params: BuildDealBackingParams): DealBac
         "overall",
         "Overall",
         overallStatus,
-        `/deal/${params.companyId}`,
+        `/financials?companyId=${params.companyId}`,
         `Overall ${getBackingStatusLabel(overallStatus).toLowerCase()}`
       ),
       financials: buildSummaryItem(

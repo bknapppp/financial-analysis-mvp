@@ -69,7 +69,7 @@ export default async function RedesignPreviewPage({
         }
         actions={
           <Link
-            href={model.legacyDealHref}
+            href={model.projectOverviewHref}
             className="inline-flex min-h-8 items-center gap-1.5 rounded-bs-sm border border-bs-border-strong bg-bs-surface px-3 text-xs font-medium text-bs-text-secondary hover:bg-bs-page"
           >
             <ArrowLeft aria-hidden="true" className="size-3.5" />

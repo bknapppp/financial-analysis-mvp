@@ -42,7 +42,6 @@ export type DealShellViewModel = {
   activeLabel: string;
   navigation: ShellNavigationItem[];
   projectOverviewHref: string;
-  legacyDealHref: string;
   breadcrumbs: Array<{ label: string; href?: string }>;
   user: {
     name: string;
@@ -264,7 +263,6 @@ export function buildDealShellViewModel(params: {
     activeLabel: resolvedActiveLabel,
     navigation,
     projectOverviewHref: `/deal/${company.id}/overview`,
-    legacyDealHref: `/deal/${company.id}`,
     breadcrumbs,
     user: context === "preview"
       ? {

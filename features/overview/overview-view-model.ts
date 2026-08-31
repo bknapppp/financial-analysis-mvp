@@ -100,7 +100,6 @@ export type OverviewPageViewModel = {
   nextActions: OverviewAction[];
   financialSnapshot: Array<{ label: string; value: string; available: boolean }>;
   links: {
-    legacyDeal: string;
     financials: string;
     underwriting: string;
     sourceData: string;
@@ -232,9 +231,7 @@ function buildPhases(data: DashboardData, reporting: OverviewReportingState): Ov
         { label: "Open", value: String(data.diligenceIssueSummary.open) },
         { label: "In review", value: String(data.diligenceIssueSummary.inReview) }
       ],
-      href: data.diligenceIssueSummary.topOpenIssue
-        ? resolveDiligenceIssueActionTarget(data.diligenceIssueSummary.topOpenIssue).linkedRoute ?? `/deal/${companyId}`
-        : `/deal/${companyId}`,
+      href: `/deal/${companyId}/phases/findings`,
       implemented: true
     },
     {
@@ -384,7 +381,7 @@ export function buildOverviewPageViewModel(
         value: String(activeIssueCount),
         detail: `${data.diligenceIssueSummary.criticalOpen} critical`,
         tone: data.diligenceIssueSummary.criticalOpen > 0 ? "danger" : activeIssueCount > 0 ? "warning" : "success",
-        href: topIssueTarget?.linkedRoute ?? `/deal/${company.id}`,
+        href: `/deal/${company.id}/phases/findings`,
         available: true
       },
       {
@@ -445,7 +442,6 @@ export function buildOverviewPageViewModel(
       }
     ],
     links: {
-      legacyDeal: `/deal/${company.id}`,
       financials: `/financials?companyId=${company.id}`,
       underwriting: `/deal/${company.id}/underwriting`,
       sourceData: `/source-data?companyId=${company.id}`

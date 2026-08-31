@@ -544,7 +544,7 @@ export function DealWorkspaceView({ data, section, layout = "legacy" }: DealWork
 
   const companyId = data.company?.id ?? null;
   const companyName = data.company?.name || "No company selected";
-  const overviewHref = companyId ? `/deal/${companyId}` : "/";
+  const overviewHref = companyId ? `/deal/${companyId}/overview` : "/deals";
   const financialsHref = companyId ? `/financials?companyId=${companyId}` : "/financials";
   const underwritingHref = companyId ? `/deal/${companyId}/underwriting` : "/";
   const sourceDataHref = companyId ? `/source-data?companyId=${companyId}` : "/source-data";
