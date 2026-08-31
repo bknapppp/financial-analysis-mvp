@@ -1,15 +1,5 @@
-import { FinancialsView } from "@/components/financials-view";
-import { getDashboardData } from "@/lib/data";
+import { redirect } from "next/navigation";
 
-export const revalidate = 60;
-
-export default async function HomePage({
-  searchParams
-}: {
-  searchParams?: Promise<{ companyId?: string }>;
-}) {
-  const resolvedSearchParams = (await searchParams) ?? {};
-  const data = await getDashboardData(resolvedSearchParams.companyId);
-
-  return <FinancialsView data={data} />;
+export default function HomePage() {
+  redirect("/deals");
 }
