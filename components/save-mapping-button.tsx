@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { getMappingCategoryLabel } from "@/lib/auto-mapping";
+import { ContentCard } from "@/components/ui/content-card";
+import { StatusBadge } from "@/components/ui/status-badge";
 
 type ExistingSavedMapping = {
   concept?: string | null;
@@ -117,7 +119,7 @@ export function SaveMappingButton({
         }
         className={
           className ??
-          "rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:border-slate-300 hover:bg-slate-50 disabled:opacity-60"
+          "rounded-bs-sm border border-bs-border-subtle px-2.5 py-1.5 text-xs font-medium text-bs-text-secondary hover:border-bs-border-strong hover:bg-bs-page disabled:opacity-60"
         }
       >
         {status === "saving"
@@ -129,44 +131,43 @@ export function SaveMappingButton({
               : "Save mapping"}
       </button>
 
-      {errorMessage ? (
-        <p className="text-xs text-rose-700">{errorMessage}</p>
-      ) : null}
+      {status === "saved" ? <StatusBadge tone="success">Mapping saved</StatusBadge> : null}
+      {errorMessage ? <p role="alert" className="text-xs text-bs-danger">{errorMessage}</p> : null}
 
       {conflictRecord ? (
-        <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm">
-          <h4 className="text-sm font-semibold text-slate-900">
+        <ContentCard className="w-full max-w-md text-left">
+          <h4 className="text-sm font-semibold text-bs-text-primary">
             Saved Mapping Already Exists
           </h4>
-          <p className="mt-2 text-sm text-slate-700">
+          <p className="mt-2 text-sm text-bs-text-secondary">
             Line Item: {accountName}
           </p>
 
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            <div className="rounded-lg bg-slate-50 p-3">
-              <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+            <div className="rounded-bs-sm bg-bs-page p-3">
+              <p className="text-xs font-medium uppercase tracking-[0.14em] text-bs-text-muted">
                 Existing Mapping
               </p>
-              <p className="mt-2 text-sm text-slate-700">
+              <p className="mt-2 text-sm text-bs-text-secondary">
                 Concept: {conflictRecord.concept || "Not specified"}
               </p>
-              <p className="mt-1 text-sm text-slate-700">
+              <p className="mt-1 text-sm text-bs-text-secondary">
                 Category: {getMappingCategoryLabel(conflictRecord.category) || "Not specified"}
               </p>
             </div>
 
-            <div className="rounded-lg bg-slate-50 p-3">
-              <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+            <div className="rounded-bs-sm bg-bs-page p-3">
+              <p className="text-xs font-medium uppercase tracking-[0.14em] text-bs-text-muted">
                 New Mapping
               </p>
-              <p className="mt-2 text-sm text-slate-700">
+              <p className="mt-2 text-sm text-bs-text-secondary">
                 Concept: {displayConcept}
               </p>
-              <p className="mt-1 text-sm text-slate-700">Category: {displayCategory}</p>
+              <p className="mt-1 text-sm text-bs-text-secondary">Category: {displayCategory}</p>
             </div>
           </div>
 
-          <p className="mt-3 text-sm text-slate-600">
+          <p className="mt-3 text-sm text-bs-text-muted">
             This line item already has a saved mapping for this company.
             Overwriting will update future import classification.
           </p>
@@ -178,19 +179,19 @@ export function SaveMappingButton({
                 setConflictRecord(null);
                 setErrorMessage(null);
               }}
-              className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+              className="rounded-bs-sm border border-bs-border-subtle px-3 py-1.5 text-xs font-medium text-bs-text-secondary hover:bg-bs-page"
             >
               Keep Existing Mapping
             </button>
             <button
               type="button"
               onClick={() => void handleSave(true)}
-              className="rounded-lg bg-ink px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800"
+              className="rounded-bs-sm bg-bs-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-bs-primary-hover"
             >
               Overwrite Saved Mapping
             </button>
           </div>
-        </div>
+        </ContentCard>
       ) : null}
     </div>
   );

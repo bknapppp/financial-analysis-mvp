@@ -2,9 +2,14 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BackingChip } from "@/components/backing-chip";
+import { FileQuestion, X } from "lucide-react";
 import { getBackingStatusLabel } from "@/lib/backing";
 import { getDocumentDisplayName } from "@/lib/documents";
+import { getDocumentRelationshipState } from "@/lib/document-coverage";
+import { ContentCard } from "@/components/ui/content-card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { SectionHeader } from "@/components/ui/section-header";
+import { StatusBadge } from "@/components/ui/status-badge";
 import type {
   DocumentLink,
   DocumentVersion,
@@ -101,71 +106,54 @@ export function DocumentDrawer({
     () => document ?? documents.find((item) => item.id === selectedDocumentId) ?? null,
     [document, documents, selectedDocumentId]
   );
-  const selectedVersions = useMemo(
-    () =>
-      selectedDocument
-        ? documentVersions.filter((version) => version.document_id === selectedDocument.id)
-        : [],
-    [documentVersions, selectedDocument]
+  const relationshipState = useMemo(
+    () => getDocumentRelationshipState({ document: selectedDocument, documentLinks, documentVersions }),
+    [documentLinks, documentVersions, selectedDocument]
   );
-  const selectedLinks = useMemo(
-    () =>
-      selectedDocument
-        ? documentLinks.filter((link) => link.document_id === selectedDocument.id)
-        : [],
-    [documentLinks, selectedDocument]
-  );
+  const selectedVersions = relationshipState.versions;
+  const selectedLinks = relationshipState.links;
 
   if (!open) {
     return null;
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/30">
+    <div className="fixed inset-0 z-50 flex justify-end bg-bs-text-primary/30">
       <button type="button" className="flex-1" onClick={onClose} aria-label="Close drawer" />
-      <aside className="h-full w-full max-w-xl overflow-y-auto border-l border-slate-200 bg-white p-6 shadow-2xl">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
-              Supporting Documents
-            </p>
-            <h3 className="mt-2 text-xl font-semibold text-slate-900">{title}</h3>
-            {description ? <p className="mt-2 text-sm text-slate-600">{description}</p> : null}
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          >
-            Close
-          </button>
-        </div>
+      <aside aria-label="Supporting documents" className="h-full w-full max-w-xl overflow-y-auto border-l border-bs-border-subtle bg-bs-surface p-4 shadow-2xl md:p-5">
+        <p className="bs-label mb-2">Supporting documents</p>
+        <SectionHeader
+          title={title}
+          description={description ?? undefined}
+          actions={<button type="button" onClick={onClose} aria-label="Close supporting documents" className="inline-flex size-8 items-center justify-center rounded-bs-sm border border-bs-border-strong text-bs-text-secondary hover:bg-bs-page"><X className="size-3.5" /></button>}
+        />
 
         {error ? (
-          <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+          <div role="alert" className="mt-4 rounded-bs-sm border border-bs-danger/20 bg-bs-danger/10 px-4 py-3 text-xs text-bs-danger">
             {error}
           </div>
         ) : null}
 
         {mode === "upload" ? (
-          <div className="mt-6 space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <ContentCard className="mt-4 space-y-4" padding="compact">
+            <SectionHeader title="Register source document" description="Record document metadata and an optional storage reference." />
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Document name</label>
+              <label className="bs-label mb-1 block">Document name</label>
               <input
                 value={name}
                 onChange={(event) => setName(event.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400"
+                className="min-h-9 w-full rounded-bs-sm border border-bs-border-strong bg-bs-surface px-2.5 text-xs text-bs-text-primary outline-none focus:border-bs-primary"
                 placeholder="FY2025 income statement"
               />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">
+              <label className="bs-label mb-1 block">
                 Storage path or reference
               </label>
               <input
                 value={storagePath}
                 onChange={(event) => setStoragePath(event.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400"
+                className="min-h-9 w-full rounded-bs-sm border border-bs-border-strong bg-bs-surface px-2.5 text-xs text-bs-text-primary outline-none focus:border-bs-primary"
                 placeholder="uploads/fy2025-income-statement.pdf"
               />
             </div>
@@ -201,20 +189,21 @@ export function DocumentDrawer({
                   setBusy(false);
                 }
               }}
-              className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+              className="inline-flex min-h-8 items-center justify-center rounded-bs-sm bg-bs-primary px-3 text-xs font-medium text-white hover:bg-bs-primary-hover disabled:opacity-60"
             >
               {busy ? "Saving..." : "Upload Document"}
             </button>
-          </div>
+          </ContentCard>
         ) : null}
 
         {mode === "link" ? (
-          <div className="mt-6 space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <label className="block text-sm font-medium text-slate-700">Existing document</label>
+          <ContentCard className="mt-4 space-y-3" padding="compact">
+            <SectionHeader title="Link existing document" description="Associate an authoritative document with this diligence requirement." />
+            <label className="bs-label block">Existing document</label>
             <select
               value={selectedDocumentId}
               onChange={(event) => setSelectedDocumentId(event.target.value)}
-              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400"
+              className="min-h-9 w-full rounded-bs-sm border border-bs-border-strong bg-bs-surface px-2.5 text-xs text-bs-text-primary outline-none focus:border-bs-primary"
             >
               <option value="">Select a document</option>
               {documents.map((item) => (
@@ -245,45 +234,45 @@ export function DocumentDrawer({
                   setBusy(false);
                 }
               }}
-              className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+              className="inline-flex min-h-8 items-center justify-center rounded-bs-sm bg-bs-primary px-3 text-xs font-medium text-white hover:bg-bs-primary-hover disabled:opacity-60"
             >
               {busy ? "Linking..." : "Link Existing Document"}
             </button>
-          </div>
+          </ContentCard>
         ) : null}
 
         {selectedDocument ? (
           <div className="mt-6 space-y-5">
-            <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <ContentCard padding="compact">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-sm font-semibold text-slate-900">
+                  <p className="text-sm font-semibold text-bs-text-primary">
                     {getDocumentDisplayName(selectedDocument)}
                   </p>
-                  <p className="mt-1 text-sm text-slate-600">
+                  <p className="mt-1 text-sm text-bs-text-secondary">
                     {selectedDocument.document_type?.split("_").join(" ") ?? "Document"}
                     {selectedDocument.period_label ? ` · ${selectedDocument.period_label}` : ""}
                     {selectedDocument.fiscal_year ? ` · FY${selectedDocument.fiscal_year}` : ""}
                   </p>
                 </div>
-                <BackingChip status="backed" label="Backed" />
+                <StatusBadge tone="success">Provided</StatusBadge>
               </div>
-              <div className="mt-4 grid gap-2 text-sm text-slate-600">
+              <div className="mt-3 grid gap-1.5 text-xs text-bs-text-secondary">
                 <p>Uploaded at: {selectedDocument.uploaded_at ?? selectedDocument.created_at}</p>
                 <p>Source: {selectedDocument.source_kind ?? "manual"}</p>
                 <p>Status: {selectedDocument.status ?? "active"}</p>
               </div>
-            </section>
+            </ContentCard>
 
-            <section className="rounded-2xl border border-slate-200 bg-white p-4">
+            <section className="rounded-bs-md border border-bs-border-subtle bg-bs-surface p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-sm font-semibold text-slate-900">Linked items</p>
-                  <p className="mt-1 text-sm text-slate-500">
+                  <p className="text-sm font-semibold text-bs-text-primary">Linked items</p>
+                  <p className="mt-1 text-sm text-bs-text-muted">
                     Current entities supported by this document.
                   </p>
                 </div>
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700">
+                <span className="rounded-full border border-bs-border-subtle bg-bs-page px-3 py-1 text-xs font-medium text-bs-text-secondary">
                   {selectedLinks.length}
                 </span>
               </div>
@@ -292,24 +281,24 @@ export function DocumentDrawer({
                   selectedLinks.map((link) => (
                     <div
                       key={link.id}
-                      className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
+                      className="rounded-bs-sm border border-bs-border-subtle bg-bs-page px-3 py-2 text-sm text-bs-text-secondary"
                     >
                       {link.entity_type.replaceAll("_", " ")} · {link.entity_id}
                     </div>
                   ))
                 ) : (
-                  <div className="rounded-xl border border-dashed border-slate-300 px-3 py-2 text-sm text-slate-500">
-                    No entities linked yet.
+                  <div className="rounded-bs-sm border border-dashed border-bs-border-strong px-3 py-2 text-sm text-bs-text-muted">
+                    No diligence areas linked yet.
                   </div>
                 )}
               </div>
             </section>
 
-            <section className="rounded-2xl border border-slate-200 bg-white p-4">
+            <section className="rounded-bs-md border border-bs-border-subtle bg-bs-surface p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-sm font-semibold text-slate-900">Linked issues</p>
-                  <p className="mt-1 text-sm text-slate-500">
+                  <p className="text-sm font-semibold text-bs-text-primary">Linked issues</p>
+                  <p className="mt-1 text-sm text-bs-text-muted">
                     Diligence issues referencing this support set.
                   </p>
                 </div>
@@ -319,24 +308,24 @@ export function DocumentDrawer({
                   linkedIssues.map((issue) => (
                     <div
                       key={issue.id}
-                      className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
+                      className="rounded-bs-sm border border-bs-border-subtle bg-bs-page px-3 py-2 text-sm text-bs-text-secondary"
                     >
                       {issue.title} · {issue.status}
                     </div>
                   ))
                 ) : (
-                  <div className="rounded-xl border border-dashed border-slate-300 px-3 py-2 text-sm text-slate-500">
+                  <div className="rounded-bs-sm border border-dashed border-bs-border-strong px-3 py-2 text-sm text-bs-text-muted">
                     No linked issues yet.
                   </div>
                 )}
               </div>
             </section>
 
-            <section className="rounded-2xl border border-slate-200 bg-white p-4">
+            <section className="rounded-bs-md border border-bs-border-subtle bg-bs-surface p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-sm font-semibold text-slate-900">Versions</p>
-                  <p className="mt-1 text-sm text-slate-500">
+                  <p className="text-sm font-semibold text-bs-text-primary">Versions</p>
+                  <p className="mt-1 text-sm text-bs-text-muted">
                     Supporting versions for this document record.
                   </p>
                 </div>
@@ -346,7 +335,7 @@ export function DocumentDrawer({
                   selectedVersions.map((version) => (
                     <div
                       key={version.id}
-                      className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
+                      className="rounded-bs-sm border border-bs-border-subtle bg-bs-page px-3 py-2 text-sm text-bs-text-secondary"
                     >
                       Version {version.version_number}
                       {version.storage_path ? ` · ${version.storage_path}` : ""}
@@ -354,19 +343,19 @@ export function DocumentDrawer({
                     </div>
                   ))
                 ) : (
-                  <div className="rounded-xl border border-dashed border-slate-300 px-3 py-2 text-sm text-slate-500">
+                  <div className="rounded-bs-sm border border-dashed border-bs-border-strong px-3 py-2 text-sm text-bs-text-muted">
                     No versions recorded yet.
                   </div>
                 )}
               </div>
-              <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <label className="mb-1 block text-sm font-medium text-slate-700">
+              <div className="mt-4 rounded-bs-sm border border-bs-border-subtle bg-bs-page p-3">
+                <label className="mb-1 block text-sm font-medium text-bs-text-secondary">
                   Upload new version
                 </label>
                 <input
                   value={storagePath}
                   onChange={(event) => setStoragePath(event.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400"
+                  className="w-full rounded-bs-sm border border-bs-border-subtle bg-bs-surface px-3 py-2 text-sm text-bs-text-primary outline-none focus:border-bs-primary"
                   placeholder="uploads/fy2025-income-statement-v2.pdf"
                 />
                 <button
@@ -389,7 +378,7 @@ export function DocumentDrawer({
                       setBusy(false);
                     }
                   }}
-                  className="mt-3 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-white disabled:opacity-60"
+                  className="mt-3 rounded-bs-sm border border-bs-border-subtle px-3 py-2 text-sm font-medium text-bs-text-secondary hover:bg-bs-surface disabled:opacity-60"
                 >
                   {busy ? "Saving..." : "Upload new version"}
                 </button>
@@ -397,9 +386,7 @@ export function DocumentDrawer({
             </section>
           </div>
         ) : mode === "view" ? (
-          <div className="mt-6 rounded-2xl border border-dashed border-slate-300 px-4 py-6 text-sm text-slate-500">
-            {getBackingStatusLabel("unbacked")}: No supporting document selected.
-          </div>
+          <EmptyState density="compact" icon={FileQuestion} title={getBackingStatusLabel("unbacked")} description="No supporting document is selected for this requirement." />
         ) : null}
       </aside>
     </div>

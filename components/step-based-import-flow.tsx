@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Database } from "lucide-react";
 import {
   Fragment,
   useEffect,
@@ -36,6 +37,10 @@ import type {
 } from "@/lib/types";
 import { devLog } from "@/lib/debug";
 import { SaveMappingButton } from "@/components/save-mapping-button";
+import { ContentCard } from "@/components/ui/content-card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { SectionHeader } from "@/components/ui/section-header";
+import { StatusBadge } from "@/components/ui/status-badge";
 
 type PreviewFilter =
   | "all"
@@ -164,11 +169,11 @@ const COLUMN_FIELDS = [
 ];
 
 function matchedByClass(value: string) {
-  if (value === "memory") return "bg-emerald-100 text-emerald-800";
-  if (value === "saved_mapping") return "bg-teal-100 text-teal-800";
-  if (value === "keyword" || value === "keyword_rule") return "bg-sky-100 text-sky-800";
-  if (value === "csv_value") return "bg-violet-100 text-violet-800";
-  return "bg-amber-100 text-amber-800";
+  if (value === "memory") return "bg-bs-success/10 text-bs-success";
+  if (value === "saved_mapping") return "bg-bs-success/10 text-bs-success";
+  if (value === "keyword" || value === "keyword_rule") return "bg-bs-info/10 text-bs-info";
+  if (value === "csv_value") return "bg-bs-info/10 text-bs-info";
+  return "bg-bs-warning/10 text-bs-warning";
 }
 
 function formatMatchedBy(value: string, memoryScope?: "company" | "global" | null) {
@@ -203,30 +208,30 @@ function groupedPreviewStatus(row: {
 }
 
 function statusClass(status: string) {
-  if (status === "Excluded") return "border border-slate-200 bg-slate-100 text-slate-600";
-  if (status === "Non-blocking") return "border border-amber-200 bg-amber-50 text-amber-800";
-  if (status === "Unmapped") return "border border-rose-200 bg-rose-100 text-rose-800";
-  if (status === "Review Required") return "border border-amber-200 bg-amber-100 text-amber-800";
-  if (status === "Low Confidence") return "border border-orange-200 bg-orange-100 text-orange-800";
-  if (status === "Saved Mapping") return "border border-emerald-200 bg-emerald-100 text-emerald-800";
-  if (status === "Rule-Based") return "border border-sky-200 bg-sky-100 text-sky-800";
-  return "border border-teal-200 bg-teal-100 text-teal-800";
+  if (status === "Excluded") return "border border-bs-border-subtle bg-bs-page text-bs-text-secondary";
+  if (status === "Non-blocking") return "border border-bs-warning/20 bg-bs-warning/10 text-bs-warning";
+  if (status === "Unmapped") return "border border-bs-danger/20 bg-bs-danger/10 text-bs-danger";
+  if (status === "Review Required") return "border border-bs-warning/20 bg-bs-warning/10 text-bs-warning";
+  if (status === "Low Confidence") return "border border-bs-warning/20 bg-bs-warning/10 text-bs-warning";
+  if (status === "Saved Mapping") return "border border-bs-success/20 bg-bs-success/10 text-bs-success";
+  if (status === "Rule-Based") return "border border-bs-info/20 bg-bs-info/10 text-bs-info";
+  return "border border-bs-success/20 bg-bs-success/10 text-bs-success";
 }
 
 function sheetClassificationClass(status: string) {
   if (status === "likely_income_statement") {
-    return "bg-emerald-100 text-emerald-800";
+    return "bg-bs-success/10 text-bs-success";
   }
 
   if (status === "likely_balance_sheet") {
-    return "bg-sky-100 text-sky-800";
+    return "bg-bs-info/10 text-bs-info";
   }
 
   if (status === "likely_cash_flow") {
-    return "bg-violet-100 text-violet-800";
+    return "bg-bs-info/10 text-bs-info";
   }
 
-  return "bg-amber-100 text-amber-800";
+  return "bg-bs-warning/10 text-bs-warning";
 }
 
 function periodStructureClass(structure: string) {
@@ -237,32 +242,32 @@ function periodStructureClass(structure: string) {
     structure === "wide" ||
     structure === "long"
   ) {
-    return "bg-slate-900 text-white";
+    return "bg-bs-primary text-white";
   }
 
   if (structure === "ttm") {
-    return "bg-violet-100 text-violet-800";
+    return "bg-bs-info/10 text-bs-info";
   }
 
   if (structure === "mixed") {
-    return "bg-amber-100 text-amber-800";
+    return "bg-bs-warning/10 text-bs-warning";
   }
 
-  return "bg-slate-100 text-slate-600";
+  return "bg-bs-page text-bs-text-secondary";
 }
 
 function previewSuggestionClass(strength: string) {
-  if (strength === "saved") return "bg-emerald-100 text-emerald-800";
-  if (strength === "rule_based") return "bg-sky-100 text-sky-800";
-  if (strength === "source") return "bg-violet-100 text-violet-800";
-  return "bg-amber-100 text-amber-800";
+  if (strength === "saved") return "bg-bs-success/10 text-bs-success";
+  if (strength === "rule_based") return "bg-bs-info/10 text-bs-info";
+  if (strength === "source") return "bg-bs-info/10 text-bs-info";
+  return "bg-bs-warning/10 text-bs-warning";
 }
 
 function previewStatusClass(status: string) {
-  if (status === "mapped") return "bg-teal-100 text-teal-800";
-  if (status === "low_confidence") return "bg-orange-100 text-orange-800";
-  if (status === "unmapped") return "bg-rose-100 text-rose-800";
-  return "bg-slate-100 text-slate-600";
+  if (status === "mapped") return "bg-bs-success/10 text-bs-success";
+  if (status === "low_confidence") return "bg-bs-warning/10 text-bs-warning";
+  if (status === "unmapped") return "bg-bs-danger/10 text-bs-danger";
+  return "bg-bs-page text-bs-text-secondary";
 }
 
 function previewStatusLabel(status: string) {
@@ -282,18 +287,18 @@ function workbookRoleLabel(role: StepBasedImportFlowProps["sheetSelectionCards"]
 }
 
 function workbookRoleClass(role: StepBasedImportFlowProps["sheetSelectionCards"][number]["workbookRole"]) {
-  if (role === "primary_income_statement") return "bg-emerald-100 text-emerald-800";
-  if (role === "primary_balance_sheet") return "bg-sky-100 text-sky-800";
-  if (role === "primary_cash_flow") return "bg-violet-100 text-violet-800";
-  if (role === "ambiguous") return "bg-amber-100 text-amber-800";
-  if (role === "supporting") return "bg-slate-100 text-slate-700";
-  return "bg-slate-50 text-slate-500";
+  if (role === "primary_income_statement") return "bg-bs-success/10 text-bs-success";
+  if (role === "primary_balance_sheet") return "bg-bs-info/10 text-bs-info";
+  if (role === "primary_cash_flow") return "bg-bs-info/10 text-bs-info";
+  if (role === "ambiguous") return "bg-bs-warning/10 text-bs-warning";
+  if (role === "supporting") return "bg-bs-page text-bs-text-secondary";
+  return "bg-bs-page text-bs-text-muted";
 }
 
 function workbookFixItSeverityClass(severity: WorkbookFixItTask["severity"]) {
   return severity === "critical"
-    ? "border-rose-200 bg-rose-50 text-rose-900"
-    : "border-amber-200 bg-amber-50 text-amber-900";
+    ? "border-bs-danger/20 bg-bs-danger/10 text-bs-danger"
+    : "border-bs-warning/20 bg-bs-warning/10 text-bs-warning";
 }
 
 function canonicalPeriodKey(periodLabel: string, periodDate: string) {
@@ -474,23 +479,15 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
     <section
       id={SOURCE_DATA_UPLOAD_SECTION_ID}
       data-fix-section={SOURCE_DATA_UPLOAD_SECTION_ID}
-      className="rounded-[1.75rem] bg-white p-5 shadow-panel"
+      className="rounded-bs-md border border-bs-border-subtle bg-bs-surface p-4 shadow-bs-subtle"
     >
-      <div className="mb-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-900">Financial Data Upload</h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Upload CSV or Excel, confirm structure, review mappings, and import into the review workflow.
-            </p>
-          </div>
-          <span className="rounded-full bg-teal-50 px-3 py-1 text-xs font-medium text-teal-700">
-            Primary path
-          </span>
-        </div>
-      </div>
+      <SectionHeader
+        title="Financial Data Upload"
+        description="Upload CSV or Excel, confirm structure, review mappings, and import into the review workflow."
+        actions={<StatusBadge tone="informational">Primary path</StatusBadge>}
+      />
 
-      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-2">
+      <div className="mt-4 rounded-bs-md border border-bs-border-subtle bg-bs-page p-2">
         <div className="grid gap-2 md:grid-cols-4">
           {stepItems.map((step) => (
             <button
@@ -498,18 +495,18 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
               type="button"
               onClick={() => step.ready && setActiveStep(step.id)}
               disabled={!step.ready}
-              className={`rounded-[1.25rem] px-4 py-3 text-left transition ${
+              className={`rounded-bs-sm px-4 py-3 text-left transition ${
                 activeStep === step.id
-                  ? "bg-white shadow-sm ring-1 ring-slate-200"
+                  ? "bg-bs-surface shadow-bs-subtle ring-1 ring-bs-border-subtle"
                   : step.ready
-                    ? "text-slate-700 hover:bg-white/70"
-                    : "cursor-not-allowed text-slate-400"
+                    ? "text-bs-text-secondary hover:bg-bs-surface/70"
+                    : "cursor-not-allowed text-bs-text-muted"
               }`}
             >
-              <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-500">
+              <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-bs-text-muted">
                 Step {step.id}
               </p>
-              <p className="mt-1 text-sm font-semibold text-slate-900">{step.label}</p>
+              <p className="mt-1 text-sm font-semibold text-bs-text-primary">{step.label}</p>
             </button>
           ))}
         </div>
@@ -520,7 +517,7 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
       {successMessage ? <Notice tone="teal">{successMessage}</Notice> : null}
 
       {activeStep === 1 ? (
-        <section className="mt-5 rounded-2xl border border-slate-200 p-4">
+        <section className="mt-5 rounded-bs-md border border-bs-border-subtle p-4">
           <StepHeading
             step="Step 1"
             title="Upload"
@@ -529,11 +526,11 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
           />
 
           {companySetupSlot ? (
-            <details className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <summary className="cursor-pointer list-none text-sm font-medium text-slate-900">
+            <details className="mt-4 rounded-bs-md border border-bs-border-subtle bg-bs-page p-4">
+              <summary className="cursor-pointer list-none text-sm font-medium text-bs-text-primary">
                 Company Setup
               </summary>
-              <p className="mt-2 text-sm text-slate-500">
+              <p className="mt-2 text-sm text-bs-text-muted">
                 Add a company here if the legal entity is not yet available for this review.
               </p>
               <div className="mt-4">{companySetupSlot}</div>
@@ -541,7 +538,7 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
           ) : null}
 
           <div className="mt-4">
-            <label className="mb-1 block text-sm font-medium text-slate-700">Company</label>
+            <label className="mb-1 block text-sm font-medium text-bs-text-secondary">Company</label>
             <select
               id="source-data-company"
               value={selectedCompanyId}
@@ -556,10 +553,10 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
             </select>
           </div>
 
-          <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <div className="mt-4 rounded-bs-md border border-bs-border-subtle bg-bs-page p-4">
             <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
               <div className="flex-1">
-                <label className="mb-1 block text-sm font-medium text-slate-700">
+                <label className="mb-1 block text-sm font-medium text-bs-text-secondary">
                   Financial workbook
                 </label>
                 <input
@@ -570,13 +567,13 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
                   onChange={handleFileUpload}
                   disabled={!selectedCompanyId}
                 />
-                <p className="mt-2 text-xs text-slate-500">
+                <p className="mt-2 text-xs text-bs-text-muted">
                   Upload the workbook, inspect each detected sheet, then continue into guided structure and mapping review.
                 </p>
               </div>
 
               {parsedFile ? (
-                <div className="rounded-xl bg-white px-4 py-3 text-sm text-slate-600 ring-1 ring-slate-200">
+                <div className="rounded-bs-sm bg-bs-surface px-4 py-3 text-sm text-bs-text-secondary ring-1 ring-bs-border-subtle">
                   {parsedFile.kind === "xlsx" ? `${parsedFile.sheets.length} sheet(s) detected` : "Single import sheet detected"}
                 </div>
               ) : null}
@@ -586,44 +583,44 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
           {sheetSelectionCards.length > 0 ? (
             <div className="mt-4">
               {workbookContext ? (
-                <div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="mb-4 rounded-bs-md border border-bs-border-subtle bg-bs-page p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <h4 className="text-sm font-semibold text-slate-900">Workbook interpretation</h4>
-                      <p className="mt-1 text-sm text-slate-600">{workbookContext.summary}</p>
+                      <h4 className="text-sm font-semibold text-bs-text-primary">Workbook interpretation</h4>
+                      <p className="mt-1 text-sm text-bs-text-secondary">{workbookContext.summary}</p>
                     </div>
                     <span
                       className={`rounded-full px-3 py-1 text-xs font-medium ${
                         workbookContext.confidenceLabel === "High confidence"
-                          ? "bg-teal-100 text-teal-800"
+                          ? "bg-bs-success/10 text-bs-success"
                           : workbookContext.confidenceLabel === "Medium confidence"
-                            ? "bg-amber-100 text-amber-800"
-                            : "bg-rose-100 text-rose-800"
+                            ? "bg-bs-warning/10 text-bs-warning"
+                            : "bg-bs-danger/10 text-bs-danger"
                       }`}
                     >
                       {workbookContext.confidenceLabel}
                     </span>
                   </div>
                   <div className="mt-3 grid gap-3 lg:grid-cols-2">
-                    <div className="rounded-2xl bg-white p-4 ring-1 ring-slate-200">
-                      <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                    <div className="rounded-bs-md bg-bs-surface p-4 ring-1 ring-bs-border-subtle">
+                      <p className="text-xs font-medium uppercase tracking-[0.14em] text-bs-text-muted">
                         Detected package
                       </p>
-                      <p className="mt-2 text-sm text-slate-700">
+                      <p className="mt-2 text-sm text-bs-text-secondary">
                         Income statement: {workbookContext.primaryIncomeStatementSheetName ?? "Not detected"}
                       </p>
-                      <p className="mt-1 text-sm text-slate-700">
+                      <p className="mt-1 text-sm text-bs-text-secondary">
                         Balance sheet: {workbookContext.primaryBalanceSheetSheetName ?? "Not detected"}
                       </p>
-                      <p className="mt-1 text-sm text-slate-700">
+                      <p className="mt-1 text-sm text-bs-text-secondary">
                         Cash flow: {workbookContext.primaryCashFlowSheetName ?? "Not detected"}
                       </p>
                     </div>
-                    <div className="rounded-2xl bg-white p-4 ring-1 ring-slate-200">
-                      <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                    <div className="rounded-bs-md bg-bs-surface p-4 ring-1 ring-bs-border-subtle">
+                      <p className="text-xs font-medium uppercase tracking-[0.14em] text-bs-text-muted">
                         Workbook review items
                       </p>
-                      <div className="mt-2 space-y-1 text-sm text-slate-700">
+                      <div className="mt-2 space-y-1 text-sm text-bs-text-secondary">
                         {(workbookContext.conflicts.length > 0
                           ? workbookContext.conflicts
                           : workbookContext.gaps.length > 0
@@ -638,21 +635,21 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
                     </div>
                   </div>
                   {workbookFixIts.length > 0 ? (
-                    <div className="mt-3 rounded-2xl bg-white p-4 ring-1 ring-slate-200">
-                      <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                    <div className="mt-3 rounded-bs-md bg-bs-surface p-4 ring-1 ring-bs-border-subtle">
+                      <p className="text-xs font-medium uppercase tracking-[0.14em] text-bs-text-muted">
                         Fix-It tasks
                       </p>
                       <div className="mt-3 grid gap-3 lg:grid-cols-2">
                         {workbookFixIts.map((task) => (
                           <div
                             key={task.key}
-                            className={`rounded-2xl border px-4 py-3 ${workbookFixItSeverityClass(task.severity)}`}
+                            className={`rounded-bs-md border px-4 py-3 ${workbookFixItSeverityClass(task.severity)}`}
                           >
                             <p className="text-sm font-semibold">{task.label}</p>
                             <p className="mt-1 text-sm opacity-90">{task.reason}</p>
                             <Link
                               href={task.href}
-                              className="mt-3 inline-flex rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-slate-900 ring-1 ring-slate-200 hover:bg-slate-50"
+                              className="mt-3 inline-flex rounded-bs-sm bg-bs-surface px-3 py-1.5 text-xs font-medium text-bs-text-primary ring-1 ring-bs-border-subtle hover:bg-bs-page"
                             >
                               {task.actionLabel}
                             </Link>
@@ -666,14 +663,14 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
 
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <h4 className="text-sm font-semibold text-slate-900">Sheet inspection</h4>
-                  <p className="mt-1 text-sm text-slate-500">
+                  <h4 className="text-sm font-semibold text-bs-text-primary">Sheet inspection</h4>
+                  <p className="mt-1 text-sm text-bs-text-muted">
                     Pick the sheet to import. Classification and period structure come from deterministic workbook heuristics.
                   </p>
                 </div>
                 {parsedFile?.sheets.length && parsedFile.sheets.length > 1 ? (
                   <div className="w-full max-w-xs">
-                    <label className="mb-1 block text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                    <label className="mb-1 block text-xs font-medium uppercase tracking-[0.14em] text-bs-text-muted">
                       Active sheet
                     </label>
                     <select
@@ -699,23 +696,23 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
                       key={sheet.name}
                       type="button"
                       onClick={() => setSelectedSheetName(sheet.name)}
-                      className={`rounded-2xl border p-4 text-left transition ${
+                      className={`rounded-bs-md border p-4 text-left transition ${
                         isSelected
-                          ? "border-slate-900 bg-slate-900 text-white"
-                          : "border-slate-200 bg-white hover:border-slate-300"
+                          ? "border-bs-primary bg-bs-primary text-white"
+                          : "border-bs-border-subtle bg-bs-surface hover:border-bs-border-strong"
                       }`}
                     >
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
                           <h5 className="text-sm font-semibold">{sheet.name}</h5>
-                          <p className={`mt-1 text-sm ${isSelected ? "text-slate-200" : "text-slate-500"}`}>
+                          <p className={`mt-1 text-sm ${isSelected ? "text-white/80" : "text-bs-text-muted"}`}>
                             {sheet.rowCount} parsed row(s)
                           </p>
                         </div>
                         <span
                           className={`rounded-full px-3 py-1 text-xs font-medium ${
                             isSelected
-                              ? "bg-white/15 text-white"
+                              ? "bg-bs-surface/15 text-white"
                               : sheetClassificationClass(sheet.classification.status)
                           }`}
                         >
@@ -725,21 +722,21 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
                       <div className="mt-3 flex flex-wrap gap-2 text-xs">
                         <span
                           className={`rounded-full px-2.5 py-1 font-medium ${
-                            isSelected ? "bg-white/10 text-white" : workbookRoleClass(sheet.workbookRole)
+                            isSelected ? "bg-bs-surface/10 text-white" : workbookRoleClass(sheet.workbookRole)
                           }`}
                         >
                           {workbookRoleLabel(sheet.workbookRole)}
                         </span>
                         <span
                           className={`rounded-full px-2.5 py-1 font-medium ${
-                            isSelected ? "bg-white/10 text-white" : periodStructureClass(sheet.periodDetection.structure)
+                            isSelected ? "bg-bs-surface/10 text-white" : periodStructureClass(sheet.periodDetection.structure)
                           }`}
                         >
                           {sheet.periodDetection.label}
                         </span>
                         <span
                           className={`rounded-full px-2.5 py-1 ${
-                            isSelected ? "bg-white/10 text-slate-100" : "bg-slate-100 text-slate-700"
+                            isSelected ? "bg-bs-surface/10 text-white" : "bg-bs-page text-bs-text-secondary"
                           }`}
                         >
                           {sheet.columnStructure.label}
@@ -748,23 +745,23 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
                           <span
                             key={`${sheet.name}-${period.label}`}
                             className={`rounded-full px-2.5 py-1 ${
-                              isSelected ? "bg-white/10 text-slate-100" : "bg-slate-100 text-slate-700"
+                              isSelected ? "bg-bs-surface/10 text-white" : "bg-bs-page text-bs-text-secondary"
                             }`}
                           >
                             {period.label}
                           </span>
                         ))}
                       </div>
-                      <p className={`mt-3 text-sm ${isSelected ? "text-slate-200" : "text-slate-600"}`}>
+                      <p className={`mt-3 text-sm ${isSelected ? "text-white/80" : "text-bs-text-secondary"}`}>
                         {sheet.classification.explanation}
                       </p>
                       {sheet.workbookReason ? (
-                        <p className={`mt-2 text-xs ${isSelected ? "text-slate-300" : "text-slate-500"}`}>
+                        <p className={`mt-2 text-xs ${isSelected ? "text-white/70" : "text-bs-text-muted"}`}>
                           {sheet.workbookReason}
                         </p>
                       ) : null}
                       {sheet.lineItemHints.length > 0 ? (
-                        <p className={`mt-2 text-xs ${isSelected ? "text-slate-300" : "text-slate-500"}`}>
+                        <p className={`mt-2 text-xs ${isSelected ? "text-white/70" : "text-bs-text-muted"}`}>
                           Sample financial lines: {sheet.lineItemHints.slice(0, 3).join(", ")}
                         </p>
                       ) : null}
@@ -780,7 +777,7 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
               type="button"
               onClick={() => setActiveStep(2)}
               disabled={!stepStatus.uploadComplete}
-              className="rounded-xl bg-ink px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+              className="rounded-bs-sm bg-bs-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-bs-primary-hover disabled:opacity-60"
             >
               Inspect selected sheet
             </button>
@@ -790,7 +787,7 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
 
       {activeStep === 2 && selectedSheet ? (
         <div className="mt-5 space-y-5">
-          <section className="rounded-2xl border border-slate-200 p-4">
+          <section className="rounded-bs-md border border-bs-border-subtle p-4">
             <StepHeading
               step="Step 2"
               title="Confirm Structure"
@@ -799,8 +796,8 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
             />
 
             <div className="mt-4 grid gap-3 lg:grid-cols-3">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+              <div className="rounded-bs-md border border-bs-border-subtle bg-bs-page p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.14em] text-bs-text-muted">
                   Sheet Type
                 </p>
                 <div className="mt-3 flex items-center gap-2">
@@ -811,11 +808,11 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
                   >
                     {selectedSheet.analysis.classification.label}
                   </span>
-                  <span className="text-xs text-slate-500">
+                  <span className="text-xs text-bs-text-muted">
                     {selectedSheet.analysis.classification.confidenceLabel}
                   </span>
                 </div>
-                <p className="mt-3 text-sm text-slate-600">
+                <p className="mt-3 text-sm text-bs-text-secondary">
                   {selectedSheet.analysis.classification.explanation}
                 </p>
                 {selectedSheet.analysis.classification.matchedPatterns.length > 0 ? (
@@ -823,7 +820,7 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
                     {selectedSheet.analysis.classification.matchedPatterns.map((pattern) => (
                       <span
                         key={pattern}
-                        className="rounded-full bg-white px-2.5 py-1 text-xs text-slate-700 ring-1 ring-slate-200"
+                        className="rounded-full bg-bs-surface px-2.5 py-1 text-xs text-bs-text-secondary ring-1 ring-bs-border-subtle"
                       >
                         {pattern}
                       </span>
@@ -832,8 +829,8 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
                 ) : null}
               </div>
 
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+              <div className="rounded-bs-md border border-bs-border-subtle bg-bs-page p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.14em] text-bs-text-muted">
                   Period Structure
                 </p>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -845,19 +842,19 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
                     {selectedSheet.analysis.periodDetection.label}
                   </span>
                   {selectedSheet.analysis.periodDetection.headerRowIndex ? (
-                    <span className="text-xs text-slate-500">
+                    <span className="text-xs text-bs-text-muted">
                       Header row {selectedSheet.analysis.periodDetection.headerRowIndex}
                     </span>
                   ) : null}
                 </div>
-                <p className="mt-3 text-sm text-slate-600">
+                <p className="mt-3 text-sm text-bs-text-secondary">
                   {selectedSheet.analysis.periodDetection.explanation}
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {selectedSheet.analysis.periodDetection.periods.map((period) => (
                     <span
                       key={`${period.label}-${period.periodDate}`}
-                      className="rounded-full bg-white px-2.5 py-1 text-xs text-slate-700 ring-1 ring-slate-200"
+                      className="rounded-full bg-bs-surface px-2.5 py-1 text-xs text-bs-text-secondary ring-1 ring-bs-border-subtle"
                     >
                       {period.label}
                     </span>
@@ -865,7 +862,7 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
                   {selectedSheet.analysis.periodDetection.ttmHeaders.map((header) => (
                     <span
                       key={header}
-                      className="rounded-full bg-violet-100 px-2.5 py-1 text-xs text-violet-800"
+                      className="rounded-full bg-bs-info/10 px-2.5 py-1 text-xs text-bs-info"
                     >
                       {header}
                     </span>
@@ -873,8 +870,8 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+              <div className="rounded-bs-md border border-bs-border-subtle bg-bs-page p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.14em] text-bs-text-muted">
                   Column Structure
                 </p>
                 <div className="mt-3">
@@ -886,7 +883,7 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
                     {selectedSheet.analysis.columnStructure.label}
                   </span>
                 </div>
-                <p className="mt-3 text-sm text-slate-600">
+                <p className="mt-3 text-sm text-bs-text-secondary">
                   {selectedSheet.analysis.columnStructure.explanation}
                 </p>
                 {selectedSheet.analysis.likelyFinancialLineItemHints.length > 0 ? (
@@ -894,7 +891,7 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
                     {selectedSheet.analysis.likelyFinancialLineItemHints.map((hint) => (
                       <span
                         key={hint}
-                        className="rounded-full bg-white px-2.5 py-1 text-xs text-slate-700 ring-1 ring-slate-200"
+                        className="rounded-full bg-bs-surface px-2.5 py-1 text-xs text-bs-text-secondary ring-1 ring-bs-border-subtle"
                       >
                         {hint}
                       </span>
@@ -903,15 +900,15 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
                 ) : null}
               </div>
 
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+              <div className="rounded-bs-md border border-bs-border-subtle bg-bs-page p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.14em] text-bs-text-muted">
                   Parsed Headers
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {structurePreviewHeaders.map((header: string) => (
                     <span
                       key={header}
-                      className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-700 ring-1 ring-slate-200"
+                      className="rounded-full bg-bs-surface px-2.5 py-1 text-xs font-medium text-bs-text-secondary ring-1 ring-bs-border-subtle"
                     >
                       {header}
                     </span>
@@ -920,35 +917,35 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
               </div>
             </div>
 
-            <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200">
-              <table className="min-w-full divide-y divide-slate-200 text-sm">
-                <thead className="bg-slate-50">
+            <div className="mt-4 overflow-x-auto rounded-bs-md border border-bs-border-subtle">
+              <table className="min-w-full divide-y divide-bs-border-subtle text-sm">
+                <thead className="bg-bs-page">
                   <tr>
-                    <th className="px-3 py-2 text-left font-medium text-slate-500">Row</th>
-                    <th className="px-3 py-2 text-left font-medium text-slate-500">Preview</th>
-                    <th className="px-3 py-2 text-left font-medium text-slate-500">Signals</th>
-                    <th className="px-3 py-2 text-left font-medium text-slate-500">Mapping suggestion</th>
+                    <th className="px-3 py-2 text-left font-medium text-bs-text-muted">Row</th>
+                    <th className="px-3 py-2 text-left font-medium text-bs-text-muted">Preview</th>
+                    <th className="px-3 py-2 text-left font-medium text-bs-text-muted">Signals</th>
+                    <th className="px-3 py-2 text-left font-medium text-bs-text-muted">Mapping suggestion</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 bg-white">
+                <tbody className="divide-y divide-bs-border-subtle bg-bs-surface">
                   {sheetPreviewRows.map((row) => (
                     <tr
                       key={`${selectedSheet.name}-${row.rowNumber}`}
                       className={
                         row.reviewStatus === "unmapped"
-                          ? "bg-rose-50/50"
+                          ? "bg-bs-danger/10/50"
                           : row.reviewStatus === "low_confidence"
-                            ? "bg-orange-50/50"
+                            ? "bg-bs-warning/5"
                             : row.isLikelyFinancialLine
-                              ? "bg-teal-50/30"
+                              ? "bg-bs-success/10/30"
                               : ""
                       }
                     >
-                      <td className="px-3 py-3 align-top text-slate-500">{row.rowNumber}</td>
+                      <td className="px-3 py-3 align-top text-bs-text-muted">{row.rowNumber}</td>
                       <td className="px-3 py-3 align-top">
                         <div className="min-w-[14rem]">
-                          <p className="font-medium text-slate-900">{row.primaryLabel}</p>
-                          <p className="mt-1 text-xs text-slate-500">
+                          <p className="font-medium text-bs-text-primary">{row.primaryLabel}</p>
+                          <p className="mt-1 text-xs text-bs-text-muted">
                             {row.values.join(" • ")}
                           </p>
                         </div>
@@ -956,7 +953,7 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
                       <td className="px-3 py-3 align-top">
                         <div className="flex flex-wrap gap-2">
                           {row.isLikelyFinancialLine ? (
-                            <span className="rounded-full bg-teal-100 px-2.5 py-1 text-xs font-medium text-teal-800">
+                            <span className="rounded-full bg-bs-success/10 px-2.5 py-1 text-xs font-medium text-bs-success">
                               Likely financial line item
                             </span>
                           ) : null}
@@ -979,7 +976,7 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
                             {row.mappingSuggestion}
                           </span>
                         ) : (
-                          <span className="text-xs text-slate-500">No parseable mapping suggestion yet</span>
+                          <span className="text-xs text-bs-text-muted">No parseable mapping suggestion yet</span>
                         )}
                       </td>
                     </tr>
@@ -995,9 +992,9 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
             ) : null}
           </section>
 
-          <section className="rounded-2xl border border-slate-200 p-4">
-            <h3 className="text-base font-semibold text-slate-900">Header and period interpretation</h3>
-            <p className="mt-1 text-sm text-slate-500">
+          <section className="rounded-bs-md border border-bs-border-subtle p-4">
+            <h3 className="text-base font-semibold text-bs-text-primary">Header and period interpretation</h3>
+            <p className="mt-1 text-sm text-bs-text-muted">
               Confirm the imported columns and reporting periods before mapping review.
             </p>
 
@@ -1021,19 +1018,19 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
                 detectedPeriods.periods.map((period) => (
                   <div
                     key={period.key}
-                    className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3"
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-bs-sm border border-bs-border-subtle bg-bs-page px-4 py-3"
                   >
                     <div>
-                      <p className="text-sm font-medium text-slate-900">{period.label}</p>
-                      <p className="text-xs text-slate-500">
+                      <p className="text-sm font-medium text-bs-text-primary">{period.label}</p>
+                      <p className="text-xs text-bs-text-muted">
                         {period.rowCount} row(s) • anchor {period.periodDate}
                       </p>
                     </div>
                     <span
                       className={`rounded-full px-3 py-1 text-xs font-medium ${
                         period.matchedPeriodId
-                          ? "bg-teal-100 text-teal-800"
-                          : "bg-sky-100 text-sky-800"
+                          ? "bg-bs-success/10 text-bs-success"
+                          : "bg-bs-info/10 text-bs-info"
                       }`}
                     >
                       {period.matchedPeriodId ? `Matched to ${period.matchedPeriodLabel}` : "Will auto-create"}
@@ -1048,13 +1045,13 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
             </div>
 
             {detectedPeriods.periods.length === 0 || detectedPeriods.unresolvedRows.length > 0 ? (
-              <div className="mt-4 rounded-2xl border border-slate-200 p-4">
+              <div className="mt-4 rounded-bs-md border border-bs-border-subtle p-4">
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
                     onClick={() => setPeriodFallbackMode("existing")}
                     className={`rounded-full px-3 py-1.5 text-xs font-medium ${
-                      periodFallbackMode === "existing" ? "bg-ink text-white" : "bg-slate-100 text-slate-700"
+                      periodFallbackMode === "existing" ? "bg-bs-primary text-white" : "bg-bs-page text-bs-text-secondary"
                     }`}
                   >
                     Assign existing period
@@ -1063,7 +1060,7 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
                     type="button"
                     onClick={() => setPeriodFallbackMode("new")}
                     className={`rounded-full px-3 py-1.5 text-xs font-medium ${
-                      periodFallbackMode === "new" ? "bg-ink text-white" : "bg-slate-100 text-slate-700"
+                      periodFallbackMode === "new" ? "bg-bs-primary text-white" : "bg-bs-page text-bs-text-secondary"
                     }`}
                   >
                     Create period inline
@@ -1072,7 +1069,7 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
 
                 {periodFallbackMode === "existing" ? (
                   <div className="mt-4">
-                    <label className="mb-1 block text-sm font-medium text-slate-700">
+                    <label className="mb-1 block text-sm font-medium text-bs-text-secondary">
                       Fallback period
                     </label>
                     <select
@@ -1090,7 +1087,7 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
                 ) : (
                   <div className="mt-4 grid gap-3 md:grid-cols-2">
                     <div>
-                      <label className="mb-1 block text-sm font-medium text-slate-700">
+                      <label className="mb-1 block text-sm font-medium text-bs-text-secondary">
                         New period label
                       </label>
                       <input
@@ -1100,7 +1097,7 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
                       />
                     </div>
                     <div>
-                      <label className="mb-1 block text-sm font-medium text-slate-700">
+                      <label className="mb-1 block text-sm font-medium text-bs-text-secondary">
                         New period date
                       </label>
                       <input
@@ -1116,8 +1113,8 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
           </section>
 
           {advancedToolsSlot ? (
-            <details className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <summary className="cursor-pointer list-none text-sm font-medium text-slate-900">
+            <details className="rounded-bs-md border border-bs-border-subtle bg-bs-page p-4">
+              <summary className="cursor-pointer list-none text-sm font-medium text-bs-text-primary">
                 Default Mapping Rules (Optional)
               </summary>
               <div className="mt-4">{advancedToolsSlot}</div>
@@ -1137,7 +1134,7 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
           <section
             id={SOURCE_DATA_REVIEW_SECTION_ID}
             data-fix-section={SOURCE_DATA_REVIEW_SECTION_ID}
-            className="rounded-2xl border border-slate-200 p-4"
+            className="rounded-bs-md border border-bs-border-subtle p-4"
           >
             <StepHeading
               step="Step 3"
@@ -1145,12 +1142,12 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
               description="Use the financial preview to validate periods, review mappings, and resolve accounts under review."
             />
 
-            <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 md:flex-row md:items-center md:justify-between">
+            <div className="mt-4 flex flex-col gap-3 rounded-bs-md border border-bs-border-subtle bg-bs-page p-4 md:flex-row md:items-center md:justify-between">
               <div>
-                <p className="text-sm font-medium text-slate-900">
+                <p className="text-sm font-medium text-bs-text-primary">
                   Review Progress: {confirmedCount} of {totalAccounts} accounts confirmed
                 </p>
-                <p className="mt-1 text-sm text-slate-600">
+                <p className="mt-1 text-sm text-bs-text-secondary">
                   {reviewRequiredCount > 0
                     ? `${reviewRequiredCount} accounts require review`
                     : "All accounts are mapped and ready for import"}
@@ -1164,37 +1161,38 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
                   setReviewMode(true);
                   setPreviewFilter("review_required");
                 }}
-                className="rounded-xl bg-ink px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800"
+                className="rounded-bs-sm bg-bs-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-bs-primary-hover"
               >
                 Review Required Items
               </button>
             </div>
 
             <div className="mt-4 flex flex-wrap gap-2 text-xs">
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-700">
+              <span className="rounded-full bg-bs-page px-3 py-1 text-bs-text-secondary">
                 {totalAccounts} Accounts detected
               </span>
-              <span className="rounded-full bg-amber-100 px-3 py-1 text-amber-700">
+              <span className="rounded-full bg-bs-warning/10 px-3 py-1 text-bs-warning">
                 {reviewRequiredCount} Review Required
               </span>
-              <span className="rounded-full bg-rose-100 px-3 py-1 text-rose-700">
+              <span className="rounded-full bg-bs-danger/10 px-3 py-1 text-bs-danger">
                 {unmappedCount} Unmapped
               </span>
-              <span className="rounded-full bg-orange-100 px-3 py-1 text-orange-700">
+              <span className="rounded-full bg-bs-warning/10 px-3 py-1 text-bs-warning">
                 {lowConfidenceCount} Low Confidence
               </span>
-              <span className="rounded-full bg-emerald-100 px-3 py-1 text-emerald-700">
+              <span className="rounded-full bg-bs-success/10 px-3 py-1 text-bs-success">
                 {savedMappingCount} Saved Mapping
               </span>
             </div>
 
-            {totalAccounts === 0 ? (
-              <Notice tone="amber">
-                No accounts detected for import. Check period detection and column mapping.
-              </Notice>
-            ) : null}
+            {totalAccounts === 0 ? <EmptyState
+              density="compact"
+              icon={Database}
+              title="No accounts detected"
+              description="Check period detection and column mapping before continuing."
+            /> : null}
 
-            <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 md:flex-row md:items-center md:justify-between">
+            <div className="mt-4 flex flex-col gap-3 rounded-bs-md border border-bs-border-subtle bg-bs-page px-4 py-3 md:flex-row md:items-center md:justify-between">
               <div className="flex flex-wrap gap-2">
                 {[
                   ["all", "All Accounts"],
@@ -1210,8 +1208,8 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
                     onClick={() => setPreviewFilter(value as PreviewFilter)}
                     className={`rounded-full px-3 py-1.5 text-xs font-medium ${
                       previewFilter === value
-                        ? "bg-slate-900 text-white"
-                        : "bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100"
+                        ? "bg-bs-primary text-white"
+                        : "bg-bs-surface text-bs-text-secondary ring-1 ring-bs-border-subtle hover:bg-bs-page"
                     }`}
                   >
                     {label}
@@ -1219,7 +1217,7 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
                 ))}
               </div>
 
-              <label className="flex items-center gap-3 text-sm font-medium text-slate-700">
+              <label className="flex items-center gap-3 text-sm font-medium text-bs-text-secondary">
                 <span>Review Mode</span>
                 <button
                   type="button"
@@ -1227,11 +1225,11 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
                   aria-checked={reviewMode}
                   onClick={() => setReviewMode((current) => !current)}
                   className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
-                    reviewMode ? "bg-slate-900" : "bg-slate-300"
+                    reviewMode ? "bg-bs-primary" : "bg-bs-border-strong"
                   }`}
                 >
                   <span
-                    className={`inline-block h-5 w-5 transform rounded-full bg-white transition ${
+                    className={`inline-block h-5 w-5 transform rounded-full bg-bs-surface transition ${
                       reviewMode ? "translate-x-5" : "translate-x-1"
                     }`}
                   />
@@ -1240,50 +1238,50 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
             </div>
 
             {reviewRequiredCount === 0 ? (
-              <div className="mt-4 rounded-2xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-800">
+              <div className="mt-4 rounded-bs-md border border-bs-success/20 bg-bs-success/10 px-4 py-3 text-sm text-bs-success">
                 All accounts are mapped and ready for import.
               </div>
             ) : null}
 
             {reviewMode && filteredPreviewRows.length === 0 ? (
-              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-600">
+              <div className="mt-4 rounded-bs-md border border-bs-border-subtle bg-bs-page px-4 py-6 text-center text-sm text-bs-text-secondary">
                 No accounts currently require review.
               </div>
             ) : (
-            <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200">
-              <table className="min-w-full divide-y divide-slate-200 text-sm">
-                <thead className="bg-slate-50">
+            <div className="mt-4 overflow-x-auto rounded-bs-md border border-bs-border-subtle">
+              <table className="min-w-full divide-y divide-bs-border-subtle text-sm">
+                <thead className="bg-bs-page">
                   <tr>
-                    <th className="px-3 py-2 text-left font-medium text-slate-500">Account</th>
+                    <th className="px-3 py-2 text-left font-medium text-bs-text-muted">Account</th>
                     {previewPeriodColumns.map((period, index) => (
                       <th
                         key={period.key}
-                        className={`px-3 py-2 text-right font-medium text-slate-500 ${
-                          index === previewPeriodColumns.length - 1 ? "text-slate-700" : ""
+                        className={`px-3 py-2 text-right font-medium text-bs-text-muted ${
+                          index === previewPeriodColumns.length - 1 ? "text-bs-text-secondary" : ""
                         }`}
                       >
                         {period.label}
                       </th>
                     ))}
-                    <th className="px-3 py-2 text-left font-medium text-slate-500">Mapping</th>
-                    <th className="px-3 py-2 text-left font-medium text-slate-500">Status</th>
+                    <th className="px-3 py-2 text-left font-medium text-bs-text-muted">Mapping</th>
+                    <th className="px-3 py-2 text-left font-medium text-bs-text-muted">Status</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 bg-white">
+                <tbody className="divide-y divide-bs-border-subtle bg-bs-surface">
                   {filteredPreviewRows.slice(0, 20).map((row) => {
                     const isExpanded = expandedPreviewAccountKey === row.accountKey;
                     const status = groupedPreviewStatus(row);
                     const rowClass =
                       status === "Excluded"
-                        ? "bg-slate-100/80 text-slate-500"
+                        ? "bg-bs-page/80 text-bs-text-muted"
                         : status === "Unmapped"
-                        ? "bg-rose-50/70"
+                        ? "bg-bs-danger/10/70"
                         : status === "Non-blocking"
-                          ? "bg-amber-50/60"
+                          ? "bg-bs-warning/10/60"
                         : status === "Review Required"
-                          ? "bg-amber-50/70"
+                          ? "bg-bs-warning/10/70"
                           : status === "Low Confidence"
-                            ? "bg-orange-50/70"
+                            ? "bg-bs-warning/5"
                             : "";
 
                     return (
@@ -1299,8 +1297,8 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
                               }
                               className="flex items-center gap-2 text-left"
                             >
-                              <span className="text-xs text-slate-400">{isExpanded ? "▾" : "▸"}</span>
-                              <span className="font-medium text-slate-900">
+                              <span className="text-xs text-bs-text-muted">{isExpanded ? "▾" : "▸"}</span>
+                              <span className="font-medium text-bs-text-primary">
                                 {row.accountName || "Blank account"}
                               </span>
                             </button>
@@ -1320,8 +1318,8 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
                                 key={`${row.accountKey}-${period.key}`}
                                 className={`px-3 py-3 text-right align-top ${
                                   index === previewPeriodColumns.length - 1
-                                    ? "font-semibold text-slate-900"
-                                    : "text-slate-700"
+                                    ? "font-semibold text-bs-text-primary"
+                                    : "text-bs-text-secondary"
                                 }`}
                               >
                                 {periodMatch?.amountText || ""}
@@ -1350,7 +1348,7 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
                                 <button
                                   type="button"
                                   onClick={() => toggleExcluded(row.accountKey)}
-                                  className="rounded-full border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                                  className="rounded-full border border-bs-border-strong px-2.5 py-1 text-xs font-medium text-bs-text-secondary hover:bg-bs-page"
                                 >
                                   {row.isExcluded ? "Include" : "Exclude"}
                                 </button>
@@ -1368,7 +1366,7 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
                                     setFocusedReviewOpen(true);
                                     setFocusedReviewAccountKey(row.accountKey);
                                   }}
-                                  className="rounded-full border border-amber-300 px-2.5 py-1 text-xs font-medium text-amber-800 hover:bg-amber-50"
+                                  className="rounded-full border border-bs-warning/40 px-2.5 py-1 text-xs font-medium text-bs-warning hover:bg-bs-warning/10"
                                 >
                                   Create Mapping
                                 </button>
@@ -1400,40 +1398,40 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
               onToggle={(event) =>
                 setFocusedReviewOpen((event.currentTarget as HTMLDetailsElement).open)
               }
-              className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4"
+              className="mt-4 rounded-bs-md border border-bs-border-subtle bg-bs-page p-4"
             >
-              <summary className="cursor-pointer list-none text-sm font-medium text-slate-900">
+              <summary className="cursor-pointer list-none text-sm font-medium text-bs-text-primary">
                 Focused mapping review
               </summary>
-              <p className="mt-2 text-sm text-slate-600">
+              <p className="mt-2 text-sm text-bs-text-secondary">
                 These line items require a manual mapping assignment before they can move back into the resolved review set.
               </p>
               <div className="mt-4 space-y-3">
                 {focusedReviewRows.length === 0 ? (
-                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-5 text-sm text-slate-600">
+                  <div className="rounded-bs-md border border-bs-border-subtle bg-bs-surface px-4 py-5 text-sm text-bs-text-secondary">
                     No line items currently require focused manual mapping.
                   </div>
                 ) : null}
                 {focusedReviewRows.map((row) => (
                   <div
                     key={row.accountKey || `blank-${row.rowNumbers.join("-")}`}
-                    className={`rounded-2xl border bg-white p-4 ${
+                    className={`rounded-bs-md border bg-bs-surface p-4 ${
                       focusedReviewAccountKey === row.accountKey
-                        ? "border-amber-300 ring-2 ring-amber-100"
-                        : "border-slate-200"
+                        ? "border-bs-warning/40 ring-2 ring-bs-warning/20"
+                        : "border-bs-border-subtle"
                     }`}
                   >
                     <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                       <div>
-                        <h4 className="text-sm font-semibold text-slate-900">
+                        <h4 className="text-sm font-semibold text-bs-text-primary">
                           {row.accountName || "Blank account name"}
                         </h4>
-                        <p className="mt-1 text-sm text-slate-600">{row.mappingExplanation}</p>
+                        <p className="mt-1 text-sm text-bs-text-secondary">{row.mappingExplanation}</p>
                       </div>
                       <button
                         type="button"
                         onClick={() => toggleNonBlocking(row.accountKey)}
-                        className="rounded-full border border-amber-300 px-3 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-50"
+                        className="rounded-full border border-bs-warning/40 px-3 py-1.5 text-xs font-medium text-bs-warning hover:bg-bs-warning/10"
                       >
                         {row.isNonBlocking ? "Blocking" : "Mark as non-blocking"}
                       </button>
@@ -1441,7 +1439,7 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
 
                     <div className="mt-4 grid gap-3 md:grid-cols-2">
                       <div>
-                        <label className="mb-1 block text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                        <label className="mb-1 block text-xs font-medium uppercase tracking-[0.14em] text-bs-text-muted">
                           Category
                         </label>
                         <select
@@ -1471,7 +1469,7 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
                           }}
                           className={`w-full ${
                             row.needsReview && !row.category
-                              ? "border-amber-300 bg-amber-50"
+                              ? "border-bs-warning/40 bg-bs-warning/10"
                               : ""
                           }`}
                         >
@@ -1484,7 +1482,7 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
                         </select>
                       </div>
                       <div>
-                        <label className="mb-1 block text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                        <label className="mb-1 block text-xs font-medium uppercase tracking-[0.14em] text-bs-text-muted">
                           Statement Type
                         </label>
                         <select
@@ -1517,7 +1515,7 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
                           }}
                           className={`w-full ${
                             row.needsReview && !row.statementType
-                              ? "border-amber-300 bg-amber-50"
+                              ? "border-bs-warning/40 bg-bs-warning/10"
                               : ""
                           }`}
                         >
@@ -1532,7 +1530,7 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
                     </div>
 
                     <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                      <p className="text-xs text-slate-500">
+                      <p className="text-xs text-bs-text-muted">
                         Apply the mapping here, then save it for future imports if this is a reusable line item.
                       </p>
                       <SaveMappingButton
@@ -1560,7 +1558,7 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
       ) : null}
 
       {activeStep === 4 && selectedSheet ? (
-        <section className="mt-5 rounded-2xl border border-slate-200 p-4">
+        <section className="mt-5 rounded-bs-md border border-bs-border-subtle p-4">
           <StepHeading
             step="Step 4"
             title="Import"
@@ -1586,17 +1584,17 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
             {importSummaryCards.map(([label, value]) => (
               <div
                 key={label}
-                className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"
+                className="rounded-bs-md border border-bs-border-subtle bg-bs-page px-4 py-3"
               >
-                <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                <p className="text-xs font-medium uppercase tracking-[0.14em] text-bs-text-muted">
                   {label}
                 </p>
-                <p className="mt-2 text-xl font-semibold text-slate-900">{value}</p>
+                <p className="mt-2 text-xl font-semibold text-bs-text-primary">{value}</p>
               </div>
             ))}
           </div>
 
-          <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+          <div className="mt-4 rounded-bs-md border border-bs-border-subtle bg-bs-page p-4 text-sm text-bs-text-secondary">
             Reviewed mappings, reporting periods, and saved mappings will carry into this import.
           </div>
 
@@ -1604,7 +1602,7 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
             <button
               type="button"
               onClick={() => setActiveStep(3)}
-              className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              className="rounded-bs-sm border border-bs-border-strong px-4 py-2.5 text-sm font-medium text-bs-text-secondary hover:bg-bs-page"
             >
               Back
             </button>
@@ -1612,14 +1610,14 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
               type="button"
               onClick={handleImport}
               disabled={importBlocked}
-              className="rounded-xl bg-ink px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+              className="rounded-bs-sm bg-bs-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-bs-primary-hover disabled:opacity-60"
             >
               {isPending ? "Importing..." : "Import Financials"}
             </button>
           </div>
 
           {importSummary ? (
-            <div className="mt-4 space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+            <div className="mt-4 space-y-4 rounded-bs-md border border-bs-border-subtle bg-bs-page p-4 text-sm text-bs-text-secondary">
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 <SummaryMetric label="Rows imported" value={String(importSummary.insertedCount)} />
                 <SummaryMetric label="Rows auto-mapped" value={String(importSummary.autoMappedRows)} />
@@ -1628,44 +1626,44 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
               </div>
 
               <div className="grid gap-3 lg:grid-cols-2">
-                <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                <div className="rounded-bs-md border border-bs-border-subtle bg-bs-surface p-4">
+                  <p className="text-xs font-medium uppercase tracking-[0.14em] text-bs-text-muted">
                     Missing critical categories
                   </p>
-                  <p className="mt-2 text-sm text-slate-700">
+                  <p className="mt-2 text-sm text-bs-text-secondary">
                     {importSummary.missingCriticalCategories.length > 0
                       ? importSummary.missingCriticalCategories.join(", ")
                       : "None detected in this import scope."}
                   </p>
                 </div>
-                <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                <div className="rounded-bs-md border border-bs-border-subtle bg-bs-surface p-4">
+                  <p className="text-xs font-medium uppercase tracking-[0.14em] text-bs-text-muted">
                     Next actions
                   </p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {importSummary.nextActions.map((action) => (
                       <span
                         key={action}
-                        className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700"
+                        className="rounded-full bg-bs-page px-3 py-1 text-xs font-medium text-bs-text-secondary"
                       >
                         {action}
                       </span>
                     ))}
                   </div>
-                  <p className="mt-3 text-sm text-slate-600">
+                  <p className="mt-3 text-sm text-bs-text-secondary">
                     Source Data summary, completion state, and fix-it navigation refresh immediately after a successful import.
                   </p>
                 </div>
               </div>
 
               {importSummary.workbookFollowUps.length > 0 ? (
-                <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                <div className="rounded-bs-md border border-bs-border-subtle bg-bs-surface p-4">
+                  <p className="text-xs font-medium uppercase tracking-[0.14em] text-bs-text-muted">
                     Workbook follow-ups
                   </p>
                   <div className="mt-2 space-y-2">
                     {importSummary.workbookFollowUps.map((item) => (
-                      <p key={item} className="text-sm text-slate-700">
+                      <p key={item} className="text-sm text-bs-text-secondary">
                         {item}
                       </p>
                     ))}
@@ -1674,41 +1672,41 @@ export function StepBasedImportFlow(props: StepBasedImportFlowProps) {
               ) : null}
 
               {importSummary.workbookFixIts.length > 0 ? (
-                <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                <div className="rounded-bs-md border border-bs-border-subtle bg-bs-surface p-4">
+                  <p className="text-xs font-medium uppercase tracking-[0.14em] text-bs-text-muted">
                     Workbook Fix-It actions
                   </p>
                   <div className="mt-3 grid gap-3 lg:grid-cols-2">
                     {importSummary.workbookFixIts.map((task) => (
                       <div
                         key={task.key}
-                        className={`rounded-2xl border px-4 py-3 ${workbookFixItSeverityClass(task.severity)}`}
+                        className={`rounded-bs-md border px-4 py-3 ${workbookFixItSeverityClass(task.severity)}`}
                       >
                         <p className="text-sm font-semibold">{task.label}</p>
                         <p className="mt-1 text-sm opacity-90">{task.reason}</p>
                         <Link
                           href={task.href}
-                          className="mt-3 inline-flex rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-slate-900 ring-1 ring-slate-200 hover:bg-slate-50"
+                          className="mt-3 inline-flex rounded-bs-sm bg-bs-surface px-3 py-1.5 text-xs font-medium text-bs-text-primary ring-1 ring-bs-border-subtle hover:bg-bs-page"
                         >
                           {task.actionLabel}
                         </Link>
                       </div>
                     ))}
                   </div>
-                  <p className="mt-3 text-sm text-slate-600">
+                  <p className="mt-3 text-sm text-bs-text-secondary">
                     These actions reuse the existing Source Data Fix-It routing so workbook blockers can be revisited from the same workflow.
                   </p>
                 </div>
               ) : null}
 
               {importSummary.rejectedRows.length > 0 ? (
-                <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                <div className="rounded-bs-md border border-bs-border-subtle bg-bs-surface p-4">
+                  <p className="text-xs font-medium uppercase tracking-[0.14em] text-bs-text-muted">
                     Rejected rows
                   </p>
                   <div className="mt-2 space-y-2">
                     {importSummary.rejectedRows.slice(0, 6).map((row) => (
-                      <p key={`${row.rowNumber}-${row.accountName}-${row.reason}`} className="text-sm text-slate-700">
+                      <p key={`${row.rowNumber}-${row.accountName}-${row.reason}`} className="text-sm text-bs-text-secondary">
                         Row {row.rowNumber}: {row.accountName || "Untitled row"} ({row.reason})
                       </p>
                     ))}
@@ -1737,12 +1735,12 @@ function StepHeading({
   return (
     <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
       <div>
-        <p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">{step}</p>
-        <h3 className="mt-1 text-base font-semibold text-slate-900">{title}</h3>
-        <p className="mt-1 text-sm text-slate-500">{description}</p>
+        <p className="text-xs font-medium uppercase tracking-[0.18em] text-bs-text-muted">{step}</p>
+        <h3 className="mt-1 text-base font-semibold text-bs-text-primary">{title}</h3>
+        <p className="mt-1 text-sm text-bs-text-muted">{description}</p>
       </div>
       {badge ? (
-        <div className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-600">{badge}</div>
+        <div className="rounded-bs-sm bg-bs-page px-3 py-2 text-sm text-bs-text-secondary">{badge}</div>
       ) : null}
     </div>
   );
@@ -1750,10 +1748,10 @@ function StepHeading({
 
 function SummaryMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-      <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">{label}</p>
-      <p className="mt-2 text-xl font-semibold text-slate-900">{value}</p>
-    </div>
+    <ContentCard padding="compact">
+      <p className="bs-label">{label}</p>
+      <p className="mt-2 text-xl font-semibold text-bs-text-primary">{value}</p>
+    </ContentCard>
   );
 }
 
@@ -1771,7 +1769,7 @@ function StepActions({
       <button
         type="button"
         onClick={onBack}
-        className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+        className="rounded-bs-sm border border-bs-border-strong px-4 py-2.5 text-sm font-medium text-bs-text-secondary hover:bg-bs-page"
       >
         Back
       </button>
@@ -1779,7 +1777,7 @@ function StepActions({
         type="button"
         onClick={onContinue}
         disabled={continueDisabled}
-        className="rounded-xl bg-ink px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+        className="rounded-bs-sm bg-bs-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-bs-primary-hover disabled:opacity-60"
       >
         Continue
       </button>
@@ -1795,10 +1793,10 @@ function Notice({
   children: ReactNode;
 }) {
   const styles = {
-    amber: "mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800",
-    rose: "mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800",
-    teal: "mt-4 rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-800",
-    sky: "mt-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800"
+    amber: "mt-4 rounded-bs-sm border border-bs-warning/20 bg-bs-warning/10 px-4 py-3 text-sm text-bs-warning",
+    rose: "mt-4 rounded-bs-sm border border-bs-danger/20 bg-bs-danger/10 px-4 py-3 text-sm text-bs-danger",
+    teal: "mt-4 rounded-bs-sm border border-bs-success/20 bg-bs-success/10 px-4 py-3 text-sm text-bs-success",
+    sky: "mt-4 rounded-bs-sm border border-bs-info/20 bg-bs-info/10 px-4 py-3 text-sm text-bs-info"
   };
 
   return <div className={styles[tone]}>{children}</div>;
@@ -1819,12 +1817,12 @@ function ColumnSelect({
 }) {
   return (
     <div>
-      <label className="mb-1 block text-sm font-medium text-slate-700">
+      <label className="mb-1 block text-sm font-medium text-bs-text-secondary">
         {label}{" "}
         {required ? (
-          <span className="text-xs font-normal text-slate-400">(Required)</span>
+          <span className="text-xs font-normal text-bs-text-muted">(Required)</span>
         ) : (
-          <span className="text-xs font-normal text-slate-400">(Optional)</span>
+          <span className="text-xs font-normal text-bs-text-muted">(Optional)</span>
         )}
       </label>
       <select value={value} onChange={(event) => onChange(event.target.value)}>

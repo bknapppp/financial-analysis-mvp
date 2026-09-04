@@ -1,9 +1,17 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { FileCheck2, FolderOpen } from "lucide-react";
 import { BackingChip } from "@/components/backing-chip";
 import { DocumentDrawer } from "@/components/document-drawer";
 import { getDocumentDisplayName } from "@/lib/documents";
+import { EmptyState } from "@/components/ui/empty-state";
+import { StatusBadge } from "@/components/ui/status-badge";
+import {
+  getRequirementLeadDocument,
+  groupDocumentRequirements,
+  summarizeDocumentCoverage
+} from "@/lib/document-coverage";
 import type {
   DiligenceIssue,
   DocumentLink,
@@ -38,81 +46,66 @@ export function DocumentSection({
   issues
 }: DocumentSectionProps) {
   const [drawerState, setDrawerState] = useState<DrawerState>(null);
-  const groupedRows = useMemo(() => {
-    return rows.reduce<Record<string, SourceRequirementBacking[]>>((acc, row) => {
-      acc[row.groupLabel] = acc[row.groupLabel] ?? [];
-      acc[row.groupLabel]?.push(row);
-      return acc;
-    }, {});
-  }, [rows]);
-  const summary = useMemo(
-    () => ({
-      backed: rows.filter((row) => row.status === "backed").length,
-      partial: rows.filter((row) => row.status === "partial").length,
-      unbacked: rows.filter((row) => row.status === "unbacked").length
-    }),
-    [rows]
-  );
+  const groupedRows = useMemo(() => groupDocumentRequirements(rows), [rows]);
+  const summary = useMemo(() => summarizeDocumentCoverage(rows), [rows]);
+  const coverageReady = summary.unbacked === 0 && summary.partial === 0 && rows.length > 0;
 
   return (
     <>
-      <details className="rounded-[1.6rem] border border-slate-200/80 bg-white p-4 shadow-panel">
-        <summary className="flex cursor-pointer list-none flex-wrap items-end justify-between gap-3">
+      <details className="rounded-bs-md border border-bs-border-subtle bg-bs-surface p-4 shadow-bs-subtle">
+        <summary className="flex cursor-pointer list-none flex-wrap items-start justify-between gap-3 border-b border-bs-border-subtle pb-3">
           <div className="max-w-3xl">
-            <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
-              Step 1
-            </p>
-            <h2 className="mt-1 text-lg font-semibold text-slate-900">Document Coverage</h2>
-            <p className="mt-1 text-sm text-slate-600">
-              Complete the required source package and link support where it matters.
-            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="bs-section-title">Document Coverage</h2>
+              <StatusBadge tone={coverageReady ? "success" : "warning"}>
+                {coverageReady ? "Coverage complete" : "Review required"}
+              </StatusBadge>
+            </div>
+            <p className="bs-metadata mt-1">Expected source materials, current support, and outstanding diligence coverage.</p>
           </div>
-          <div className="flex flex-wrap gap-2 text-xs text-slate-600">
-            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">
-              {summary.backed} backed
-            </span>
-            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">
-              {summary.partial} partial
-            </span>
-            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">
-              {summary.unbacked} missing
-            </span>
+          <div className="flex flex-wrap gap-2">
+            <StatusBadge tone="success">{summary.backed} provided</StatusBadge>
+            <StatusBadge tone="warning">{summary.partial} partial</StatusBadge>
+            <StatusBadge tone={summary.unbacked > 0 ? "danger" : "neutral"}>{summary.unbacked} missing</StatusBadge>
           </div>
         </summary>
 
-        <div className="mt-4 space-y-5">
+        {rows.length === 0 ? <EmptyState
+          density="compact"
+          icon={FolderOpen}
+          title="No document requirements"
+          description="No source-material requirements are configured for the selected deal and period."
+        /> : <div className="mt-4 space-y-5">
           {Object.entries(groupedRows).map(([groupLabel, groupRows]) => (
             <section key={groupLabel}>
-              <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
-                {groupLabel}
-              </p>
+              <div className="flex items-center gap-2"><FileCheck2 className="size-3.5 text-bs-text-muted" /><h3 className="bs-label">{groupLabel}</h3></div>
               <div className="mt-3 space-y-2">
                 {groupRows.map((row) => {
-                  const leadDocument = row.linkedDocuments[0] ?? row.documents[0] ?? null;
+                  const leadDocument = getRequirementLeadDocument(row);
                   const primaryActionLabel = leadDocument ? "View details" : "Upload document";
 
                   return (
                     <div
                       key={row.id}
-                      className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"
+                      className="rounded-bs-sm border border-bs-border-subtle bg-bs-page px-3 py-3"
                     >
                       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
-                            <p className="text-sm font-semibold text-slate-900">
+                            <p className="text-xs font-semibold text-bs-text-primary">
                               {row.label}
                               {row.periodLabel ? ` (${row.periodLabel})` : ""}
                             </p>
                             <BackingChip status={row.status} size="compact" />
                           </div>
-                          <p className="mt-1 text-sm text-slate-600">
+                          <p className="bs-metadata mt-1">
                             {leadDocument
                               ? `Support: ${getDocumentDisplayName(leadDocument)}`
                               : row.missingReason ?? "Support: No supporting documents linked"}
                           </p>
                         </div>
 
-                        <div className="flex flex-wrap items-center gap-3 text-sm">
+                        <div className="flex flex-wrap items-center gap-2">
                           <button
                             type="button"
                             onClick={() =>
@@ -122,14 +115,14 @@ export function DocumentSection({
                                 document: leadDocument
                               })
                             }
-                            className="rounded-xl bg-white px-3 py-2 font-medium text-slate-900 hover:bg-slate-100"
+                            className="inline-flex min-h-8 items-center rounded-bs-sm bg-bs-primary px-3 text-xs font-medium text-white hover:bg-bs-primary-hover"
                           >
                             {primaryActionLabel}
                           </button>
                           <button
                             type="button"
                             onClick={() => setDrawerState({ mode: "link", row, document: leadDocument })}
-                            className="font-medium text-slate-600 hover:text-slate-900"
+                            className="inline-flex min-h-8 items-center rounded-bs-sm border border-bs-border-strong bg-bs-surface px-3 text-xs font-medium text-bs-text-secondary hover:bg-bs-page"
                           >
                             Link existing
                           </button>
@@ -137,7 +130,7 @@ export function DocumentSection({
                             <button
                               type="button"
                               onClick={() => setDrawerState({ mode: "upload", row, document: leadDocument })}
-                              className="font-medium text-slate-600 hover:text-slate-900"
+                              className="inline-flex min-h-8 items-center rounded-bs-sm border border-bs-border-strong bg-bs-surface px-3 text-xs font-medium text-bs-text-secondary hover:bg-bs-page"
                             >
                               Upload new version
                             </button>
@@ -150,7 +143,7 @@ export function DocumentSection({
               </div>
             </section>
           ))}
-        </div>
+        </div>}
       </details>
 
       <DocumentDrawer
